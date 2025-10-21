@@ -1,26 +1,13 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut
-} from 'firebase/auth';
-import {
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  addDoc,
-  serverTimestamp,
-  onSnapshot
-} from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { authInstance, firestore } from '../config/firebase';
 
 export const FirebaseService = {
   // Authentication
   signUp: async (email: string, password: string, userData: any) => {
-    const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    
+    const userCredential = await authInstance.createUserWithEmailAndPassword(email, password);
+    const user = userCredential.user;
+
     // Create user document in Firestore
-    await setDoc(doc(db, 'users', user.uid), {
+    await firestore().collection('users').doc(user.uid).set({
       ...userData,
       email,
       roles: ['RIDER'],
@@ -28,42 +15,42 @@ export const FirebaseService = {
       hasAcceptedTerms: false,
       ratingAvg: 0,
       ratingCount: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp()
     });
-    
+
     return user;
   },
-  
+
   signIn: async (email: string, password: string) => {
-    const { user } = await signInWithEmailAndPassword(auth, email, password);
-    return user;
+    const userCredential = await authInstance.signInWithEmailAndPassword(email, password);
+    return userCredential.user;
   },
-  
+
   signOut: async () => {
-    await firebaseSignOut(auth);
+    await authInstance.signOut();
   },
-  
+
   // Firestore Operations
   getUser: async (userId: string) => {
-    const userDoc = await getDoc(doc(db, 'users', userId));
-    return userDoc.exists() ? { id: userDoc.id, ...userDoc.data() } : null;
+    const userDoc = await firestore().collection('users').doc(userId).get();
+    return userDoc.exists ? { id: userDoc.id, ...userDoc.data() } : null;
   },
-  
+
   createCarpoolRequest: async (data: any) => {
-    const docRef = await addDoc(collection(db, 'carpoolRequests'), {
+    const docRef = await firestore().collection('carpoolRequests').add({
       ...data,
       status: 'MATCHING',
-      createdAt: serverTimestamp(),
+      createdAt: firestore.FieldValue.serverTimestamp(),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 min
     });
     return docRef.id;
   },
-  
+
   // Real-time listeners
   subscribeToTrip: (tripId: string, callback: (data: any) => void) => {
-    const unsubscribe = onSnapshot(doc(db, 'trips', tripId), (doc) => {
-      if (doc.exists()) {
+    const unsubscribe = firestore().collection('trips').doc(tripId).onSnapshot((doc) => {
+      if (doc.exists) {
         callback({ id: doc.id, ...doc.data() });
       }
     });
