@@ -44,5 +44,5 @@ yarn-error.*
 /android
 
 # Firebase & Google Services
-google-services.json
-GoogleService-Info.plist
+# google-services.json
+# GoogleService-Info.plist
