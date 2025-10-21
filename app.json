@@ -13,7 +13,9 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.drift.app"
+      "bundleIdentifier": "com.drift.app",
+      "newArchEnabled": false
+
     },
     "android": {
       "package": "com.drift.app",
@@ -25,7 +27,9 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "newArchEnabled": false
+
     },
     "plugins": [
       "expo-router",
@@ -39,7 +43,8 @@
           "android": {
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
+            "buildToolsVersion": "35.0.0",
+            "newArchEnabled": false
           }
         }
       ],
@@ -57,6 +62,7 @@
       "eas": {
         "projectId": "d7b6f22f-7d74-4cc2-b3c6-89ceece434fc"
       }
-    }
+    },
+    "newArchEnabled": false
   }
 }
