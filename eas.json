@@ -12,7 +12,8 @@
       },
       "env": {
         "EXPO_USE_UPDATES": "0"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
