@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Drift",
-    "slug": "Drift",
+    "slug": "drift",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +25,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d7b6f22f-7d74-4cc2-b3c6-89ceece434fc"
+      }
+    },
+    "owner": "giselle345"
   }
 }
