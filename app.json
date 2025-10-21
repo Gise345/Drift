@@ -11,13 +11,14 @@
       "resizeMode": "contain",
       "backgroundColor": "#3B82F6"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.drift.app",
-      "newArchEnabled": true
+      "newArchEnabled": true,
+      "config": {
+        "googleMapsApiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+      }
     },
     "android": {
       "package": "com.drift.app",
@@ -30,6 +31,11 @@
         "ACCESS_COARSE_LOCATION"
       ],
       "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+        }
+      },
       "newArchEnabled": true
     },
     "plugins": [

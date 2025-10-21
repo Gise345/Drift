@@ -11,7 +11,9 @@
         "gradleCommand": ":app:assembleDebug"
       },
       "env": {
-        "EXPO_USE_UPDATES": "0"
+        "EXPO_USE_UPDATES": "0",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "YOUR_ACTUAL_KEY",
+        "NODE_ENV": "development"
       },
       "channel": "development"
     },
@@ -24,6 +26,10 @@
     "production": {
       "android": {
         "buildType": "apk"
+      },
+       "env": {
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "YOUR_ACTUAL_KEY",
+        "NODE_ENV": "production"
       }
     }
   },
