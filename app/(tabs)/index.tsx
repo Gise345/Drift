@@ -7,14 +7,11 @@ import {
   RefreshControl,
   Image,
   StyleSheet,
-  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import MapView, { Marker } from "react-native-maps";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/src/stores/auth-store";
 
-const { width } = Dimensions.get("window");
 const BG = "#0B0620";
 const CARD_BG = "rgba(255,255,255,0.06)";
 const BORDER = "rgba(255,255,255,0.10)";
@@ -45,7 +42,7 @@ export default function HomeScreen() {
         {/* Top row: Logo + avatar */}
         <View style={styles.topRow}>
           <Image
-            source={require("@/assets/logo.png")} // make sure this path matches your project
+            source={require("@/assets/logo.png")} // your logo path
             style={styles.logo}
           />
           <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
@@ -57,7 +54,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Mode pill switch */}
+        {/* Mode toggle */}
         <View style={styles.modeTrack}>
           <TouchableOpacity
             style={[styles.modeBtn, isRider && styles.modeBtnActive]}
@@ -118,28 +115,19 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Mini Map view */}
+        {/* Static Map Placeholder */}
         <View style={styles.mapWrap}>
-          <Text style={styles.mapLabel}>Map view</Text>
-          <MapView
-            style={styles.map}
-            pointerEvents="none"
-            initialRegion={{
-              latitude: 19.3133,
-              longitude: -81.2546,
-              latitudeDelta: 0.07,
-              longitudeDelta: 0.07,
+          <Text style={styles.mapLabel}>Map Preview</Text>
+          <Image
+            source={{
+              uri: "https://maps.gstatic.com/tactile/basepage/pegman_sherlock.png",
             }}
-          >
-            <Marker
-              coordinate={{ latitude: 19.3133, longitude: -81.2546 }}
-              title="Grand Cayman"
-              description="Example location"
-            />
-          </MapView>
+            style={styles.mapPlaceholder}
+            resizeMode="cover"
+          />
         </View>
 
-        {/* Legal / extra content below the map */}
+        {/* Legal / info section */}
         <View style={styles.notice}>
           <Text style={styles.noticeText}>
             <Text style={{ fontWeight: "700" }}>Peer-to-Peer Platform: </Text>
@@ -224,7 +212,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 2,
   },
-  map: { height: 160, borderRadius: 14 },
+  mapPlaceholder: {
+    height: 160,
+    width: "100%",
+    borderRadius: 14,
+    backgroundColor: "#1F103A",
+  },
 
   notice: {
     backgroundColor: "#F5F3FF20",
