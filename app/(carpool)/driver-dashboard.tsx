@@ -1,53 +1,74 @@
-import React from 'react';
-import { View, Text, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React from "react";
+import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-/**
- * Driver dashboard showing stats and earnings overview
- * TODO: Implement real-time stats from Firebase
- */
+const PURPLE = "#7C3AED";
+const BORDER = "#E5E7EB";
+
 export default function DriverDashboardScreen() {
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView className="flex-1 p-4">
-        {/* Stats Cards */}
-        <View className="gap-4">
-          {/* Total Rides Shared */}
-          <View className="bg-white rounded-2xl p-6 shadow-md">
-            <Text className="text-4xl mb-2">🚗</Text>
-            <Text className="text-3xl font-bold text-gray-900">0</Text>
-            <Text className="text-sm text-gray-600">Total Rides Shared</Text>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <Text style={styles.title}>Driver Dashboard</Text>
+
+        {/* Stats grid */}
+        <View style={styles.grid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>🚗</Text>
+            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statLabel}>Total Rides Shared</Text>
           </View>
 
-          {/* Total Cost Savings */}
-          <View className="bg-white rounded-2xl p-6 shadow-md">
-            <Text className="text-4xl mb-2">💰</Text>
-            <Text className="text-3xl font-bold text-purple-600">$0.00</Text>
-            <Text className="text-sm text-gray-600">Cost Sharing Received</Text>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>💰</Text>
+            <Text style={[styles.statValue, { color: PURPLE }]}>$0.00</Text>
+            <Text style={styles.statLabel}>Cost Sharing Received</Text>
           </View>
 
-          {/* Rating */}
-          <View className="bg-white rounded-2xl p-6 shadow-md">
-            <Text className="text-4xl mb-2">⭐</Text>
-            <Text className="text-3xl font-bold text-gray-900">—</Text>
-            <Text className="text-sm text-gray-600">Average Rating</Text>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>⭐</Text>
+            <Text style={styles.statValue}>—</Text>
+            <Text style={styles.statLabel}>Average Rating</Text>
           </View>
 
-          {/* Total Distance */}
-          <View className="bg-white rounded-2xl p-6 shadow-md">
-            <Text className="text-4xl mb-2">📊</Text>
-            <Text className="text-3xl font-bold text-gray-900">0 mi</Text>
-            <Text className="text-sm text-gray-600">Total Distance Shared</Text>
+          <View style={styles.statCard}>
+            <Text style={styles.statEmoji}>📊</Text>
+            <Text style={styles.statValue}>0 mi</Text>
+            <Text style={styles.statLabel}>Total Distance</Text>
           </View>
         </View>
 
-        {/* Info Notice */}
-        <View className="bg-purple-50 rounded-xl p-4 mt-6">
-          <Text className="text-xs text-purple-900 text-center leading-5">
-            💡 Your stats will appear here once you start sharing rides. Remember: all cost sharing is handled privately between you and riders.
+        {/* Info notice */}
+        <View style={styles.notice}>
+          <Text style={styles.noticeText}>
+            💡 Your stats will appear here once you start sharing rides.
+            Remember: all cost sharing is handled privately between you and riders.
           </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "white" },
+  scroll: { flex: 1 },
+  content: { padding: 16, paddingBottom: 28 },
+  title: { fontSize: 20, fontWeight: "800", color: "#111827", marginBottom: 12 },
+
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  statCard: {
+    width: "48%", backgroundColor: "white", borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: BORDER,
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  statEmoji: { fontSize: 28, marginBottom: 6 },
+  statValue: { fontSize: 22, fontWeight: "800", color: "#111827" },
+  statLabel: { color: "#6B7280", fontSize: 12, marginTop: 2 },
+
+  notice: {
+    backgroundColor: "#F9FAFB", borderColor: BORDER, borderWidth: 1,
+    borderRadius: 14, padding: 12, marginTop: 16,
+  },
+  noticeText: { color: "#4B5563", fontSize: 13, lineHeight: 18, textAlign: "center" },
+});

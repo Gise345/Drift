@@ -1,73 +1,55 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React from "react";
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-/**
- * Screen for drivers to offer a ride
- * TODO: Implement route creation, pricing, and seat availability
- */
+const PURPLE = "#7C3AED";
+const BORDER = "#E5E7EB";
+const MUTED = "#6B7280";
+
 export default function OfferRideScreen() {
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView className="flex-1 p-4">
-        <View className="bg-white rounded-2xl p-8 shadow-md items-center">
-          <Text className="text-6xl mb-4">🚗</Text>
-          <Text className="text-2xl font-bold text-gray-900 mb-2 text-center">
-            Offer a Ride
-          </Text>
-          <Text className="text-sm text-gray-600 text-center mb-6">
+    <SafeAreaView style={styles.safe}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <Text style={styles.title}>Offer a Ride</Text>
+
+        <View style={styles.card}>
+          <Text style={styles.emoji}>🚗</Text>
+          <Text style={styles.subtitle}>
             Share your trip and split costs with riders heading your way
           </Text>
 
-          <View className="w-full space-y-4">
-            {/* Starting Point Input - Placeholder */}
-            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-              <Text className="text-xs text-gray-500 mb-1">Starting From</Text>
-              <Text className="text-base text-gray-400">📍 Tap to select start location</Text>
-            </View>
-
-            {/* Destination Input - Placeholder */}
-            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200 mt-3">
-              <Text className="text-xs text-gray-500 mb-1">Destination</Text>
-              <Text className="text-base text-gray-400">🎯 Tap to select destination</Text>
-            </View>
-
-            {/* Departure Time - Placeholder */}
-            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200 mt-3">
-              <Text className="text-xs text-gray-500 mb-1">Departure Time</Text>
-              <Text className="text-base text-gray-400">🕐 Select when you're leaving</Text>
-            </View>
-
-            {/* Available Seats - Placeholder */}
-            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200 mt-3">
-              <Text className="text-xs text-gray-500 mb-1">Available Seats</Text>
-              <Text className="text-base text-gray-400">💺 How many seats to share?</Text>
-            </View>
-
-            {/* Cost Per Seat - Placeholder */}
-            <View className="bg-gray-50 rounded-xl p-4 border border-gray-200 mt-3">
-              <Text className="text-xs text-gray-500 mb-1">Suggested Cost Share (per seat)</Text>
-              <Text className="text-base text-gray-400">💰 Based on distance and fuel</Text>
-            </View>
-
-            {/* Create Offer Button */}
-            <TouchableOpacity
-              className="bg-purple-600 rounded-xl p-4 mt-6 shadow-lg"
-              activeOpacity={0.7}
-              onPress={() => {
-                // TODO: Implement ride offer creation logic
-                console.log('Creating ride offer...');
-              }}
-            >
-              <Text className="text-white text-center font-bold text-lg">
-                Create Ride Offer
-              </Text>
-            </TouchableOpacity>
+          {/* Inputs (placeholders) */}
+          <View style={styles.inputBlock}>
+            <Text style={styles.inputLabel}>Starting From</Text>
+            <Text style={styles.inputGhost}>📍 Tap to select start location</Text>
+          </View>
+          <View style={styles.inputBlock}>
+            <Text style={styles.inputLabel}>Destination</Text>
+            <Text style={styles.inputGhost}>🎯 Tap to select destination</Text>
+          </View>
+          <View style={styles.inputBlock}>
+            <Text style={styles.inputLabel}>Departure Time</Text>
+            <Text style={styles.inputGhost}>🕐 Select when you're leaving</Text>
+          </View>
+          <View style={styles.inputBlock}>
+            <Text style={styles.inputLabel}>Available Seats</Text>
+            <Text style={styles.inputGhost}>💺 How many seats to share?</Text>
+          </View>
+          <View style={styles.inputBlock}>
+            <Text style={styles.inputLabel}>Suggested Cost Share (per seat)</Text>
+            <Text style={styles.inputGhost}>💰 Based on distance and fuel</Text>
           </View>
 
-          {/* Info Notice */}
-          <View className="bg-purple-50 rounded-xl p-4 mt-6">
-            <Text className="text-xs text-purple-900 text-center">
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            activeOpacity={0.85}
+            onPress={() => console.log("Creating ride offer...")}
+          >
+            <Text style={styles.primaryBtnTxt}>Create Ride Offer</Text>
+          </TouchableOpacity>
+
+          <View style={styles.helper}>
+            <Text style={styles.helperTxt}>
               💡 Share your trip details and connect with riders. You'll split travel costs privately.
             </Text>
           </View>
@@ -76,3 +58,36 @@ export default function OfferRideScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "white" },
+  scroll: { flex: 1 },
+  content: { padding: 16, paddingBottom: 28 },
+  title: { fontSize: 20, fontWeight: "800", color: "#111827", marginBottom: 12 },
+
+  card: {
+    backgroundColor: "white", borderRadius: 16, padding: 20,
+    borderWidth: 1, borderColor: BORDER,
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  emoji: { fontSize: 44, textAlign: "center", marginBottom: 8 },
+  subtitle: { color: MUTED, fontSize: 13, textAlign: "center", marginBottom: 16 },
+
+  inputBlock: {
+    backgroundColor: "#F9FAFB", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: BORDER, marginBottom: 10,
+  },
+  inputLabel: { fontSize: 12, color: "#6B7280", marginBottom: 4 },
+  inputGhost: { fontSize: 14, color: "#9CA3AF" },
+
+  primaryBtn: {
+    backgroundColor: PURPLE, borderRadius: 12, paddingVertical: 14, marginTop: 10,
+  },
+  primaryBtnTxt: { color: "white", fontWeight: "800", textAlign: "center" },
+
+  helper: {
+    backgroundColor: "#F5F3FF", borderColor: "#DDD6FE", borderWidth: 1,
+    borderRadius: 12, padding: 12, marginTop: 14,
+  },
+  helperTxt: { color: "#4C1D95", fontSize: 12, textAlign: "center" },
+});

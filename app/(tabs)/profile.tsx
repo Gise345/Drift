@@ -1,7 +1,14 @@
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuthStore } from '@/src/stores/auth-store';
-import { useRouter } from 'expo-router';
+import React from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthStore } from "@/src/stores/auth-store";
+import { useRouter } from "expo-router";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -9,50 +16,128 @@ export default function ProfileScreen() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/');
+    router.replace("/");
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-        <Text className="text-2xl font-bold text-gray-900 mb-6">Profile</Text>
+  // createdAt can be a Date, number, or Firestore timestamp-like
+  let memberSince = "N/A";
+  if (user?.createdAt) {
+    try {
+      const d =
+        user.createdAt instanceof Date
+          ? user.createdAt
+          : new Date(
+              // handle firestore timestamp {seconds, nanoseconds}
+              ((user.createdAt as any).seconds
+                ? (user.createdAt as any).seconds * 1000
+                : user.createdAt) as number
+            );
+      memberSince = isNaN(d.getTime()) ? "N/A" : d.toLocaleDateString();
+    } catch {
+      memberSince = "N/A";
+    }
+  }
 
-        <View className="bg-white rounded-xl p-6 mb-4">
-          <View className="items-center mb-6">
-            <View className="w-20 h-20 rounded-full bg-purple-600 items-center justify-center mb-3">
-              <Text className="text-white text-3xl font-bold">
-                {user?.name?.[0]?.toUpperCase() || 'U'}
+  return (
+    <SafeAreaView style={styles.safe}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <Text style={styles.title}>Profile</Text>
+
+        <View style={styles.card}>
+          {/* Avatar + name */}
+          <View style={styles.centerBlock}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarTxt}>
+                {user?.name?.[0]?.toUpperCase() || "U"}
               </Text>
             </View>
-            <Text className="text-xl font-bold text-gray-900">{user?.name || 'User'}</Text>
-            <Text className="text-gray-600">{user?.email || 'user@drift.com'}</Text>
+            <Text style={styles.name}>{user?.name || "User"}</Text>
+            <Text style={styles.email}>{user?.email || "user@drift.com"}</Text>
           </View>
 
-          <View className="border-t border-gray-200 pt-4">
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-gray-600">Phone</Text>
-              <Text className="font-semibold text-gray-900">{user?.phone || 'N/A'}</Text>
-            </View>
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-gray-600">Rating</Text>
-              <Text className="font-semibold text-gray-900">⭐ {user?.rating || 'N/A'}</Text>
-            </View>
-            <View className="flex-row justify-between">
-              <Text className="text-gray-600">Member Since</Text>
-              <Text className="font-semibold text-gray-900">
-                {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-              </Text>
-            </View>
+          {/* Details */}
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.label}>Phone</Text>
+            <Text style={styles.value}>{user?.phone || "N/A"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Rating</Text>
+            <Text style={styles.value}>⭐ {user?.rating || "N/A"}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Member Since</Text>
+            <Text style={styles.value}>{memberSince}</Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          onPress={handleSignOut}
-          className="bg-red-600 rounded-xl p-4 items-center"
-        >
-          <Text className="text-white font-semibold text-lg">Sign Out</Text>
+        <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
+          <Text style={styles.signOutTxt}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const PURPLE = "#7C3AED";
+const BORDER = "#E5E7EB";
+const TEXT_MUTED = "#6B7280";
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "white" },
+  scroll: { flex: 1 },
+  content: { padding: 16 },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  centerBlock: { alignItems: "center", marginBottom: 16 },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: PURPLE,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  avatarTxt: { color: "white", fontSize: 28, fontWeight: "800" },
+  name: { fontSize: 18, fontWeight: "800", color: "#111827" },
+  email: { fontSize: 14, color: TEXT_MUTED, marginTop: 2 },
+
+  divider: {
+    height: 1,
+    backgroundColor: BORDER,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+  },
+  label: { color: TEXT_MUTED },
+  value: { color: "#111827", fontWeight: "600" },
+
+  signOutBtn: {
+    backgroundColor: "#EF4444",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  signOutTxt: { color: "white", fontWeight: "700", fontSize: 16 },
+});

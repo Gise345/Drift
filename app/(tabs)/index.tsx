@@ -12,10 +12,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/src/stores/auth-store";
 
-const BG = "#0B0620";
-const CARD_BG = "rgba(255,255,255,0.06)";
-const BORDER = "rgba(255,255,255,0.10)";
-const PURPLE = "#7C3AED";
+const PURPLE = "#5d1289ff";
+const LIGHT_PURPLE = "#d8d3ecff";
+const BORDER = "#E5E7EB";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -39,10 +38,10 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Top row: Logo + avatar */}
-        <View style={styles.topRow}>
+        {/* Header: logo + avatar */}
+        <View style={styles.header}>
           <Image
-            source={require("@/assets/logo.png")} // your logo path
+            source={require("@/assets/logo.png")}
             style={styles.logo}
           />
           <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
@@ -54,7 +53,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Mode toggle */}
+        {/* Mode Switch */}
         <View style={styles.modeTrack}>
           <TouchableOpacity
             style={[styles.modeBtn, isRider && styles.modeBtnActive]}
@@ -76,7 +75,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Primary CTA */}
+        {/* Main Call-to-Action */}
         <TouchableOpacity
           onPress={() =>
             router.push(isRider ? "/(carpool)/request" : "/(carpool)/offer")
@@ -84,20 +83,18 @@ export default function HomeScreen() {
           activeOpacity={0.9}
           style={styles.primaryCta}
         >
-          <View style={[styles.primaryCtaInner, { backgroundColor: PURPLE }]}>
-            <Text style={styles.ctaTitle}>✨ Find a Ride</Text>
-            <Text style={styles.ctaSubtitle}>
-              Carpool with drivers heading your way
-            </Text>
-          </View>
+          <Text style={styles.ctaTitle}>✨ Find a Ride</Text>
+          <Text style={styles.ctaSubtitle}>
+            Carpool with drivers heading your way
+          </Text>
         </TouchableOpacity>
 
-        {/* Two dark cards */}
+        {/* Quick access cards */}
         <View style={styles.row}>
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => router.push("/(carpool)/scheduled")}
-            style={[styles.darkCard, { marginRight: 10 }]}
+            style={[styles.lightCard, { marginRight: 10 }]}
           >
             <Text style={styles.cardEmoji}>📅</Text>
             <Text style={styles.cardTitle}>My Bookings</Text>
@@ -107,7 +104,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => router.push("/(carpool)/saved-routes")}
-            style={[styles.darkCard, { marginLeft: 10 }]}
+            style={[styles.lightCard, { marginLeft: 10 }]}
           >
             <Text style={styles.cardEmoji}>⭐</Text>
             <Text style={styles.cardTitle}>Saved Routes</Text>
@@ -115,19 +112,27 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Static Map Placeholder */}
+        {/* Map Placeholder */}
         <View style={styles.mapWrap}>
-          <Text style={styles.mapLabel}>Map Preview</Text>
+          <Text style={styles.mapLabel}>Nearby area</Text>
           <Image
             source={{
-              uri: "https://maps.gstatic.com/tactile/basepage/pegman_sherlock.png",
+              uri: "https://www.google.com/maps/search/?api=1&query=37.7749,-122.4194 ",
             }}
             style={styles.mapPlaceholder}
             resizeMode="cover"
           />
         </View>
 
-        {/* Legal / info section */}
+        {/* Activity / Notice Section */}
+        <View style={styles.activityCard}>
+          <Text style={styles.activityHeader}>Your Activity</Text>
+          <Text style={styles.activityText}>
+            No recent carpools yet. Start your first trip today!
+          </Text>
+        </View>
+
+        {/* Legal Info */}
         <View style={styles.notice}>
           <Text style={styles.noticeText}>
             <Text style={{ fontWeight: "700" }}>Peer-to-Peer Platform: </Text>
@@ -141,31 +146,29 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: BG },
+  safe: { flex: 1, backgroundColor: "white" },
   scroll: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
 
-  topRow: {
+  header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
+    alignItems: "center",
+    marginBottom: 12,
   },
   logo: { width: 120, height: 42, resizeMode: "contain" },
   avatar: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: PURPLE,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
   },
   avatarTxt: { color: "white", fontWeight: "800", fontSize: 16 },
 
   modeTrack: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: LIGHT_PURPLE,
     borderRadius: 14,
     padding: 4,
     marginBottom: 16,
@@ -176,38 +179,51 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  modeBtnActive: { backgroundColor: "white" },
-  modeTxt: { color: "white", fontWeight: "600" },
-  modeTxtActive: { color: "#3B2A7E", fontWeight: "700" },
+  modeBtnActive: { backgroundColor: "white", borderWidth: 1, borderColor: PURPLE },
+  modeTxt: { color: PURPLE, fontWeight: "600" },
+  modeTxtActive: { color: PURPLE, fontWeight: "700" },
 
-  primaryCta: { borderRadius: 18, overflow: "hidden", marginBottom: 14 },
-  primaryCtaInner: { paddingVertical: 18, paddingHorizontal: 18 },
+  primaryCta: {
+    backgroundColor: PURPLE,
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 18,
+    shadowColor: PURPLE,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
   ctaTitle: { color: "white", fontSize: 20, fontWeight: "800" },
   ctaSubtitle: { color: "#E9E4FF", fontSize: 12, marginTop: 4 },
 
-  row: { flexDirection: "row", marginTop: 6, marginBottom: 16 },
-  darkCard: {
+  row: { flexDirection: "row", marginBottom: 16 },
+  lightCard: {
     flex: 1,
-    backgroundColor: CARD_BG,
-    borderRadius: 18,
+    backgroundColor: "white",
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: BORDER,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   cardEmoji: { fontSize: 20, marginBottom: 8 },
-  cardTitle: { color: "white", fontWeight: "800", fontSize: 16 },
-  cardDesc: { color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 2 },
+  cardTitle: { color: "#111827", fontWeight: "800", fontSize: 16 },
+  cardDesc: { color: "#6B7280", fontSize: 12, marginTop: 2 },
 
   mapWrap: {
-    backgroundColor: CARD_BG,
-    borderRadius: 18,
+    backgroundColor: "white",
+    borderRadius: 16,
     padding: 12,
     borderWidth: 1,
     borderColor: BORDER,
     marginBottom: 18,
   },
   mapLabel: {
-    color: "white",
+    color: "#111827",
     fontWeight: "700",
     marginBottom: 8,
     marginLeft: 2,
@@ -216,16 +232,27 @@ const styles = StyleSheet.create({
     height: 160,
     width: "100%",
     borderRadius: 14,
-    backgroundColor: "#1F103A",
+    backgroundColor: "#F3F4F6",
   },
 
+  activityCard: {
+    backgroundColor: LIGHT_PURPLE,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    marginBottom: 18,
+  },
+  activityHeader: { color: PURPLE, fontWeight: "700", fontSize: 16, marginBottom: 6 },
+  activityText: { color: "#4B5563", fontSize: 13, lineHeight: 18 },
+
   notice: {
-    backgroundColor: "#F5F3FF20",
-    borderColor: "#DDD6FE33",
+    backgroundColor: "#F9FAFB",
+    borderColor: BORDER,
     borderWidth: 1,
     borderRadius: 14,
     padding: 12,
     marginBottom: 24,
   },
-  noticeText: { color: "#E9E4FF", fontSize: 12, lineHeight: 18 },
+  noticeText: { color: "#4B5563", fontSize: 12, lineHeight: 18 },
 });
