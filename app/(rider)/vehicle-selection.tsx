@@ -1,11 +1,3 @@
-/**
- * Drift Vehicle Selection Screen
- * Figma: 16_Selected_ride.png
- * 
- * Choose carpool type with cost estimates
- * Built for Expo SDK 52
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -19,21 +11,37 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { DriftButton, ArrowRight } from '@/components/ui/DriftButton';
-import { Colors, Typography, Spacing, BorderRadius } from '@/src/constants/theme';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+
+const Colors = {
+  primary: '#D4E700',
+  purple: '#5d1289ff',
+  black: '#000000',
+  white: '#FFFFFF',
+  gray: {
+    50: '#F9FAFB',
+    100: '#F3F4F6',
+    200: '#E5E7EB',
+    300: '#D1D5DB',
+    400: '#9CA3AF',
+    500: '#6B7280',
+    600: '#4B5563',
+    700: '#374151',
+    800: '#1F2937',
+    900: '#111827',
+  },
+  success: '#10B981',
+  error: '#EF4444',
+};
 
 interface VehicleOption {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  icon: string; // emoji or image
   maxPassengers: number;
   costEstimate: string;
-  costRange: {
-    min: number;
-    max: number;
-  };
+  costRange: { min: number; max: number };
   eta: string;
   popular?: boolean;
   eco?: boolean;
@@ -41,20 +49,22 @@ interface VehicleOption {
 
 export default function VehicleSelectionScreen() {
   const router = useRouter();
-  const { route, setVehicleType, setEstimatedCost } = useCarpoolStore();
+  const { route, setVehicleType, setEstimatedCost, destination } = useCarpoolStore();
   
   const [selectedVehicle, setSelectedVehicle] = useState<string>('standard');
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
 
-  // Load vehicle options
+  // Load vehicle options based on route
   useEffect(() => {
     loadVehicleOptions();
-  }, []);
+  }, [route]);
 
   const loadVehicleOptions = () => {
     // Calculate base cost from route distance (mock calculation)
-    const baseCost = route?.distance ? Math.round(route.distance * 0.001 * 3) : 10;
+    // In real app, this would come from your pricing algorithm
+    const distanceKm = route?.distance ? route.distance / 1000 : 5;
+    const baseCost = Math.round(distanceKm * 2.5); // $2.50/km base rate
     
     const options: VehicleOption[] = [
       {
@@ -63,8 +73,8 @@ export default function VehicleSelectionScreen() {
         description: 'Share with up to 3 riders',
         icon: '🚗',
         maxPassengers: 3,
-        costEstimate: `$${baseCost - 2}-${baseCost} CI`,
-        costRange: { min: baseCost - 2, max: baseCost },
+        costEstimate: `$${baseCost - 3}-${baseCost} CI`,
+        costRange: { min: baseCost - 3, max: baseCost },
         eta: '5-8 min',
         eco: true,
       },
@@ -74,8 +84,8 @@ export default function VehicleSelectionScreen() {
         description: 'Comfortable ride, 2 riders max',
         icon: '🚙',
         maxPassengers: 2,
-        costEstimate: `$${baseCost}-${baseCost + 3} CI`,
-        costRange: { min: baseCost, max: baseCost + 3 },
+        costEstimate: `$${baseCost + 2}-${baseCost + 5} CI`,
+        costRange: { min: baseCost + 2, max: baseCost + 5 },
         eta: '3-5 min',
         popular: true,
       },
@@ -85,8 +95,8 @@ export default function VehicleSelectionScreen() {
         description: 'Premium vehicle, extra space',
         icon: '🚐',
         maxPassengers: 2,
-        costEstimate: `$${baseCost + 3}-${baseCost + 6} CI`,
-        costRange: { min: baseCost + 3, max: baseCost + 6 },
+        costEstimate: `$${baseCost + 5}-${baseCost + 10} CI`,
+        costRange: { min: baseCost + 5, max: baseCost + 10 },
         eta: '5-7 min',
       },
       {
@@ -95,8 +105,8 @@ export default function VehicleSelectionScreen() {
         description: 'For groups up to 5 riders',
         icon: '🚌',
         maxPassengers: 5,
-        costEstimate: `$${baseCost + 5}-${baseCost + 10} CI`,
-        costRange: { min: baseCost + 5, max: baseCost + 10 },
+        costEstimate: `$${baseCost + 8}-${baseCost + 15} CI`,
+        costRange: { min: baseCost + 8, max: baseCost + 15 },
         eta: '8-10 min',
       },
     ];
@@ -115,7 +125,7 @@ export default function VehicleSelectionScreen() {
     setLoading(true);
 
     try {
-      // Save vehicle selection
+      // Save vehicle selection to store
       setVehicleType(vehicle.id);
       setEstimatedCost({
         min: vehicle.costRange.min,
@@ -123,11 +133,11 @@ export default function VehicleSelectionScreen() {
         currency: 'KYD',
       });
 
-      // Simulate finding drivers
+      // Simulate API call to find available drivers
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Navigate to driver matching
-      router.push('/(rider)/finding-driver');
+      // Navigate to payment selection or finding driver
+      router.push('/(rider)/select-payment');
     } catch (error) {
       Alert.alert('Error', 'Failed to process request. Please try again.');
     } finally {
@@ -136,6 +146,19 @@ export default function VehicleSelectionScreen() {
   };
 
   const selectedVehicleData = vehicles.find(v => v.id === selectedVehicle);
+
+  // Format route info
+  const formatDistance = () => {
+    if (!route?.distance) return '';
+    const km = route.distance / 1000;
+    return km < 1 ? `${route.distance}m` : `${km.toFixed(1)}km`;
+  };
+
+  const formatDuration = () => {
+    if (!route?.duration) return '';
+    const minutes = Math.round(route.duration / 60);
+    return `${minutes} min`;
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -160,26 +183,41 @@ export default function VehicleSelectionScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Route Summary */}
-          <View style={styles.routeSummary}>
-            <View style={styles.routePoint}>
-              <View style={styles.routeDot} />
-              <Text style={styles.routeText} numberOfLines={1}>
-                Current Location
-              </Text>
+          {/* Route Summary Card */}
+          <View style={styles.routeCard}>
+            <View style={styles.routeHeader}>
+              <Text style={styles.routeTitle}>Your Route</Text>
+              {route && (
+                <Text style={styles.routeInfo}>
+                  {formatDistance()} • {formatDuration()}
+                </Text>
+              )}
             </View>
-            <View style={styles.routeLine} />
-            <View style={styles.routePoint}>
-              <Text style={styles.routeIcon}>📍</Text>
-              <Text style={styles.routeText} numberOfLines={1}>
-                {route?.destination?.address || 'Destination'}
-              </Text>
+            
+            <View style={styles.routeDetails}>
+              {/* Pickup */}
+              <View style={styles.routePoint}>
+                <View style={styles.routeDot} />
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {route?.origin?.address || 'Current Location'}
+                </Text>
+              </View>
+              
+              <View style={styles.routeLine} />
+              
+              {/* Destination */}
+              <View style={styles.routePoint}>
+                <Text style={styles.routeIcon}>📍</Text>
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {route?.destination?.address || destination?.address || 'Destination'}
+                </Text>
+              </View>
             </View>
           </View>
 
           {/* Vehicle Options */}
-          <View style={styles.vehiclesContainer}>
-            <Text style={styles.sectionTitle}>AVAILABLE CARPOOLS</Text>
+          <View style={styles.vehiclesSection}>
+            <Text style={styles.sectionTitle}>Available Carpool Options</Text>
             
             {vehicles.map((vehicle) => (
               <TouchableOpacity
@@ -191,125 +229,86 @@ export default function VehicleSelectionScreen() {
                 onPress={() => handleVehicleSelect(vehicle.id)}
                 activeOpacity={0.7}
               >
-                <View style={styles.vehicleLeft}>
-                  <Text style={styles.vehicleIcon}>{vehicle.icon}</Text>
+                {/* Badge */}
+                {vehicle.popular && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>POPULAR</Text>
+                  </View>
+                )}
+                {vehicle.eco && (
+                  <View style={[styles.badge, styles.badgeEco]}>
+                    <Text style={styles.badgeText}>ECO</Text>
+                  </View>
+                )}
+
+                <View style={styles.vehicleContent}>
+                  {/* Vehicle Icon */}
+                  <View style={styles.vehicleIconContainer}>
+                    <Text style={styles.vehicleIcon}>{vehicle.icon}</Text>
+                  </View>
+
+                  {/* Vehicle Info */}
                   <View style={styles.vehicleInfo}>
-                    <View style={styles.vehicleNameRow}>
-                      <Text style={styles.vehicleName}>{vehicle.name}</Text>
-                      {vehicle.popular && (
-                        <View style={styles.popularBadge}>
-                          <Text style={styles.popularText}>POPULAR</Text>
-                        </View>
-                      )}
-                      {vehicle.eco && (
-                        <View style={styles.ecoBadge}>
-                          <Text style={styles.ecoText}>🌱 ECO</Text>
-                        </View>
-                      )}
-                    </View>
+                    <Text style={styles.vehicleName}>{vehicle.name}</Text>
                     <Text style={styles.vehicleDescription}>
                       {vehicle.description}
                     </Text>
                     <View style={styles.vehicleDetails}>
-                      <Text style={styles.vehicleEta}>
-                        🕐 {vehicle.eta}
-                      </Text>
-                      <Text style={styles.vehicleSeats}>
-                        👥 {vehicle.maxPassengers} seats
+                      <Text style={styles.vehicleEta}>🕐 {vehicle.eta}</Text>
+                      <Text style={styles.vehiclePassengers}>
+                        👤 {vehicle.maxPassengers} max
                       </Text>
                     </View>
                   </View>
-                </View>
-                <View style={styles.vehicleRight}>
-                  <Text style={styles.vehicleCost}>{vehicle.costEstimate}</Text>
-                  <View style={styles.radioButton}>
-                    {selectedVehicle === vehicle.id && (
-                      <View style={styles.radioButtonSelected} />
-                    )}
+
+                  {/* Price */}
+                  <View style={styles.vehiclePriceContainer}>
+                    <Text style={styles.vehiclePrice}>{vehicle.costEstimate}</Text>
                   </View>
                 </View>
+
+                {/* Selection Indicator */}
+                {selectedVehicle === vehicle.id && (
+                  <View style={styles.selectedIndicator}>
+                    <View style={styles.selectedDot} />
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
-          </View>
-
-          {/* Cost Breakdown */}
-          {selectedVehicleData && (
-            <View style={styles.costBreakdown}>
-              <Text style={styles.costTitle}>Cost Contribution Breakdown</Text>
-              <View style={styles.costItem}>
-                <Text style={styles.costLabel}>Base contribution</Text>
-                <Text style={styles.costValue}>
-                  ${selectedVehicleData.costRange.min} CI
-                </Text>
-              </View>
-              <View style={styles.costItem}>
-                <Text style={styles.costLabel}>Peak time adjustment</Text>
-                <Text style={styles.costValue}>
-                  +${selectedVehicleData.costRange.max - selectedVehicleData.costRange.min} CI
-                </Text>
-              </View>
-              <View style={styles.costDivider} />
-              <View style={styles.costItem}>
-                <Text style={styles.costTotalLabel}>Total estimate</Text>
-                <Text style={styles.costTotalValue}>
-                  {selectedVehicleData.costEstimate}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Info Cards */}
-          <View style={styles.infoCards}>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoIcon}>💳</Text>
-              <Text style={styles.infoText}>
-                Digital cost-sharing via Drift Wallet
-              </Text>
-            </View>
-            
-            <View style={styles.infoCard}>
-              <Text style={styles.infoIcon}>🚗</Text>
-              <Text style={styles.infoText}>
-                Private arrangement between users
-              </Text>
-            </View>
-
-            <View style={styles.infoCard}>
-              <Text style={styles.infoIcon}>✅</Text>
-              <Text style={styles.infoText}>
-                All drivers verified & insured
-              </Text>
-            </View>
           </View>
 
           {/* Legal Notice */}
           <View style={styles.legalNotice}>
             <Text style={styles.legalText}>
-              <Text style={styles.legalBold}>Peer-to-Peer Platform:</Text>{' '}
-              Drift facilitates private carpooling between independent users.
-              Cost contributions are voluntary and go directly to drivers to
-              share travel expenses. We are not a taxi or rideshare service.
+              ⚖️ <Text style={styles.legalBold}>Drift is a coordination platform.</Text>
+              {' '}All rides are private arrangements between users. Cost estimates are for shared expenses only.
             </Text>
           </View>
         </ScrollView>
 
-        {/* Bottom Action */}
-        <View style={styles.bottomAction}>
-          <DriftButton
-            title={loading ? 'Finding Drivers...' : 'Request Carpool'}
-            onPress={handleConfirmVehicle}
-            variant="black"
-            size="large"
-            icon={!loading && <ArrowRight />}
-            loading={loading}
-            disabled={!selectedVehicle}
-          />
-          
+        {/* Confirm Button */}
+        <View style={styles.bottomContainer}>
           {selectedVehicleData && (
-            <Text style={styles.etaText}>
-              Estimated pickup in {selectedVehicleData.eta}
-            </Text>
+            <View style={styles.selectedInfo}>
+              <Text style={styles.selectedName}>{selectedVehicleData.name}</Text>
+              <Text style={styles.selectedPrice}>{selectedVehicleData.costEstimate}</Text>
+            </View>
           )}
+          
+          <TouchableOpacity
+            style={[styles.confirmButton, loading && styles.confirmButtonDisabled]}
+            onPress={handleConfirmVehicle}
+            disabled={loading || !selectedVehicle}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <>
+                <Text style={styles.confirmButtonText}>Continue</Text>
+                <Text style={styles.confirmButtonArrow}>→</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>
@@ -321,334 +320,279 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-
   container: {
     flex: 1,
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray[200],
   },
-
   backButton: {
     width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-
   backIcon: {
     fontSize: 24,
     color: Colors.black,
   },
-
   title: {
-    fontSize: Typography.fontSize.lg,
+    flex: 1,
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.black,
+    textAlign: 'center',
   },
-
   headerSpacer: {
     width: 40,
   },
-
-  // Content
   scroll: {
     flex: 1,
   },
-
   scrollContent: {
-    paddingBottom: Spacing.xl,
+    paddingBottom: 160,
   },
-
-  // Route Summary
-  routeSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  routeCard: {
     backgroundColor: Colors.gray[50],
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    marginBottom: Spacing.lg,
+    margin: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.gray[200],
   },
-
+  routeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  routeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.black,
+  },
+  routeInfo: {
+    fontSize: 13,
+    color: Colors.gray[600],
+  },
+  routeDetails: {
+    marginTop: 8,
+  },
   routePoint: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
   },
-
   routeDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
-    marginRight: Spacing.sm,
-  },
-
-  routeIcon: {
-    fontSize: 16,
-    marginRight: Spacing.sm,
-  },
-
-  routeText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
-    flex: 1,
-  },
-
-  routeLine: {
-    width: 20,
-    height: 1,
-    backgroundColor: Colors.gray[400],
-    marginHorizontal: Spacing.xs,
-  },
-
-  // Vehicles
-  vehiclesContainer: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.xl,
-  },
-
-  sectionTitle: {
-    fontSize: Typography.fontSize.xs,
-    fontWeight: '700',
-    color: Colors.gray[500],
-    letterSpacing: 1,
-    marginBottom: Spacing.md,
-  },
-
-  vehicleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.white,
-    borderWidth: 2,
-    borderColor: Colors.gray[200],
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-
-  vehicleCardSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '08',
-  },
-
-  vehicleLeft: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-
-  vehicleIcon: {
-    fontSize: 32,
-    marginRight: Spacing.md,
-  },
-
-  vehicleInfo: {
-    flex: 1,
-  },
-
-  vehicleNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-
-  vehicleName: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700',
-    color: Colors.black,
-    marginRight: Spacing.sm,
-  },
-
-  popularBadge: {
-    backgroundColor: Colors.purple,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginRight: 4,
-  },
-
-  popularText: {
-    fontSize: 10,
-    color: Colors.white,
-    fontWeight: '700',
-  },
-
-  ecoBadge: {
-    backgroundColor: Colors.success + '20',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-
-  ecoText: {
-    fontSize: 10,
-    color: Colors.success,
-    fontWeight: '700',
-  },
-
-  vehicleDescription: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
-    marginBottom: 4,
-  },
-
-  vehicleDetails: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-
-  vehicleEta: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
-  },
-
-  vehicleSeats: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
-  },
-
-  vehicleRight: {
-    alignItems: 'flex-end',
-  },
-
-  vehicleCost: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: '700',
-    color: Colors.black,
-    marginBottom: Spacing.sm,
-  },
-
-  radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: Colors.gray[400],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  radioButtonSelected: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.success,
+    marginRight: 12,
   },
-
-  // Cost Breakdown
-  costBreakdown: {
-    backgroundColor: Colors.gray[50],
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
+  routeIcon: {
+    fontSize: 16,
+    marginRight: 12,
   },
-
-  costTitle: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '700',
-    color: Colors.gray[700],
-    marginBottom: Spacing.md,
-  },
-
-  costItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.sm,
-  },
-
-  costLabel: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
-  },
-
-  costValue: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[800],
-  },
-
-  costDivider: {
-    height: 1,
+  routeLine: {
+    width: 2,
+    height: 20,
     backgroundColor: Colors.gray[300],
-    marginVertical: Spacing.sm,
+    marginLeft: 4,
+    marginVertical: 4,
   },
-
-  costTotalLabel: {
-    fontSize: Typography.fontSize.base,
+  routeText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.gray[700],
+  },
+  vehiclesSection: {
+    paddingHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.black,
+    marginBottom: 16,
+  },
+  vehicleCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.gray[200],
+    padding: 16,
+    marginBottom: 12,
+    position: 'relative',
+  },
+  vehicleCardSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.gray[50],
+  },
+  badge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: Colors.purple,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    zIndex: 1,
+  },
+  badgeEco: {
+    backgroundColor: Colors.success,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: 0.5,
+  },
+  vehicleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  vehicleIconContainer: {
+    width: 60,
+    height: 60,
+    backgroundColor: Colors.gray[100],
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  vehicleIcon: {
+    fontSize: 32,
+  },
+  vehicleInfo: {
+    flex: 1,
+  },
+  vehicleName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.black,
+    marginBottom: 4,
+  },
+  vehicleDescription: {
+    fontSize: 13,
+    color: Colors.gray[600],
+    marginBottom: 6,
+  },
+  vehicleDetails: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  vehicleEta: {
+    fontSize: 12,
+    color: Colors.gray[500],
+  },
+  vehiclePassengers: {
+    fontSize: 12,
+    color: Colors.gray[500],
+  },
+  vehiclePriceContainer: {
+    alignItems: 'flex-end',
+  },
+  vehiclePrice: {
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.black,
   },
-
-  costTotalValue: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-
-  // Info Cards
-  infoCards: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-
-  infoCard: {
-    flexDirection: 'row',
+  selectedIndicator: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.gray[50],
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
   },
-
-  infoIcon: {
-    fontSize: 20,
-    marginRight: Spacing.md,
+  selectedDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.black,
   },
-
-  infoText: {
-    flex: 1,
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
-  },
-
-  // Legal Notice
   legalNotice: {
-    marginHorizontal: Spacing.lg,
-    backgroundColor: Colors.purple + '10',
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.purple,
   },
-
   legalText: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[700],
-    lineHeight: 16,
+    fontSize: 12,
+    color: Colors.gray[600],
+    lineHeight: 18,
   },
-
   legalBold: {
     fontWeight: '700',
-    color: Colors.gray[800],
+    color: Colors.purple,
   },
-
-  // Bottom Action
-  bottomAction: {
-    padding: Spacing.lg,
+  bottomContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.gray[200],
-    backgroundColor: Colors.white,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
   },
-
-  etaText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
-    textAlign: 'center',
-    marginTop: Spacing.sm,
+  selectedInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  selectedName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.gray[700],
+  },
+  selectedPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.black,
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    backgroundColor: Colors.black,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.6,
+  },
+  confirmButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.white,
+    marginRight: 8,
+  },
+  confirmButtonArrow: {
+    fontSize: 20,
+    color: Colors.white,
+    fontWeight: '700',
   },
 });

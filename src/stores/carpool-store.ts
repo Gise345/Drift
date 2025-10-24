@@ -1,10 +1,32 @@
 import { create } from 'zustand';
-import { CarpoolRequest, CarpoolTrip, RecentActivityItem, SavedRoute } from '@/src/types/carpool';
+import { CarpoolRequest, CarpoolTrip, RecentActivityItem, SavedRoute, Location } from '@/src/types/carpool';
+
+interface RouteInfo {
+  distance: number; // in meters
+  duration: number; // in seconds
+  polylinePoints: Array<{ latitude: number; longitude: number }>;
+  origin?: Location;
+  destination?: Location;
+}
+
+interface EstimatedCost {
+  min: number;
+  max: number;
+  currency: string;
+}
 
 interface CarpoolState {
   // Current requests and trips
   activeRequest: CarpoolRequest | null;
   activeTrip: CarpoolTrip | null;
+
+  // Booking flow state
+  pickupLocation: Location | null;
+  destination: Location | null;
+  route: RouteInfo | null;
+  vehicleType: string | null;
+  estimatedCost: EstimatedCost | null;
+  selectedPaymentMethod: string | null;
 
   // History
   recentActivity: RecentActivityItem[];
@@ -17,16 +39,31 @@ interface CarpoolState {
   // Loading states
   isLoading: boolean;
 
-  // Actions
+  // Actions - Booking Flow
+  setPickupLocation: (location: Location | null) => void;
+  setDestination: (location: Location | null) => void;
+  setRoute: (route: RouteInfo | null) => void;
+  setVehicleType: (vehicleType: string | null) => void;
+  setEstimatedCost: (cost: EstimatedCost | null) => void;
+  setSelectedPaymentMethod: (method: string | null) => void;
+  clearBookingFlow: () => void;
+
+  // Actions - Requests & Trips
   setActiveRequest: (request: CarpoolRequest | null) => void;
   setActiveTrip: (trip: CarpoolTrip | null) => void;
+  
+  // Actions - History
   setRecentActivity: (activity: RecentActivityItem[]) => void;
   addRecentActivity: (item: RecentActivityItem) => void;
   setSavedRoutes: (routes: SavedRoute[]) => void;
   addSavedRoute: (route: SavedRoute) => void;
   removeSavedRoute: (routeId: string) => void;
+  
+  // Actions - Stats
   updateStats: (totalTrips: number, activeTripsCount: number) => void;
   setLoading: (loading: boolean) => void;
+  
+  // Actions - Clear
   clearActiveRequest: () => void;
   clearActiveTrip: () => void;
   reset: () => void;
@@ -35,6 +72,12 @@ interface CarpoolState {
 const initialState = {
   activeRequest: null,
   activeTrip: null,
+  pickupLocation: null,
+  destination: null,
+  route: null,
+  vehicleType: null,
+  estimatedCost: null,
+  selectedPaymentMethod: null,
   recentActivity: [],
   savedRoutes: [],
   totalTrips: 0,
@@ -44,15 +87,39 @@ const initialState = {
 
 /**
  * Zustand store for managing carpool-related state
- * Handles active requests, trips, activity history, and saved routes
+ * Handles active requests, trips, booking flow, activity history, and saved routes
  */
 export const useCarpoolStore = create<CarpoolState>((set) => ({
   ...initialState,
 
+  // Booking Flow Actions
+  setPickupLocation: (location) => set({ pickupLocation: location }),
+  
+  setDestination: (location) => set({ destination: location }),
+  
+  setRoute: (route) => set({ route }),
+  
+  setVehicleType: (vehicleType) => set({ vehicleType }),
+  
+  setEstimatedCost: (cost) => set({ estimatedCost: cost }),
+  
+  setSelectedPaymentMethod: (method) => set({ selectedPaymentMethod: method }),
+  
+  clearBookingFlow: () => set({
+    pickupLocation: null,
+    destination: null,
+    route: null,
+    vehicleType: null,
+    estimatedCost: null,
+    selectedPaymentMethod: null,
+  }),
+
+  // Request & Trip Actions
   setActiveRequest: (request) => set({ activeRequest: request }),
 
   setActiveTrip: (trip) => set({ activeTrip: trip }),
 
+  // History Actions
   setRecentActivity: (activity) => set({ recentActivity: activity }),
 
   addRecentActivity: (item) =>
@@ -72,11 +139,13 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
       savedRoutes: state.savedRoutes.filter((r) => r.id !== routeId),
     })),
 
+  // Stats Actions
   updateStats: (totalTrips, activeTripsCount) =>
     set({ totalTrips, activeTripsCount }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 
+  // Clear Actions
   clearActiveRequest: () => set({ activeRequest: null }),
 
   clearActiveTrip: () => set({ activeTrip: null }),
