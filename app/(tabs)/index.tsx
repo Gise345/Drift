@@ -1,258 +1,480 @@
-import React, { useState } from "react";
+/**
+ * Drift Home Screen - Rider
+ * Figma: 11_Home_screen.png & 12_Home_screen.png
+ * 
+ * Main screen with Google Maps and "Where To?" search
+ * Shows current location and allows destination input
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl,
-  Image,
   StyleSheet,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { useAuthStore } from "@/src/stores/auth-store";
+  TouchableOpacity,
+  TextInput,
+  Dimensions,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useLocationStore } from '@/src/stores/location-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
-const PURPLE = "#5d1289ff";
-const LIGHT_PURPLE = "#d8d3ecff";
-const BORDER = "#E5E7EB";
+const { width, height } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, currentMode, setMode } = useAuthStore();
-  const [refreshing, setRefreshing] = useState(false);
+  const { user } = useAuthStore();
+  const { currentLocation, setCurrentLocation, setLocationPermission } = useLocationStore();
+  
+  const [region, setRegion] = useState({
+    latitude: 19.3133, // George Town, Cayman Islands
+    longitude: -81.2546,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 900);
+  // Request location permission and get current location
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status === 'granted');
+
+      if (status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({});
+        const userLocation = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          address: 'Current Location',
+        };
+        
+        setCurrentLocation(userLocation);
+        setRegion({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        });
+      }
+    })();
+  }, []);
+
+  const handleMenuPress = () => {
+    router.push('/(tabs)/profile');
   };
 
-  const isRider = currentMode === "RIDER";
+  const handleWhereToPress = () => {
+    router.push('/(rider)/search-location');
+  };
+
+  const handleSchedulePress = () => {
+    Alert.alert('Schedule', 'Schedule ride feature coming soon!');
+  };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 28 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+    <View style={styles.container}>
+      {/* Map */}
+      <MapView
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        region={region}
+        showsUserLocation
+        showsMyLocationButton={false}
+        loadingEnabled
       >
-        {/* Header: logo + avatar */}
-        <View style={styles.header}>
-          <Image
-            source={require("@/assets/logo.png")}
-            style={styles.logo}
-          />
-          <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarTxt}>
-                {user?.name?.[0]?.toUpperCase() || "U"}
-              </Text>
+        {currentLocation && (
+          <Marker
+            coordinate={{
+              latitude: currentLocation.latitude,
+              longitude: currentLocation.longitude,
+            }}
+            title="You are here"
+          >
+            <View style={styles.currentMarker}>
+              <View style={styles.currentMarkerInner} />
             </View>
-          </TouchableOpacity>
-        </View>
+          </Marker>
+        )}
+      </MapView>
 
-        {/* Mode Switch */}
-        <View style={styles.modeTrack}>
+      {/* Top Bar */}
+      <SafeAreaView style={styles.topBar} edges={['top']}>
+        <View style={styles.topBarContent}>
+          {/* Menu Button */}
           <TouchableOpacity
-            style={[styles.modeBtn, isRider && styles.modeBtnActive]}
-            onPress={() => setMode("RIDER")}
-            activeOpacity={0.85}
+            style={styles.menuButton}
+            onPress={handleMenuPress}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={[styles.modeTxt, isRider && styles.modeTxtActive]}>
-              Rider
-            </Text>
+            <Text style={styles.menuIcon}>☰</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeBtn, !isRider && styles.modeBtnActive]}
-            onPress={() => setMode("DRIVER")}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.modeTxt, !isRider && styles.modeTxtActive]}>
-              Driver
-            </Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Main Call-to-Action */}
+          {/* Location Display */}
+          <View style={styles.locationDisplay}>
+            <Text style={styles.locationLabel}>Your Current Location</Text>
+            <Text style={styles.locationText} numberOfLines={1}>
+              {currentLocation?.address || 'Getting location...'}
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* Bottom Card - "Where To?" */}
+      <SafeAreaView style={styles.bottomCard} edges={['bottom']}>
+        {/* Where To Search */}
         <TouchableOpacity
-          onPress={() =>
-            router.push(isRider ? "/(carpool)/request" : "/(carpool)/offer")
-          }
+          style={styles.whereToButton}
+          onPress={handleWhereToPress}
           activeOpacity={0.9}
-          style={styles.primaryCta}
         >
-          <Text style={styles.ctaTitle}>✨ Find a Ride</Text>
-          <Text style={styles.ctaSubtitle}>
-            Carpool with drivers heading your way
-          </Text>
+          <Text style={styles.whereToText}>Where To?</Text>
+          <View style={styles.scheduleButton}>
+            <TouchableOpacity
+              onPress={handleSchedulePress}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <View style={styles.scheduleChip}>
+                <Text style={styles.scheduleIcon}>🕐</Text>
+                <Text style={styles.scheduleText}>Now</Text>
+                <Text style={styles.scheduleDropdown}>▼</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
 
-        {/* Quick access cards */}
-        <View style={styles.row}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push("/(carpool)/scheduled")}
-            style={[styles.lightCard, { marginRight: 10 }]}
-          >
-            <Text style={styles.cardEmoji}>📅</Text>
-            <Text style={styles.cardTitle}>My Bookings</Text>
-            <Text style={styles.cardDesc}>View your upcoming rides</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push("/(carpool)/saved-routes")}
-            style={[styles.lightCard, { marginLeft: 10 }]}
-          >
-            <Text style={styles.cardEmoji}>⭐</Text>
-            <Text style={styles.cardTitle}>Saved Routes</Text>
-            <Text style={styles.cardDesc}>Quick access to frequent trips</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Map Placeholder */}
-        <View style={styles.mapWrap}>
-          <Text style={styles.mapLabel}>Nearby area</Text>
-          <Image
-            source={{
-              uri: "https://www.google.com/maps/search/?api=1&query=37.7749,-122.4194 ",
-            }}
-            style={styles.mapPlaceholder}
-            resizeMode="cover"
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <QuickAction
+            icon="🏠"
+            label="Home"
+            onPress={() => Alert.alert('Home', 'Set home address in profile')}
+          />
+          <QuickAction
+            icon="💼"
+            label="Work"
+            onPress={() => Alert.alert('Work', 'Set work address in profile')}
+          />
+          <QuickAction
+            icon="⭐"
+            label="Saved"
+            onPress={() => router.push('/(carpool)/saved-routes')}
           />
         </View>
 
-        {/* Activity / Notice Section */}
-        <View style={styles.activityCard}>
-          <Text style={styles.activityHeader}>Your Activity</Text>
-          <Text style={styles.activityText}>
-            No recent carpools yet. Start your first trip today!
-          </Text>
+        {/* Recent Searches */}
+        <View style={styles.recentSection}>
+          <Text style={styles.recentSectionTitle}>Recent</Text>
+          <RecentItem
+            icon="📍"
+            title="Owen Roberts Airport"
+            subtitle="Grand Cayman"
+            onPress={() => {}}
+          />
+          <RecentItem
+            icon="📍"
+            title="Camana Bay"
+            subtitle="Grand Cayman"
+            onPress={() => {}}
+          />
         </View>
+      </SafeAreaView>
 
-        {/* Legal Info */}
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>
-            <Text style={{ fontWeight: "700" }}>Peer-to-Peer Platform: </Text>
-            Drift connects independent users for private carpools. We’re not a
-            transportation company or rideshare service.
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      {/* Recenter Button */}
+      <TouchableOpacity
+        style={styles.recenterButton}
+        onPress={async () => {
+          const location = await Location.getCurrentPositionAsync({});
+          setRegion({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          });
+        }}
+      >
+        <Text style={styles.recenterIcon}>🎯</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Quick Action Component
+function QuickAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.quickAction} onPress={onPress}>
+      <Text style={styles.quickActionIcon}>{icon}</Text>
+      <Text style={styles.quickActionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Recent Item Component
+function RecentItem({
+  icon,
+  title,
+  subtitle,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.recentItem} onPress={onPress}>
+      <Text style={styles.recentIcon}>{icon}</Text>
+      <View style={styles.recentInfo}>
+        <Text style={styles.recentItemTitle}>{title}</Text>
+        <Text style={styles.recentSubtitle}>{subtitle}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "white" },
-  scroll: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
-
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  logo: { width: 120, height: 42, resizeMode: "contain" },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: PURPLE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarTxt: { color: "white", fontWeight: "800", fontSize: 16 },
-
-  modeTrack: {
-    flexDirection: "row",
-    backgroundColor: LIGHT_PURPLE,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-  },
-  modeBtn: {
+  container: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
+    backgroundColor: Colors.white,
   },
-  modeBtnActive: { backgroundColor: "white", borderWidth: 1, borderColor: PURPLE },
-  modeTxt: { color: PURPLE, fontWeight: "600" },
-  modeTxtActive: { color: PURPLE, fontWeight: "700" },
 
-  primaryCta: {
-    backgroundColor: PURPLE,
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 18,
-    marginBottom: 18,
-    shadowColor: PURPLE,
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
+  map: {
+    width: width,
+    height: height,
+  },
+
+  // Current Location Marker
+  currentMarker: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: Colors.white,
+  },
+
+  currentMarkerInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.white,
+  },
+
+  // Top Bar
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
   },
-  ctaTitle: { color: "white", fontSize: 20, fontWeight: "800" },
-  ctaSubtitle: { color: "#E9E4FF", fontSize: 12, marginTop: 4 },
 
-  row: { flexDirection: "row", marginBottom: 16 },
-  lightCard: {
+  topBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+  },
+
+  menuButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+
+  menuIcon: {
+    fontSize: 24,
+    color: Colors.black,
+  },
+
+  locationDisplay: {
     flex: 1,
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
+  },
+
+  locationLabel: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[500],
+    marginBottom: 2,
+  },
+
+  locationText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+
+  // Bottom Card
+  bottomCard: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+
+  // Where To Button
+  whereToButton: {
+    backgroundColor: Colors.gray[100],
+    borderRadius: 12,
+    padding: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.lg,
+  },
+
+  whereToText: {
+    fontSize: Typography.fontSize.xl,
+    fontWeight: '600',
+    color: Colors.gray[600],
+  },
+
+  scheduleButton: {
+    // Container for schedule chip
+  },
+
+  scheduleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.black,
+    borderRadius: 20,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    gap: 6,
+  },
+
+  scheduleIcon: {
+    fontSize: 14,
+  },
+
+  scheduleText: {
+    color: Colors.white,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '600',
+  },
+
+  scheduleDropdown: {
+    color: Colors.white,
+    fontSize: 10,
+  },
+
+  // Quick Actions
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+  },
+
+  quickAction: {
+    alignItems: 'center',
+  },
+
+  quickActionIcon: {
+    fontSize: 32,
+    marginBottom: Spacing.xs,
+  },
+
+  quickActionLabel: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[700],
+    fontWeight: '500',
+  },
+
+  // Recent Section
+  recentSection: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+    paddingTop: Spacing.md,
+  },
+
+  recentSectionTitle: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '700',
+    color: Colors.gray[800],
+    marginBottom: Spacing.sm,
+  },
+
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+
+  recentIcon: {
+    fontSize: 20,
+    marginRight: Spacing.md,
+  },
+
+  recentInfo: {
+    flex: 1,
+  },
+
+  recentItemTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: 2,
+  },
+
+  recentSubtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+  },
+
+  // Recenter Button
+  recenterButton: {
+    position: 'absolute',
+    right: Spacing.lg,
+    bottom: 350, // Above bottom card
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 1,
-  },
-  cardEmoji: { fontSize: 20, marginBottom: 8 },
-  cardTitle: { color: "#111827", fontWeight: "800", fontSize: 16 },
-  cardDesc: { color: "#6B7280", fontSize: 12, marginTop: 2 },
-
-  mapWrap: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    marginBottom: 18,
-  },
-  mapLabel: {
-    color: "#111827",
-    fontWeight: "700",
-    marginBottom: 8,
-    marginLeft: 2,
-  },
-  mapPlaceholder: {
-    height: 160,
-    width: "100%",
-    borderRadius: 14,
-    backgroundColor: "#F3F4F6",
+    elevation: 3,
   },
 
-  activityCard: {
-    backgroundColor: LIGHT_PURPLE,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#C4B5FD",
-    marginBottom: 18,
+  recenterIcon: {
+    fontSize: 24,
   },
-  activityHeader: { color: PURPLE, fontWeight: "700", fontSize: 16, marginBottom: 6 },
-  activityText: { color: "#4B5563", fontSize: 13, lineHeight: 18 },
-
-  notice: {
-    backgroundColor: "#F9FAFB",
-    borderColor: BORDER,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 24,
-  },
-  noticeText: { color: "#4B5563", fontSize: 12, lineHeight: 18 },
 });
