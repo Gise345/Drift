@@ -27,7 +27,7 @@ export default function ProfileScreen() {
       icon: 'time-outline',
       title: 'My Trips',
       subtitle: 'View trip history',
-      route: '/(tabs)/activity',
+      route: '/(rider)/my-trips',
     },
     {
       icon: 'card-outline',

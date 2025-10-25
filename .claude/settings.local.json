@@ -6,7 +6,8 @@
       "Bash(ls:*)",
       "Bash(xargs:*)",
       "Bash(npm uninstall:*)",
-      "Bash(npm install react-native-maps@1.18.0)"
+      "Bash(npm install react-native-maps@1.18.0)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": [],
     "ask": []

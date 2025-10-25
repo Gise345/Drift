@@ -44,6 +44,11 @@ const HomeScreen = () => {
     router.push('/(rider)/search-location');
   };
 
+  const handleMenuPress = () => {
+    // Navigate to the profile tab which has the menu
+    router.push('/(rider)/profile');
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -101,7 +106,7 @@ const HomeScreen = () => {
 
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.menuButton}>
+        <TouchableOpacity style={styles.menuButton} onPress={handleMenuPress}>
           <Ionicons name="menu" size={28} color="#000" />
         </TouchableOpacity>
         <View style={styles.topInfo}>
