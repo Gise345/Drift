@@ -1,33 +1,39 @@
-import { Slot, SplashScreen } from 'expo-router';
 import { useEffect } from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { PaperProvider } from 'react-native-paper';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Stack } from 'expo-router';
 import { useAuthStore } from '@/src/stores/auth-store';
-import '../global.css';
 
-// Keep splash screen visible while loading
-SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient();
-
+/**
+ * ROOT LAYOUT
+ * 
+ * This defines the overall navigation structure of your app.
+ * All routes must be defined here or in sub-layouts.
+ */
 export default function RootLayout() {
-  const initialize = useAuthStore((state) => state.initialize);
+  const { initialize } = useAuthStore();
 
   useEffect(() => {
-    // Initialize auth listener
+    // Initialize auth on app start
     initialize();
-
-    // Hide splash screen after setup
-    SplashScreen.hideAsync();
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PaperProvider>
-        <Slot />
-        <StatusBar style="auto" />
-      </PaperProvider>
-    </QueryClientProvider>
+    <Stack
+      screenOptions={{
+        headerShown: false, // Hide header by default
+        animation: 'slide_from_right',
+      }}
+    >
+      {/* Entry point */}
+      <Stack.Screen name="index" />
+      
+      {/* Auth flow */}
+      <Stack.Screen name="(auth)" />
+      
+      {/* Main app (after login) */}
+      <Stack.Screen name="(tabs)" />
+      
+      {/* Rider screens */}
+      <Stack.Screen name="(rider)" />
+    </Stack>
   );
 }

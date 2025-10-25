@@ -65,7 +65,7 @@ export default function SignInScreen() {
       };
       
       setUser(mockUser);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (error) {
       Alert.alert('Login Failed', 'Please check your credentials and try again');
     } finally {

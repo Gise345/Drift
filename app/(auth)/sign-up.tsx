@@ -2,7 +2,7 @@
  * Drift Sign Up Screen
  * Figma: 03_Register.png
  * 
- * User registration with phone number
+ * User registration with phone number OR email
  * Sends OTP for verification
  */
 
@@ -31,6 +31,7 @@ export default function SignUpScreen() {
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+1');
   const [loading, setLoading] = useState(false);
+  const [verificationType, setVerificationType] = useState<'phone' | 'email'>('phone');
 
   const validateEmail = (email: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -52,28 +53,78 @@ export default function SignUpScreen() {
       return;
     }
 
-    if (!phone || !validatePhone(phone)) {
-      Alert.alert('Error', 'Please enter a valid phone number');
+    // Check if at least one verification method is provided
+    const hasPhone = phone && validatePhone(phone);
+    const hasEmail = email && validateEmail(email);
+
+    if (!hasPhone && !hasEmail) {
+      Alert.alert('Error', 'Please enter either a valid phone number or email address');
       return;
     }
 
+    // Let user choose verification method if both provided
+    if (hasPhone && hasEmail) {
+      Alert.alert(
+        'Choose Verification Method',
+        'How would you like to receive your verification code?',
+        [
+          {
+            text: 'Email',
+            onPress: () => sendVerification('email'),
+          },
+          {
+            text: 'Phone',
+            onPress: () => sendVerification('phone'),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
+
+    // Use whichever method is available
+    sendVerification(hasPhone ? 'phone' : 'email');
+  };
+
+  const sendVerification = async (method: 'phone' | 'email') => {
     setLoading(true);
 
     try {
-      // TODO: Implement Firebase phone auth
-      // Send OTP code
+      // TODO: Implement Firebase auth
+      // For phone: Firebase Phone Auth
+      // For email: Firebase Email Link or custom OTP
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Navigate to verification screen
-      router.push({
-        pathname: '/(auth)/verification',
-        params: {
-          phone: `${countryCode}${phone}`,
-          type: 'register',
-          name: fullName,
-          email: email,
-        },
-      });
+      const verificationTarget = method === 'phone' 
+        ? `${countryCode}${phone}`
+        : email;
+
+      Alert.alert(
+        'Verification Sent',
+        `A verification code has been sent to your ${method}.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate to verification screen
+              router.push({
+                pathname: '/(auth)/verification',
+                params: {
+                  target: verificationTarget,
+                  type: 'register',
+                  method: method, // 'phone' or 'email'
+                  name: fullName,
+                  email: email,
+                  phone: phone ? `${countryCode}${phone}` : '',
+                },
+              });
+            },
+          },
+        ]
+      );
     } catch (error) {
       Alert.alert('Error', 'Failed to send verification code. Please try again.');
     } finally {
@@ -134,7 +185,7 @@ export default function SignUpScreen() {
           />
 
           <DriftInput
-            label="Email Address"
+            label="Email Address *"
             value={email}
             onChangeText={setEmail}
             placeholder="your@email.com"
@@ -145,13 +196,41 @@ export default function SignUpScreen() {
             isValid={validateEmail(email)}
           />
 
+          {/* Verification Method Info */}
+          <View style={styles.infoBox}>
+            <Text style={styles.infoIcon}>ℹ️</Text>
+            <Text style={styles.infoText}>
+              Add your phone number for SMS verification (optional if you have email)
+            </Text>
+          </View>
+
           <PhoneInput
+            label="Phone Number (Optional)"
             value={phone}
             onChangeText={setPhone}
             countryCode={countryCode}
             onCountryCodePress={handleCountryCodePress}
             placeholder="373 299 3456"
           />
+
+          {/* Verification Method Badges */}
+          <View style={styles.verificationBadges}>
+            <View style={styles.badgeRow}>
+              <Text style={styles.badgeLabel}>Verify via:</Text>
+              {validateEmail(email) && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeEmoji}>📧</Text>
+                  <Text style={styles.badgeText}>Email</Text>
+                </View>
+              )}
+              {validatePhone(phone) && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeEmoji}>📱</Text>
+                  <Text style={styles.badgeText}>Phone</Text>
+                </View>
+              )}
+            </View>
+          </View>
 
           {/* Terms Notice */}
           <View style={styles.termsNotice}>
@@ -260,6 +339,67 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
     textAlign: 'center',
+  },
+
+  // Info Box
+  infoBox: {
+    flexDirection: 'row',
+    backgroundColor: Colors.gray[50],
+    borderRadius: 8,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.gray[200],
+  },
+
+  infoIcon: {
+    fontSize: 16,
+    marginRight: Spacing.sm,
+  },
+
+  infoText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[600],
+    lineHeight: 18,
+  },
+
+  // Verification Badges
+  verificationBadges: {
+    marginBottom: Spacing.lg,
+  },
+
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  badgeLabel: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    fontWeight: '600',
+  },
+
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+
+  badgeEmoji: {
+    fontSize: 14,
+  },
+
+  badgeText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: '600',
+    color: Colors.black,
   },
 
   // Terms Notice

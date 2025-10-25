@@ -15,7 +15,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.drift.app",
-      "newArchEnabled": true,
+       "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Drift needs your location to show nearby carpools and provide navigation.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Drift needs your location to show nearby carpools and provide navigation."
+      },
       "config": {
         "googleMapsApiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
       }
@@ -28,19 +31,24 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
       ],
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
         }
-      },
-      "newArchEnabled": true
+      }
     },
     "plugins": [
       "expo-router",
-      "expo-location",
+       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Drift needs your location to show nearby carpools and provide navigation."
+        }
+      ],
       "expo-secure-store",
       "expo-notifications",
       "expo-dev-client",
@@ -51,10 +59,13 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
-            "newArchEnabled": true
+            "usesCleartextTraffic": false,
+            "newArchEnabled": false,
+            "minSdkVersion": 24
           },
           "ios": {
-            "newArchEnabled": true
+            "newArchEnabled": false,
+             "deploymentTarget": "15.1"
           }
         }
       ],
@@ -73,7 +84,6 @@
         "projectId": "d7b6f22f-7d74-4cc2-b3c6-89ceece434fc"
       }
     },
-    "newArchEnabled": true,
     "runtimeVersion": {
       "policy": "appVersion"
     },

@@ -4,7 +4,9 @@
       "Bash(tree:*)",
       "Bash(cat:*)",
       "Bash(ls:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install react-native-maps@1.18.0)"
     ],
     "deny": [],
     "ask": []

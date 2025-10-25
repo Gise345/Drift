@@ -1,480 +1,353 @@
-/**
- * Drift Home Screen - Rider
- * Figma: 11_Home_screen.png & 12_Home_screen.png
- * 
- * Main screen with Google Maps and "Where To?" search
- * Shows current location and allows destination input
- */
-
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Dimensions,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Platform } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Colors, Typography, Spacing } from '@/src/constants/theme';
-import { useLocationStore } from '@/src/stores/location-store';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
 
-const { width, height } = Dimensions.get('window');
-
-export default function HomeScreen() {
-  const router = useRouter();
+const HomeScreen = () => {
   const { user } = useAuthStore();
-  const { currentLocation, setCurrentLocation, setLocationPermission } = useLocationStore();
-  
-  const [region, setRegion] = useState({
-    latitude: 19.3133, // George Town, Cayman Islands
-    longitude: -81.2546,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  });
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Request location permission and get current location
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      setLocationPermission(status === 'granted');
-
-      if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({});
-        const userLocation = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          address: 'Current Location',
-        };
-        
-        setCurrentLocation(userLocation);
-        setRegion({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        });
-      }
-    })();
+    getCurrentLocation();
   }, []);
 
-  const handleMenuPress = () => {
-    router.push('/(tabs)/profile');
+  const getCurrentLocation = async () => {
+    try {
+      // Request location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setErrorMsg('Location permission denied');
+        setLoading(false);
+        return;
+      }
+
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      
+      setLocation(currentLocation);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error getting location:', error);
+      setErrorMsg('Could not get location');
+      setLoading(false);
+    }
   };
 
-  const handleWhereToPress = () => {
+  const handleSearchPress = () => {
     router.push('/(rider)/search-location');
   };
 
-  const handleSchedulePress = () => {
-    Alert.alert('Schedule', 'Schedule ride feature coming soon!');
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#5d1289" />
+        <Text style={styles.loadingText}>Getting your location...</Text>
+      </View>
+    );
+  }
+
+  if (errorMsg) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="location-outline" size={64} color="#666" />
+        <Text style={styles.errorText}>{errorMsg}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={getCurrentLocation}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const currentRegion = location ? {
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  } : {
+    // Default to George Town, Grand Cayman
+    latitude: 19.3133,
+    longitude: -81.2546,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
   };
 
   return (
     <View style={styles.container}>
       {/* Map */}
       <MapView
-        provider={PROVIDER_GOOGLE}
         style={styles.map}
-        region={region}
-        showsUserLocation
+        provider={PROVIDER_GOOGLE}
+        initialRegion={currentRegion}
+        showsUserLocation={true}
         showsMyLocationButton={false}
-        loadingEnabled
       >
-        {currentLocation && (
+        {location && (
           <Marker
             coordinate={{
-              latitude: currentLocation.latitude,
-              longitude: currentLocation.longitude,
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
             }}
             title="You are here"
-          >
-            <View style={styles.currentMarker}>
-              <View style={styles.currentMarkerInner} />
-            </View>
-          </Marker>
+          />
         )}
       </MapView>
 
       {/* Top Bar */}
-      <SafeAreaView style={styles.topBar} edges={['top']}>
-        <View style={styles.topBarContent}>
-          {/* Menu Button */}
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={handleMenuPress}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.menuIcon}>☰</Text>
-          </TouchableOpacity>
-
-          {/* Location Display */}
-          <View style={styles.locationDisplay}>
-            <Text style={styles.locationLabel}>Your Current Location</Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {currentLocation?.address || 'Getting location...'}
-            </Text>
-          </View>
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.menuButton}>
+          <Ionicons name="menu" size={28} color="#000" />
+        </TouchableOpacity>
+        <View style={styles.topInfo}>
+          <Text style={styles.greeting}>Hey {user?.name?.split(' ')[0] || 'there'}!</Text>
+          <Text style={styles.subtitle}>Where are you going?</Text>
         </View>
-      </SafeAreaView>
+      </View>
 
-      {/* Bottom Card - "Where To?" */}
-      <SafeAreaView style={styles.bottomCard} edges={['bottom']}>
-        {/* Where To Search */}
-        <TouchableOpacity
-          style={styles.whereToButton}
-          onPress={handleWhereToPress}
-          activeOpacity={0.9}
-        >
-          <Text style={styles.whereToText}>Where To?</Text>
-          <View style={styles.scheduleButton}>
-            <TouchableOpacity
-              onPress={handleSchedulePress}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <View style={styles.scheduleChip}>
-                <Text style={styles.scheduleIcon}>🕐</Text>
-                <Text style={styles.scheduleText}>Now</Text>
-                <Text style={styles.scheduleDropdown}>▼</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
+      {/* Search Card */}
+      <View style={styles.searchCard}>
+        <TouchableOpacity style={styles.searchInput} onPress={handleSearchPress}>
+          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+          <Text style={styles.searchPlaceholder}>Where to?</Text>
         </TouchableOpacity>
 
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <QuickAction
-            icon="🏠"
-            label="Home"
-            onPress={() => Alert.alert('Home', 'Set home address in profile')}
-          />
-          <QuickAction
-            icon="💼"
-            label="Work"
-            onPress={() => Alert.alert('Work', 'Set work address in profile')}
-          />
-          <QuickAction
-            icon="⭐"
-            label="Saved"
-            onPress={() => router.push('/(carpool)/saved-routes')}
-          />
-        </View>
+        {/* Saved Places */}
+        <View style={styles.savedPlaces}>
+          <TouchableOpacity style={styles.savedPlace}>
+            <View style={styles.placeIcon}>
+              <Ionicons name="home" size={20} color="#5d1289" />
+            </View>
+            <View style={styles.placeInfo}>
+              <Text style={styles.placeLabel}>Home</Text>
+              <Text style={styles.placeAddress}>Add home address</Text>
+            </View>
+          </TouchableOpacity>
 
-        {/* Recent Searches */}
-        <View style={styles.recentSection}>
-          <Text style={styles.recentSectionTitle}>Recent</Text>
-          <RecentItem
-            icon="📍"
-            title="Owen Roberts Airport"
-            subtitle="Grand Cayman"
-            onPress={() => {}}
-          />
-          <RecentItem
-            icon="📍"
-            title="Camana Bay"
-            subtitle="Grand Cayman"
-            onPress={() => {}}
-          />
-        </View>
-      </SafeAreaView>
+          <View style={styles.placeDivider} />
 
-      {/* Recenter Button */}
-      <TouchableOpacity
-        style={styles.recenterButton}
-        onPress={async () => {
-          const location = await Location.getCurrentPositionAsync({});
-          setRegion({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          });
-        }}
+          <TouchableOpacity style={styles.savedPlace}>
+            <View style={styles.placeIcon}>
+              <Ionicons name="briefcase" size={20} color="#5d1289" />
+            </View>
+            <View style={styles.placeInfo}>
+              <Text style={styles.placeLabel}>Work</Text>
+              <Text style={styles.placeAddress}>Add work address</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Bottom Action Button */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity style={styles.actionButton} onPress={handleSearchPress}>
+          <Ionicons name="car" size={24} color="white" />
+          <Text style={styles.actionButtonText}>Request a Carpool</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Current Location Button */}
+      <TouchableOpacity 
+        style={styles.locationButton} 
+        onPress={getCurrentLocation}
       >
-        <Text style={styles.recenterIcon}>🎯</Text>
+        <Ionicons name="locate" size={24} color="#5d1289" />
       </TouchableOpacity>
     </View>
   );
-}
-
-// Quick Action Component
-function QuickAction({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.quickAction} onPress={onPress}>
-      <Text style={styles.quickActionIcon}>{icon}</Text>
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-// Recent Item Component
-function RecentItem({
-  icon,
-  title,
-  subtitle,
-  onPress,
-}: {
-  icon: string;
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.recentItem} onPress={onPress}>
-      <Text style={styles.recentIcon}>{icon}</Text>
-      <View style={styles.recentInfo}>
-        <Text style={styles.recentItemTitle}>{title}</Text>
-        <Text style={styles.recentSubtitle}>{subtitle}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
   },
-
   map: {
-    width: width,
-    height: height,
+    flex: 1,
   },
-
-  // Current Location Marker
-  currentMarker: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: Colors.white,
+    alignItems: 'center',
+    backgroundColor: 'white',
   },
-
-  currentMarkerInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.white,
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
   },
-
-  // Top Bar
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 24,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 24,
+    backgroundColor: '#5d1289',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   topBar: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.white,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-
-  topBarContent: {
+    top: Platform.OS === 'ios' ? 60 : 48,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
   },
-
   menuButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
+    width: 48,
+    height: 48,
+    backgroundColor: 'white',
+    borderRadius: 24,
     justifyContent: 'center',
-    marginRight: Spacing.md,
-  },
-
-  menuIcon: {
-    fontSize: 24,
-    color: Colors.black,
-  },
-
-  locationDisplay: {
-    flex: 1,
-  },
-
-  locationLabel: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
-    marginBottom: 2,
-  },
-
-  locationText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600',
-    color: Colors.black,
-  },
-
-  // Bottom Card
-  bottomCard: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.md,
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 5,
+    elevation: 4,
   },
-
-  // Where To Button
-  whereToButton: {
-    backgroundColor: Colors.gray[100],
-    borderRadius: 12,
-    padding: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.lg,
-  },
-
-  whereToText: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '600',
-    color: Colors.gray[600],
-  },
-
-  scheduleButton: {
-    // Container for schedule chip
-  },
-
-  scheduleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.black,
-    borderRadius: 20,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    gap: 6,
-  },
-
-  scheduleIcon: {
-    fontSize: 14,
-  },
-
-  scheduleText: {
-    color: Colors.white,
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-  },
-
-  scheduleDropdown: {
-    color: Colors.white,
-    fontSize: 10,
-  },
-
-  // Quick Actions
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.lg,
-    paddingHorizontal: Spacing.lg,
-  },
-
-  quickAction: {
-    alignItems: 'center',
-  },
-
-  quickActionIcon: {
-    fontSize: 32,
-    marginBottom: Spacing.xs,
-  },
-
-  quickActionLabel: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[700],
-    fontWeight: '500',
-  },
-
-  // Recent Section
-  recentSection: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray[200],
-    paddingTop: Spacing.md,
-  },
-
-  recentSectionTitle: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '700',
-    color: Colors.gray[800],
-    marginBottom: Spacing.sm,
-  },
-
-  recentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[100],
-  },
-
-  recentIcon: {
-    fontSize: 20,
-    marginRight: Spacing.md,
-  },
-
-  recentInfo: {
+  topInfo: {
     flex: 1,
+    marginLeft: 16,
   },
-
-  recentItemTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: 2,
+  greeting: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
   },
-
-  recentSubtitle: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
   },
-
-  // Recenter Button
-  recenterButton: {
+  searchCard: {
     position: 'absolute',
-    right: Spacing.lg,
-    bottom: 350, // Above bottom card
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.white,
+    top: Platform.OS === 'ios' ? 160 : 148,
+    left: 16,
+    right: 16,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  searchInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchPlaceholder: {
+    fontSize: 16,
+    color: '#666',
+  },
+  savedPlaces: {
+    borderTopWidth: 1,
+    borderTopColor: '#e5e5e5',
+    paddingTop: 16,
+  },
+  savedPlace: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  placeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  placeLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  placeAddress: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  placeDivider: {
+    height: 1,
+    backgroundColor: '#e5e5e5',
+    marginVertical: 8,
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 48 : 32,
+    left: 16,
+    right: 16,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    backgroundColor: '#5d1289',
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-
-  recenterIcon: {
-    fontSize: 24,
+  actionButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  locationButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: Platform.OS === 'ios' ? 140 : 124,
+    width: 48,
+    height: 48,
+    backgroundColor: 'white',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });
+
+// CRITICAL: Export as default for Expo Router
+export default HomeScreen;

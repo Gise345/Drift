@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { authInstance, firestore } from '../config/firebase';
+import { firebaseAuth, firebaseDb } from '../config/firebase';
+import { onAuthStateChanged } from '@react-native-firebase/auth';
+import { doc, getDoc } from '@react-native-firebase/firestore';
 import { FirebaseService } from '../services/firebase-service';
 
 interface User {
@@ -10,7 +12,7 @@ interface User {
   roles: string[];
   hasAcceptedTerms: boolean;
   rating?: number;
-  createdAt?: Date;
+  createdAt?: any;
 }
 
 interface AuthStore {
@@ -40,12 +42,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   initialize: () => {
-    // Listen to Firebase auth state
-    authInstance.onAuthStateChanged(async (firebaseUser) => {
+    // Listen to Firebase auth state with v22 modular API
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          // Fetch full user data from Firestore
-          const userDoc = await firestore().collection('users').doc(firebaseUser.uid).get();
+          // Fetch full user data from Firestore using modular API
+          const userRef = doc(firebaseDb, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userRef);
+          
           if (userDoc.exists) {
             set({
               user: { id: userDoc.id, ...userDoc.data() } as User,
@@ -54,7 +58,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
           } else {
             // User authenticated but no Firestore doc - sign them out
             console.warn('User authenticated but no Firestore document found');
-            await authInstance.signOut();
+            await FirebaseService.signOut();
             set({ user: null, loading: false });
           }
         } catch (error) {
@@ -65,5 +69,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         set({ user: null, loading: false });
       }
     });
+
+    return unsubscribe;
   }
 }));

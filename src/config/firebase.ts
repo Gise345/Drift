@@ -1,13 +1,17 @@
-// React Native Firebase - Modular API (v22+)
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+// Firebase v22+ Modular API Configuration
+import { getApp } from '@react-native-firebase/app';
+import auth, { getAuth } from '@react-native-firebase/auth';
+import firestore, { getFirestore } from '@react-native-firebase/firestore';
 
-// Firebase is auto-initialized via google-services.json on Android
-// and GoogleService-Info.plist on iOS
+// Initialize Firebase (automatically done via google-services.json)
+// Just export the modular instances
 
-// Export modular instances - don't pass app, let them use default
-export const authInstance = auth();
-export const db = firestore();
+// Get the default Firebase app instance
+export const firebaseApp = getApp();
 
-// Default exports for backward compatibility
+// Export modular auth and firestore
+export const firebaseAuth = getAuth(firebaseApp);
+export const firebaseDb = getFirestore(firebaseApp);
+
+// Export default instances for convenience
 export { auth, firestore };

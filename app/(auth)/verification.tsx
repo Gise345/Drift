@@ -2,7 +2,7 @@
  * Drift Verification Code Screen
  * Figma: 04_Verification_Code.png & 07_Verification_Code.png
  * 
- * OTP verification screen for phone number
+ * OTP verification screen for phone number OR email
  * Used for both registration and password reset
  */
 
@@ -23,19 +23,21 @@ import { DriftButton, ArrowRight } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
 
-const CODE_LENGTH = 4;
+const CODE_LENGTH = 6; // Changed to 6 digits for better security
 
 export default function VerificationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { setUser } = useAuthStore();
   
-  const phone = params.phone as string;
+  const target = params.target as string; // Email or phone number
   const type = params.type as 'register' | 'forgot-password';
+  const method = (params.method as 'phone' | 'email') || 'phone';
   const name = params.name as string;
   const email = params.email as string;
+  const phone = params.phone as string;
 
-  const [code, setCode] = useState(['', '', '', '']);
+  const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
   const inputRefs = useRef<TextInput[]>([]);
@@ -81,7 +83,9 @@ export default function VerificationScreen() {
     setLoading(true);
 
     try {
-      // TODO: Implement Firebase phone verification
+      // TODO: Implement Firebase verification
+      // For phone: verify Firebase Phone Auth code
+      // For email: verify custom OTP or email link
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       if (type === 'register') {
@@ -90,11 +94,12 @@ export default function VerificationScreen() {
           id: 'user-' + Date.now(),
           email: email,
           name: name,
-          phone: phone,
+          phone: phone || '',
           roles: ['RIDER'],
           hasAcceptedTerms: true,
           rating: 5.0,
           createdAt: new Date(),
+          verified: true,
         };
 
         setUser(mockUser);
@@ -104,12 +109,12 @@ export default function VerificationScreen() {
         // Password reset flow
         router.push({
           pathname: '/(auth)/reset-password',
-          params: { phone, code: verificationCode },
+          params: { target, code: verificationCode },
         });
       }
     } catch (error) {
       Alert.alert('Error', 'Invalid verification code. Please try again.');
-      setCode(['', '', '', '']);
+      setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
       setLoading(false);
@@ -124,9 +129,19 @@ export default function VerificationScreen() {
     try {
       // TODO: Resend OTP code
       await new Promise(resolve => setTimeout(resolve, 1000));
-      Alert.alert('Success', 'Verification code sent!');
+      Alert.alert('Success', `Verification code sent to your ${method}!`);
     } catch (error) {
       Alert.alert('Error', 'Failed to resend code. Please try again.');
+    }
+  };
+
+  // Format target for display (hide part of email/phone)
+  const formatTarget = (target: string) => {
+    if (method === 'email') {
+      const [user, domain] = target.split('@');
+      return `${user.slice(0, 2)}***@${domain}`;
+    } else {
+      return target.slice(0, -4) + '****';
     }
   };
 
@@ -151,14 +166,26 @@ export default function VerificationScreen() {
 
           {/* Illustration */}
           <View style={styles.illustrationContainer}>
-            <Text style={styles.illustrationEmoji}>📱</Text>
+            <Text style={styles.illustrationEmoji}>
+              {method === 'email' ? '📧' : '📱'}
+            </Text>
           </View>
 
           {/* Description */}
           <Text style={styles.description}>
-            We've sent a verification code to
+            We've sent a {CODE_LENGTH}-digit verification code to
           </Text>
-          <Text style={styles.phoneNumber}>{phone}</Text>
+          <Text style={styles.targetText}>{formatTarget(target)}</Text>
+          
+          {/* Method Badge */}
+          <View style={styles.methodBadge}>
+            <Text style={styles.methodEmoji}>
+              {method === 'email' ? '📧' : '📱'}
+            </Text>
+            <Text style={styles.methodText}>
+              via {method === 'email' ? 'Email' : 'SMS'}
+            </Text>
+          </View>
 
           {/* Code Inputs */}
           <View style={styles.codeContainer}>
@@ -196,6 +223,30 @@ export default function VerificationScreen() {
             )}
           </View>
 
+          {/* Change Method Link (if email) */}
+          {method === 'email' && phone && (
+            <TouchableOpacity 
+              style={styles.changeMethodButton}
+              onPress={() => {
+                Alert.alert(
+                  'Change Verification Method',
+                  'Would you like to receive the code via SMS instead?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Use SMS', 
+                      onPress: () => router.back() 
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.changeMethodText}>
+                📱 Use SMS instead
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {/* Verify Button */}
           <DriftButton
             title="Verify"
@@ -210,7 +261,7 @@ export default function VerificationScreen() {
 
           {/* Help Text */}
           <Text style={styles.helpText}>
-            Didn't receive the code? Check your phone number or try resending.
+            Didn't receive the code? Check your {method === 'email' ? 'email inbox and spam folder' : 'phone messages'} or try resending.
           </Text>
         </View>
       </KeyboardAvoidingView>
@@ -273,25 +324,48 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
 
-  phoneNumber: {
+  targetText: {
     fontSize: Typography.fontSize.lg,
     fontWeight: '700',
     color: Colors.black,
     textAlign: 'center',
-    marginBottom: Spacing['3xl'],
+    marginBottom: Spacing.md,
+  },
+
+  // Method Badge
+  methodBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: 16,
+    marginBottom: Spacing['2xl'],
+  },
+
+  methodEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+
+  methodText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '600',
+    color: Colors.black,
   },
 
   // Code Inputs
   codeContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    gap: 8,
     marginBottom: Spacing.xl,
   },
 
   codeInput: {
-    width: 60,
-    height: 60,
+    width: 48,
+    height: 56,
     borderWidth: 2,
     borderColor: Colors.gray[300],
     borderRadius: 12,
@@ -310,7 +384,7 @@ const styles = StyleSheet.create({
   // Resend
   resendContainer: {
     alignItems: 'center',
-    marginBottom: Spacing['2xl'],
+    marginBottom: Spacing.lg,
   },
 
   resendTimer: {
@@ -322,6 +396,18 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.purple,
     fontWeight: '700',
+  },
+
+  // Change Method
+  changeMethodButton: {
+    alignSelf: 'center',
+    marginBottom: Spacing.lg,
+  },
+
+  changeMethodText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.purple,
+    fontWeight: '600',
   },
 
   // Verify Button

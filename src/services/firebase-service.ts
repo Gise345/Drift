@@ -1,13 +1,30 @@
-import { authInstance, firestore } from '../config/firebase';
+import { firebaseAuth, firebaseDb } from '../config/firebase';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  sendPasswordResetEmail
+} from '@react-native-firebase/auth';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  addDoc, 
+  serverTimestamp,
+  onSnapshot,
+  Timestamp
+} from '@react-native-firebase/firestore';
 
 export const FirebaseService = {
-  // Authentication
+  // Authentication - v22 Modular API
   signUp: async (email: string, password: string, userData: any) => {
-    const userCredential = await authInstance.createUserWithEmailAndPassword(email, password);
+    const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
     const user = userCredential.user;
 
-    // Create user document in Firestore
-    await firestore().collection('users').doc(user.uid).set({
+    // Create user document in Firestore using modular API
+    const userRef = doc(firebaseDb, 'users', user.uid);
+    await setDoc(userRef, {
       ...userData,
       email,
       roles: ['RIDER'],
@@ -15,43 +32,58 @@ export const FirebaseService = {
       hasAcceptedTerms: false,
       ratingAvg: 0,
       ratingCount: 0,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp()
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
 
     return user;
   },
 
   signIn: async (email: string, password: string) => {
-    const userCredential = await authInstance.signInWithEmailAndPassword(email, password);
+    const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, password);
     return userCredential.user;
   },
 
   signOut: async () => {
-    await authInstance.signOut();
+    await firebaseSignOut(firebaseAuth);
   },
 
-  // Firestore Operations
+  resetPassword: async (email: string) => {
+    await sendPasswordResetEmail(firebaseAuth, email);
+  },
+
+  // Firestore Operations - v22 Modular API
   getUser: async (userId: string) => {
-    const userDoc = await firestore().collection('users').doc(userId).get();
+    const userRef = doc(firebaseDb, 'users', userId);
+    const userDoc = await getDoc(userRef);
     return userDoc.exists ? { id: userDoc.id, ...userDoc.data() } : null;
   },
 
+  updateUser: async (userId: string, data: any) => {
+    const userRef = doc(firebaseDb, 'users', userId);
+    await setDoc(userRef, {
+      ...data,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  },
+
   createCarpoolRequest: async (data: any) => {
-    const docRef = await firestore().collection('carpoolRequests').add({
+    const requestsRef = collection(firebaseDb, 'carpoolRequests');
+    const docRef = await addDoc(requestsRef, {
       ...data,
       status: 'MATCHING',
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 min
+      createdAt: serverTimestamp(),
+      expiresAt: Timestamp.fromDate(new Date(Date.now() + 30 * 60 * 1000)) // 30 min
     });
     return docRef.id;
   },
 
-  // Real-time listeners
+  // Real-time listeners - v22 Modular API
   subscribeToTrip: (tripId: string, callback: (data: any) => void) => {
-    const unsubscribe = firestore().collection('trips').doc(tripId).onSnapshot((doc) => {
-      if (doc.exists) {
-        callback({ id: doc.id, ...doc.data() });
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+    const unsubscribe = onSnapshot(tripRef, (docSnapshot) => {
+      if (docSnapshot.exists) {
+        callback({ id: docSnapshot.id, ...docSnapshot.data() });
       }
     });
     return unsubscribe;

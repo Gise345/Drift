@@ -1,239 +1,79 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
-import { useLocationStore } from '@/src/stores/location-store';
-import { Location } from '@/src/types/carpool';
 
-const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
-  black: '#000000',
-  white: '#FFFFFF',
-  gray: {
-    50: '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
-    400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
-  },
-  success: '#10B981',
-  error: '#EF4444',
-};
+const SelectDestinationScreen = () => {
+  const { pickupLocation, destination, setRoute } = useCarpoolStore();
+  const [loading, setLoading] = useState(false);
+  const [routeCoordinates, setRouteCoordinates] = useState<any[]>([]);
+  const [distance, setDistance] = useState(0);
+  const [duration, setDuration] = useState(0);
 
-interface RouteResponse {
-  distance: number;
-  duration: number;
-  polyline: string;
-}
-
-export default function SelectDestinationScreen() {
-  const router = useRouter();
-  const mapRef = useRef<MapView>(null);
-  
-  const { destination, pickupLocation, setRoute } = useCarpoolStore();
-  const { currentLocation } = useLocationStore();
-  
-  const [loading, setLoading] = useState(true);
-  const [routeInfo, setRouteInfo] = useState<{
-    distance: number;
-    duration: number;
-    polylinePoints: Array<{ latitude: number; longitude: number }>;
-  } | null>(null);
-
-  // Get pickup location (either set pickup or current location)
-  const pickup = pickupLocation || currentLocation;
-
-  // Fetch route from Google Directions API
   useEffect(() => {
-    if (pickup && destination) {
+    if (pickupLocation && destination) {
       fetchRoute();
     }
-  }, [pickup, destination]);
+  }, [pickupLocation, destination]);
 
   const fetchRoute = async () => {
-    if (!pickup || !destination) return;
-
     setLoading(true);
     try {
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-      const origin = `${pickup.latitude},${pickup.longitude}`;
-      const dest = `${destination.latitude},${destination.longitude}`;
-      
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&key=${API_KEY}`;
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      if (data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const leg = route.legs[0];
-        
-        // Decode polyline
-        const polylinePoints = decodePolyline(route.overview_polyline.points);
-        
-        const routeData = {
-          distance: leg.distance.value, // meters
-          duration: leg.duration.value, // seconds
-          polylinePoints,
-        };
-        
-        setRouteInfo(routeData);
-        
-        // Fit map to route
-        if (mapRef.current) {
-          mapRef.current.fitToCoordinates(polylinePoints, {
-            edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
-            animated: true,
-          });
-        }
-      }
+      // Mock route data - replace with actual Google Directions API call
+      const mockRoute = {
+        coordinates: [
+          { latitude: 19.3133, longitude: -81.2546 },
+          { latitude: 19.3200, longitude: -81.2600 },
+        ],
+        distance: 5200, // in meters
+        duration: 720, // in seconds (12 minutes)
+      };
+
+      setRouteCoordinates(mockRoute.coordinates);
+      setDistance(mockRoute.distance);
+      setDuration(mockRoute.duration);
+
+      setRoute({
+        polylinePoints: mockRoute.coordinates,
+        distance: mockRoute.distance,
+        duration: mockRoute.duration,
+      });
     } catch (error) {
-      console.error('Route fetch error:', error);
-      Alert.alert('Error', 'Failed to load route');
+      console.error('Error fetching route:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Decode Google polyline format
-  const decodePolyline = (encoded: string): Array<{ latitude: number; longitude: number }> => {
-    const poly: Array<{ latitude: number; longitude: number }> = [];
-    let index = 0;
-    let lat = 0;
-    let lng = 0;
-
-    while (index < encoded.length) {
-      let b;
-      let shift = 0;
-      let result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
-      lng += dlng;
-
-      poly.push({
-        latitude: lat / 1e5,
-        longitude: lng / 1e5,
-      });
-    }
-    return poly;
-  };
-
-  // Get initial map region
-  const getInitialRegion = (): Region | undefined => {
-    if (pickup) {
-      return {
-        latitude: pickup.latitude,
-        longitude: pickup.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
-    }
-    return undefined;
-  };
-
-  // Confirm route and go to vehicle selection
-  const handleConfirmRoute = () => {
-    if (!routeInfo) {
-      Alert.alert('Error', 'Please wait for route to load');
-      return;
-    }
-    
-    // Save route to store
-    setRoute({
-      distance: routeInfo.distance,
-      duration: routeInfo.duration,
-      polylinePoints: routeInfo.polylinePoints,
-      origin: pickup!,
-      destination: destination!,
-    });
-    
-    // Navigate to vehicle selection
+  const handleConfirm = () => {
     router.push('/(rider)/vehicle-selection');
-  };
-
-  const handleAddStop = () => {
-    Alert.alert('Add Stop', 'Multi-stop feature coming soon!');
-    // router.push('/(rider)/add-stop');
-  };
-
-  const handleEditPickup = () => {
-    router.push('/(rider)/search-location');
-  };
-
-  const handleEditDestination = () => {
-    router.push('/(rider)/search-location');
-  };
-
-  // Format distance
-  const formatDistance = (meters: number) => {
-    const km = meters / 1000;
-    return km < 1 ? `${meters}m` : `${km.toFixed(1)}km`;
-  };
-
-  // Format duration
-  const formatDuration = (seconds: number) => {
-    const minutes = Math.round(seconds / 60);
-    return `${minutes} min`;
   };
 
   return (
     <View style={styles.container}>
       {/* Map */}
       <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
         style={styles.map}
-        initialRegion={getInitialRegion()}
-        showsUserLocation
-        showsMyLocationButton={false}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={{
+          latitude: 19.3133,
+          longitude: -81.2546,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
       >
-        {/* Pickup Marker */}
-        {pickup && (
+        {pickupLocation && (
           <Marker
             coordinate={{
-              latitude: pickup.latitude,
-              longitude: pickup.longitude,
+              latitude: pickupLocation.latitude,
+              longitude: pickupLocation.longitude,
             }}
             title="Pickup"
-            description={pickup.address}
-          >
-            <View style={styles.markerContainer}>
-              <View style={styles.pickupMarker}>
-                <View style={styles.pickupDot} />
-              </View>
-            </View>
-          </Marker>
+            pinColor="green"
+          />
         )}
-
-        {/* Destination Marker */}
         {destination && (
           <Marker
             coordinate={{
@@ -241,298 +81,223 @@ export default function SelectDestinationScreen() {
               longitude: destination.longitude,
             }}
             title="Destination"
-            description={destination.address}
-          >
-            <View style={styles.markerContainer}>
-              <View style={styles.destinationMarker}>
-                <Text style={styles.markerText}>📍</Text>
-              </View>
-            </View>
-          </Marker>
+            pinColor="red"
+          />
         )}
-
-        {/* Route Polyline */}
-        {routeInfo?.polylinePoints && (
+        {routeCoordinates.length > 0 && (
           <Polyline
-            coordinates={routeInfo.polylinePoints}
-            strokeColor={Colors.black}
+            coordinates={routeCoordinates}
+            strokeColor="#5d1289"
             strokeWidth={4}
           />
         )}
       </MapView>
 
-      {/* Back Button */}
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Text style={styles.backIcon}>←</Text>
-      </TouchableOpacity>
-
-      {/* Menu Button (Top Right) */}
-      <TouchableOpacity style={styles.menuButton}>
-        <View style={styles.menuLine} />
-        <View style={styles.menuLine} />
-        <View style={styles.menuLine} />
-      </TouchableOpacity>
-
-      {/* Location Details Card */}
-      <View style={styles.detailsCard}>
-        {/* Pickup */}
-        <TouchableOpacity
-          style={styles.locationRow}
-          onPress={handleEditPickup}
-        >
-          <View style={styles.locationDot} />
-          <View style={styles.locationInfo}>
-            <Text style={styles.locationLabel}>From</Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {pickup?.address || 'Current Location'}
-            </Text>
-          </View>
+      {/* Top Info Bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        {/* Destination */}
-        <TouchableOpacity
-          style={styles.locationRow}
-          onPress={handleEditDestination}
-        >
-          <View style={[styles.locationDot, styles.locationDotRed]} />
-          <View style={styles.locationInfo}>
-            <Text style={styles.locationLabel}>Where To</Text>
-            <Text style={styles.locationText} numberOfLines={1}>
-              {destination?.address || 'Select destination'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={handleAddStop}
-          >
-            <Text style={styles.addIcon}>+</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-
-        {/* Route Info */}
-        {routeInfo && (
-          <View style={styles.routeInfo}>
-            <Text style={styles.routeInfoText}>
-              {formatDistance(routeInfo.distance)} • {formatDuration(routeInfo.duration)}
-            </Text>
-          </View>
-        )}
+        <View style={styles.topInfo}>
+          <Text style={styles.topLabel}>Route Preview</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#5d1289" />
+          ) : (
+            <Text style={styles.topValue}>{(distance / 1000).toFixed(1)} km • {Math.round(duration / 60)} min</Text>
+          )}
+        </View>
       </View>
 
-      {/* Confirm Button */}
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={[styles.confirmButton, loading && styles.confirmButtonDisabled]}
-          onPress={handleConfirmRoute}
-          disabled={loading || !routeInfo}
+      {/* Bottom Card */}
+      <View style={styles.bottomCard}>
+        {/* Route Info */}
+        <View style={styles.routeInfo}>
+          <View style={styles.locationRow}>
+            <View style={styles.iconContainer}>
+              <View style={styles.greenDot} />
+            </View>
+            <View style={styles.locationDetails}>
+              <Text style={styles.locationLabel}>Pickup</Text>
+              <Text style={styles.locationText} numberOfLines={1}>
+                {pickupLocation?.address || 'Current Location'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={styles.editText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.dividerLine} />
+
+          <View style={styles.locationRow}>
+            <View style={styles.iconContainer}>
+              <View style={styles.redSquare} />
+            </View>
+            <View style={styles.locationDetails}>
+              <Text style={styles.locationLabel}>Destination</Text>
+              <Text style={styles.locationText} numberOfLines={1}>
+                {destination?.address || 'Select destination'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={styles.editText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Add Stop Button */}
+        <TouchableOpacity style={styles.addStopButton}>
+          <Ionicons name="add-circle-outline" size={20} color="#5d1289" />
+          <Text style={styles.addStopText}>Add Stop</Text>
+        </TouchableOpacity>
+
+        {/* Confirm Button */}
+        <TouchableOpacity 
+          style={[styles.confirmButton, loading && styles.confirmButtonDisabled]} 
+          onPress={handleConfirm}
+          disabled={loading}
         >
-          {loading ? (
-            <ActivityIndicator color={Colors.white} />
-          ) : (
-            <>
-              <Text style={styles.confirmButtonText}>Confirm Destination</Text>
-              <Text style={styles.confirmButtonArrow}>→</Text>
-            </>
-          )}
+          <Text style={styles.confirmButtonText}>
+            {loading ? 'Loading...' : 'Confirm Destination'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
   },
   map: {
     flex: 1,
   },
-  backButton: {
+  topBar: {
     position: 'absolute',
-    top: 60,
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: Colors.black,
-  },
-  menuButton: {
-    position: 'absolute',
-    top: 60,
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  menuLine: {
-    width: 20,
-    height: 2,
-    backgroundColor: Colors.black,
-    marginVertical: 2,
-  },
-  markerContainer: {
-    alignItems: 'center',
-  },
-  pickupMarker: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.white,
-    borderWidth: 3,
-    borderColor: Colors.success,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pickupDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.success,
-  },
-  destinationMarker: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.success,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  markerText: {
-    fontSize: 20,
-  },
-  detailsCard: {
-    position: 'absolute',
-    top: 120,
+    top: 48,
     left: 16,
     right: 16,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  locationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.success,
+  backButton: {
     marginRight: 12,
   },
-  locationDotRed: {
-    backgroundColor: Colors.error,
-  },
-  locationInfo: {
+  topInfo: {
     flex: 1,
   },
-  locationLabel: {
+  topLabel: {
     fontSize: 12,
+    color: '#666',
+  },
+  topValue: {
+    fontSize: 16,
     fontWeight: '600',
-    color: Colors.gray[600],
-    marginBottom: 2,
+    color: '#000',
+    marginTop: 2,
   },
-  locationText: {
-    fontSize: 14,
-    color: Colors.black,
-    fontWeight: '500',
-  },
-  addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  addIcon: {
-    fontSize: 20,
-    color: Colors.black,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.gray[200],
-    marginVertical: 8,
-  },
-  routeInfo: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray[200],
-  },
-  routeInfoText: {
-    fontSize: 13,
-    color: Colors.gray[600],
-    textAlign: 'center',
-  },
-  bottomContainer: {
+  bottomCard: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
-    backgroundColor: 'transparent',
-  },
-  confirmButton: {
-    flexDirection: 'row',
-    backgroundColor: Colors.black,
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
     elevation: 8,
   },
+  routeInfo: {
+    marginBottom: 16,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  iconContainer: {
+    width: 32,
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  greenDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+  },
+  redSquare: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#EF4444',
+  },
+  locationDetails: {
+    flex: 1,
+  },
+  locationLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  locationText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
+    marginTop: 2,
+  },
+  editText: {
+    fontSize: 14,
+    color: '#5d1289',
+    fontWeight: '600',
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: '#e5e5e5',
+    marginVertical: 8,
+  },
+  addStopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#5d1289',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  addStopText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#5d1289',
+    fontWeight: '600',
+  },
+  confirmButton: {
+    backgroundColor: '#000',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
   confirmButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   confirmButtonText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.white,
-    marginRight: 8,
-  },
-  confirmButtonArrow: {
-    fontSize: 20,
-    color: Colors.white,
-    fontWeight: '700',
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
+
+// CRITICAL: Export as default for Expo Router
+export default SelectDestinationScreen;
