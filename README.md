@@ -207,9 +207,6 @@ npm install libphonenumber-js
 
 # Image picker
 npm install expo-image-picker
-
-# Payments (when ready)
-npm install @stripe/stripe-react-native
 ```
 
 ---

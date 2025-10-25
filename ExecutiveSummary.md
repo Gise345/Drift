@@ -192,11 +192,9 @@ Convert driver app:
 - 📦 react-native-maps
 - 📦 libphonenumber-js
 - 📦 expo-image-picker
-- 📦 @stripe/stripe-react-native (for payments)
 
 ### **Configuration Needed:**
 - 🗺️ Google Maps API key (you have placeholder)
-- 💳 Stripe account for payments
 - 📱 Push notification setup
 
 ---

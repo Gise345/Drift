@@ -103,7 +103,7 @@ export default function AddCardScreen() {
     setLoading(true);
 
     try {
-      // Simulate API call to add card (integrate with Stripe)
+      // Simulate API call to add card (integrate with PayPal)
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       Alert.alert('Success', 'Card added successfully', [
@@ -247,7 +247,7 @@ export default function AddCardScreen() {
             <View style={styles.securityNotice}>
               <Text style={styles.securityIcon}>🔒</Text>
               <Text style={styles.securityText}>
-                Your card information is encrypted and secure. We use Stripe for payment processing.
+                Your card information is encrypted and secure. We use PayPal for payment processing.
               </Text>
             </View>
           </View>
