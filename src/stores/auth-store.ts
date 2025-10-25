@@ -13,6 +13,7 @@ interface User {
   hasAcceptedTerms: boolean;
   rating?: number;
   createdAt?: any;
+  profilePhoto?: string;
 }
 
 interface AuthStore {
@@ -24,6 +25,7 @@ interface AuthStore {
   setLoading: (loading: boolean) => void;
   setMode: (mode: 'RIDER' | 'DRIVER') => void;
   signOut: () => Promise<void>;
+  logout: () => Promise<void>;
   initialize: () => void;
 }
 
@@ -37,6 +39,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   setMode: (mode) => set({ currentMode: mode }),
 
   signOut: async () => {
+    await FirebaseService.signOut();
+    set({ user: null });
+  },
+
+  logout: async () => {
     await FirebaseService.signOut();
     set({ user: null });
   },
