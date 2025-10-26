@@ -1,15 +1,18 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
  * TABS LAYOUT
- * 
+ *
  * Bottom navigation with 3 tabs:
  * 1. Home - Main map and booking
  * 2. Activity - Trip history (my-trips screen)
  * 3. Profile - User profile
  */
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -20,8 +23,8 @@ export default function TabsLayout() {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#e5e5e5',
-          height: 60,
-          paddingBottom: 8,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom + 8,
           paddingTop: 8,
         },
         tabBarLabelStyle: {

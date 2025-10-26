@@ -117,8 +117,8 @@ export default function SearchLocationScreen() {
   const searchPlaces = async (query: string) => {
     setLoading(true);
     try {
-      // Use Google Places Autocomplete API
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+      // Use Google Places Autocomplete API with dedicated Places API key
+      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
       const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
         query
       )}&components=country:ky&key=${API_KEY}`;
@@ -139,12 +139,12 @@ export default function SearchLocationScreen() {
   // Get place details (coordinates)
   const getPlaceDetails = async (placeId: string): Promise<Location | null> => {
     try {
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
       const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${API_KEY}`;
-      
+
       const response = await fetch(detailsUrl);
       const data = await response.json();
-      
+
       if (data.result?.geometry?.location) {
         return {
           address: data.result.formatted_address,
