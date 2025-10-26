@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 /**
  * TABS LAYOUT
  * 
- * This creates the bottom tab bar for the main app.
- * Users see this after logging in.
+ * Bottom navigation with 3 tabs:
+ * 1. Home - Main map and booking
+ * 2. Activity - Trip history (my-trips screen)
+ * 3. Profile - User profile
  */
 export default function TabsLayout() {
   return (
@@ -39,18 +41,19 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Activity Tab */}
+      {/* Activity Tab - Links to my-trips */}
       <Tabs.Screen
         name="activity"
         options={{
           title: 'Activity',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list" size={size} color={color} />
+            <Ionicons name="time-outline" size={size} color={color} />
           ),
+          href: '/(rider)/my-trips', // This makes the tab navigate to my-trips
         }}
       />
 
-      {/* Profile Tab */}
+      {/* Profile Tab - Links to profile */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -58,6 +61,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
+          href: '/(rider)/profile', // This makes the tab navigate to profile
         }}
       />
     </Tabs>
