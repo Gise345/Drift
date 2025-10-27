@@ -17,10 +17,12 @@ import { useCarpoolStore } from '@/src/stores/carpool-store';
 // CRITICAL: Use the correct API key for Directions API
 // If you created a separate Directions API key (recommended), use it here
 // Otherwise, use the Places API key which should have Directions API enabled
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+const GOOGLE_DIRECTIONS_API_KEY = 
+  process.env.EXPO_PUBLIC_GOOGLE_DIRECTIONS_API_KEY || 
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 interface RouteData {
-  polylinePoints: LatLng[];
+  coordinates: LatLng[];
   distance: number;
   duration: number;
 }
@@ -89,9 +91,9 @@ const SelectDestinationScreen = () => {
       return;
     }
 
-    if (!GOOGLE_PLACES_API_KEY) {
+    if (!GOOGLE_DIRECTIONS_API_KEY) {
       Alert.alert('Error', 'Google Directions API key not configured');
-      console.error('EXPO_PUBLIC_GOOGLE_PLACES_API_KEY or EXPO_PUBLIC_GOOGLE_PLACES_API_KEY not found in environment');
+      console.error('EXPO_PUBLIC_GOOGLE_DIRECTIONS_API_KEY or EXPO_PUBLIC_GOOGLE_PLACES_API_KEY not found in environment');
       return;
     }
 
@@ -102,7 +104,7 @@ const SelectDestinationScreen = () => {
 
       // CRITICAL: Using the Directions/Places API key for fetch() calls
       // This key MUST have Directions API enabled in Google Cloud Console
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&key=${GOOGLE_PLACES_API_KEY}`;
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
       console.log('Fetching route...');
       console.log('From:', origin);
@@ -135,7 +137,7 @@ const SelectDestinationScreen = () => {
         setDuration(leg.duration.value / 60); // Convert to minutes
 
         // Save to store
-        const routeData: RouteData = {
+        const routeData = {
           polylinePoints: coords,
           distance: leg.distance.value,
           duration: leg.duration.value,
