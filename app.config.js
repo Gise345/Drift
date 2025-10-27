@@ -18,10 +18,8 @@ module.exports = {
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation."
-      },
-      config: {
-        googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
       }
+      // Note: We'll use the react-native-maps plugin instead of ios.config.googleMapsApiKey
     },
     android: {
       package: "com.drift.app",
@@ -35,7 +33,7 @@ module.exports = {
         "ACCESS_BACKGROUND_LOCATION"
       ],
       googleServicesFile: "./google-services.json"
-      // Note: We removed the config.googleMaps section - the plugin handles it
+      // Note: We'll use the react-native-maps plugin instead of android.config.googleMaps
     },
     plugins: [
       "expo-router",
@@ -67,7 +65,13 @@ module.exports = {
       ],
       "@react-native-firebase/app",
       "@react-native-google-signin/google-signin",
-      "./plugins/withGoogleMapsApiKey.js"  // Custom plugin for Google Maps API key
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+          "iosGoogleMapsApiKey": process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+        }
+      ]
     ],
     scheme: "drift",
     web: {

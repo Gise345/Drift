@@ -1,58 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
+  FlatList,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
-import { useLocationStore } from '@/src/stores/location-store';
-import { Location } from '@/src/types/carpool';
+import * as Location from 'expo-location';
 
-const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
-  black: '#000000',
-  white: '#FFFFFF',
-  gray: {
-    50: '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
-    400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
-  },
-  success: '#10B981',
-  error: '#EF4444',
-};
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 interface PlacePrediction {
-  place_id: string;
   description: string;
+  place_id: string;
   structured_formatting: {
     main_text: string;
     secondary_text: string;
   };
-  distance_meters?: number;
 }
 
-interface SavedLocation {
+interface SavedPlace {
   id: string;
   name: string;
   address: string;
-  icon: string;
+  icon: any;
   coordinates?: {
     latitude: number;
     longitude: number;
@@ -60,537 +39,501 @@ interface SavedLocation {
 }
 
 export default function SearchLocationScreen() {
-  const router = useRouter();
   const { setDestination, setPickupLocation, pickupLocation } = useCarpoolStore();
-  const { currentLocation } = useLocationStore();
-  
-  const [searchQuery, setSearchQuery] = useState('');
+
+  const [pickupQuery, setPickupQuery] = useState('');
+  const [destinationQuery, setDestinationQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isPickupMode, setIsPickupMode] = useState(false); // false = destination, true = pickup
+  const [activeInput, setActiveInput] = useState<'pickup' | 'destination'>('destination');
+  const [recentSearches, setRecentSearches] = useState<SavedPlace[]>([]);
 
-  // Sample saved places (replace with real data from AsyncStorage)
-  const savedPlaces: SavedLocation[] = [
+  const pickupRef = useRef<TextInput>(null);
+  const destinationRef = useRef<TextInput>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Sample saved places - replace with real data
+  const savedPlaces: SavedPlace[] = [
     {
       id: '1',
-      name: 'Home',
-      address: 'West Bay, Grand Cayman',
-      icon: '🏠',
-    },
-    {
-      id: '2',
       name: 'Work',
-      address: 'George Town, Grand Cayman',
-      icon: '💼',
+      address: '3PL',
+      icon: 'briefcase',
     },
   ];
 
-  // Sample recent searches
-  const recentSearches: SavedLocation[] = [
-    {
-      id: 'r1',
-      name: 'Camana Bay',
-      address: 'Grand Cayman',
-      icon: '📍',
-    },
-    {
-      id: 'r2',
-      name: 'Seven Mile Beach',
-      address: 'Grand Cayman',
-      icon: '📍',
-    },
-  ];
+  useEffect(() => {
+    // Load pickup location if available
+    if (pickupLocation) {
+      setPickupQuery(pickupLocation.address);
+    } else {
+      getCurrentLocation();
+    }
+
+    // Auto-focus destination field
+    setTimeout(() => {
+      destinationRef.current?.focus();
+    }, 300);
+  }, []);
 
   // Debounced search
   useEffect(() => {
-    if (searchQuery.length > 2) {
-      const timer = setTimeout(() => {
-        searchPlaces(searchQuery);
+    const query = activeInput === 'pickup' ? pickupQuery : destinationQuery;
+
+    if (query.length > 2) {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+
+      searchTimeoutRef.current = setTimeout(() => {
+        searchPlaces(query);
       }, 300);
-      return () => clearTimeout(timer);
     } else {
       setPredictions([]);
     }
-  }, [searchQuery]);
 
-  // Search places using Google Places API
-  const searchPlaces = async (query: string) => {
-    setLoading(true);
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [pickupQuery, destinationQuery, activeInput]);
+
+  const getCurrentLocation = async () => {
     try {
-      // Use Google Places Autocomplete API with dedicated Places API key
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-        query
-      )}&components=country:ky&key=${API_KEY}`;
+      const { status} = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setPickupQuery('Current Location');
+        return;
+      }
 
-      const response = await fetch(url);
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const [result] = await Location.reverseGeocodeAsync({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      });
+
+      const address = result
+        ? [result.street, result.city, result.region].filter(Boolean).join(', ')
+        : 'Current Location';
+
+      setPickupQuery(address);
+
+      const locationData = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        address: address,
+      };
+
+      setPickupLocation(locationData);
+    } catch (error) {
+      console.error('Error getting location:', error);
+      setPickupQuery('Current Location');
+    }
+  };
+
+  const searchPlaces = async (query: string) => {
+    if (!query || query.length < 3) {
+      setPredictions([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const locationBias = `&location=19.3133,-81.2546&radius=50000`;
+
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?` +
+          `input=${encodeURIComponent(query)}` +
+          locationBias +
+          `&components=country:ky` +
+          `&key=${GOOGLE_PLACES_API_KEY}`
+      );
+
       const data = await response.json();
 
-      if (data.predictions) {
+      if (data.status === 'OK' && data.predictions) {
         setPredictions(data.predictions);
+      } else {
+        setPredictions([]);
       }
     } catch (error) {
-      console.error('Places search error:', error);
+      console.error('Failed to search places:', error);
+      setPredictions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Get place details (coordinates)
-  const getPlaceDetails = async (placeId: string): Promise<Location | null> => {
+  const getPlaceDetails = async (placeId: string) => {
     try {
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
-      const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${API_KEY}`;
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?` +
+          `place_id=${placeId}` +
+          `&fields=name,formatted_address,geometry` +
+          `&key=${GOOGLE_PLACES_API_KEY}`
+      );
 
-      const response = await fetch(detailsUrl);
       const data = await response.json();
 
-      if (data.result?.geometry?.location) {
+      if (data.status === 'OK' && data.result) {
         return {
-          address: data.result.formatted_address,
           latitude: data.result.geometry.location.lat,
           longitude: data.result.geometry.location.lng,
+          address: data.result.formatted_address,
         };
       }
+      return null;
     } catch (error) {
-      console.error('Place details error:', error);
-    }
-    return null;
-  };
-
-  // Select a location from predictions
-  const selectLocation = async (prediction: PlacePrediction) => {
-    const location = await getPlaceDetails(prediction.place_id);
-    
-    if (location) {
-      if (isPickupMode) {
-        setPickupLocation(location);
-        Alert.alert('Success', 'Pickup location updated');
-        router.back();
-      } else {
-        setDestination(location);
-        router.push('/(rider)/select-destination');
-      }
-    } else {
-      Alert.alert('Error', 'Failed to get location details');
+      console.error('Failed to get place details:', error);
+      return null;
     }
   };
 
-  // Select saved location
-  const selectSavedLocation = (location: SavedLocation) => {
-    if (location.coordinates) {
-      const loc: Location = {
-        address: `${location.name}, ${location.address}`,
-        latitude: location.coordinates.latitude,
-        longitude: location.coordinates.longitude,
-      };
-      
-      if (isPickupMode) {
-        setPickupLocation(loc);
-        router.back();
-      } else {
-        setDestination(loc);
-        router.push('/(rider)/select-destination');
-      }
+  const handlePlaceSelect = async (prediction: PlacePrediction) => {
+    const placeDetails = await getPlaceDetails(prediction.place_id);
+
+    if (!placeDetails) {
+      Alert.alert('Error', 'Failed to get place details');
+      return;
+    }
+
+    if (activeInput === 'pickup') {
+      setPickupQuery(prediction.description);
+      setPickupLocation(placeDetails);
+      setPredictions([]);
+      // Switch to destination
+      setActiveInput('destination');
+      destinationRef.current?.focus();
     } else {
-      Alert.alert('Info', 'Please search for this location to get exact coordinates');
+      setDestinationQuery(prediction.description);
+      setDestination(placeDetails);
+      setPredictions([]);
+
+      // Navigate to vehicle selection
+      if (pickupLocation) {
+        router.push('/(rider)/vehicle-selection');
+      }
     }
   };
 
-  // Set current location
-  const setCurrentAsLocation = () => {
-    if (currentLocation) {
-      if (isPickupMode) {
-        setPickupLocation(currentLocation);
-        Alert.alert('Success', 'Pickup set to current location');
-        router.back();
-      } else {
-        setDestination(currentLocation);
-        router.push('/(rider)/select-destination');
-      }
-    } else {
-      Alert.alert('Error', 'Current location not available');
+  const handleSavedPlaceSelect = (place: SavedPlace) => {
+    if (activeInput === 'destination') {
+      setDestinationQuery(place.address);
+      // Navigate to vehicle selection
+      router.push('/(rider)/vehicle-selection');
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-        </View>
+    <View style={styles.container}>
+      {/* Header */}
+      <SafeAreaView style={styles.header} edges={['top']}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Plan your ride</Text>
+      </SafeAreaView>
 
-        {/* Location Inputs Card */}
-        <View style={styles.inputCard}>
-          {/* Pickup (From) */}
+      {/* For Me Dropdown */}
+      <View style={styles.content}>
+        <TouchableOpacity style={styles.forMeButton}>
+          <Ionicons name="person" size={20} color="#fff" />
+          <Text style={styles.forMeText}>For me</Text>
+          <Ionicons name="chevron-down" size={20} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Location Input Card */}
+        <View style={styles.locationCard}>
+          {/* Pickup Location */}
           <TouchableOpacity
-            style={styles.locationRow}
+            style={styles.locationInputRow}
             onPress={() => {
-              setIsPickupMode(true);
-              // Could navigate to another screen or just set mode
+              setActiveInput('pickup');
+              pickupRef.current?.focus();
             }}
+            activeOpacity={1}
           >
-            <View style={styles.locationDot} />
-            <View style={styles.locationInput}>
-              <Text style={styles.inputLabel}>From</Text>
-              <Text style={styles.inputValue}>
-                {pickupLocation?.address || currentLocation?.address || 'Current Location'}
-              </Text>
+            <View style={styles.locationIconContainer}>
+              <View style={styles.pickupDot} />
+              <View style={styles.connectingLine} />
             </View>
-            {!isPickupMode && (
-              <TouchableOpacity style={styles.addButton}>
-                <Text style={styles.addIcon}>+</Text>
+            <TextInput
+              ref={pickupRef}
+              style={[styles.locationInput, activeInput === 'pickup' && styles.activeInput]}
+              value={pickupQuery}
+              onChangeText={setPickupQuery}
+              placeholder="Pickup location"
+              placeholderTextColor="#888"
+              onFocus={() => setActiveInput('pickup')}
+            />
+          </TouchableOpacity>
+
+          {/* Destination Location */}
+          <TouchableOpacity
+            style={styles.locationInputRow}
+            onPress={() => {
+              setActiveInput('destination');
+              destinationRef.current?.focus();
+            }}
+            activeOpacity={1}
+          >
+            <View style={styles.locationIconContainer}>
+              <View style={styles.destinationSquare} />
+            </View>
+            <TextInput
+              ref={destinationRef}
+              style={[styles.locationInput, activeInput === 'destination' && styles.activeInput]}
+              value={destinationQuery}
+              onChangeText={setDestinationQuery}
+              placeholder="Where to?"
+              placeholderTextColor="#888"
+              onFocus={() => setActiveInput('destination')}
+            />
+            {destinationQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setDestinationQuery('')}>
+                <Ionicons name="close-circle" size={24} color="#888" />
               </TouchableOpacity>
             )}
           </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          {/* Destination (Where To) */}
-          <View style={styles.locationRow}>
-            <View style={[styles.locationDot, styles.locationDotRed]} />
-            <View style={styles.locationInput}>
-              <Text style={styles.inputLabel}>Where To</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Search destination"
-                placeholderTextColor={Colors.gray[400]}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-                returnKeyType="search"
-              />
-            </View>
-          </View>
         </View>
 
-        {/* Results */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Loading */}
-          {loading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-            </View>
-          )}
-
-          {/* Search Results */}
-          {predictions.length > 0 && (
-            <View style={styles.section}>
-              {predictions.map((prediction) => (
-                <TouchableOpacity
-                  key={prediction.place_id}
-                  style={styles.locationItem}
-                  onPress={() => selectLocation(prediction)}
-                >
-                  <View style={styles.locationIconContainer}>
-                    <Text style={styles.locationIcon}>📍</Text>
-                  </View>
-                  <View style={styles.locationInfo}>
-                    <Text style={styles.locationName}>
-                      {prediction.structured_formatting.main_text}
-                    </Text>
-                    <Text style={styles.locationAddress}>
-                      {prediction.structured_formatting.secondary_text}
-                    </Text>
-                  </View>
-                  {prediction.distance_meters && (
-                    <Text style={styles.distance}>
-                      {Math.round(prediction.distance_meters / 1000)} km
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Current Location (when no search) */}
-          {searchQuery.length === 0 && (
+        {/* Search Results or Suggestions */}
+        <FlatList
+          data={predictions.length > 0 ? predictions : []}
+          keyExtractor={(item) => item.place_id}
+          ListHeaderComponent={() => (
             <>
-              {/* Current Location Button */}
-              <TouchableOpacity
-                style={styles.currentLocationButton}
-                onPress={setCurrentAsLocation}
-              >
-                <View style={styles.currentLocationIcon}>
-                  <Text style={styles.currentLocationIconText}>📍</Text>
-                </View>
-                <View style={styles.locationInfo}>
-                  <Text style={styles.currentLocationText}>
-                    Use Current Location
-                  </Text>
-                  <Text style={styles.currentLocationAddress}>
-                    {currentLocation?.address || 'Getting location...'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
               {/* Saved Places */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>SAVED PLACES</Text>
-                
-                {savedPlaces.map((place) => (
-                  <TouchableOpacity
-                    key={place.id}
-                    style={styles.savedPlace}
-                    onPress={() => selectSavedLocation(place)}
-                  >
-                    <View style={styles.savedPlaceIcon}>
-                      <Text style={styles.savedPlaceIconText}>{place.icon}</Text>
-                    </View>
-                    <View style={styles.locationInfo}>
-                      <Text style={styles.locationName}>{place.name}</Text>
-                      <Text style={styles.locationAddress}>{place.address}</Text>
-                    </View>
-                    <Text style={styles.chevron}>›</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {predictions.length === 0 && activeInput === 'destination' && (
+                <View style={styles.section}>
+                  <View style={styles.savedPlacesRow}>
+                    {savedPlaces.map((place) => (
+                      <TouchableOpacity
+                        key={place.id}
+                        style={styles.savedPlaceCard}
+                        onPress={() => handleSavedPlaceSelect(place)}
+                      >
+                        <Ionicons name={place.icon as any} size={20} color="#fff" />
+                        <View style={styles.savedPlaceInfo}>
+                          <Text style={styles.savedPlaceTitle}>{place.name}</Text>
+                          <Text style={styles.savedPlaceAddress}>{place.address}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity style={styles.savedPlaceCard}>
+                      <Ionicons name="star" size={20} color="#fff" />
+                      <Text style={styles.savedPlacesTitle}>Saved places</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
               {/* Recent Searches */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>RECENT</Text>
-                
-                {recentSearches.map((search) => (
-                  <TouchableOpacity
-                    key={search.id}
-                    style={styles.locationItem}
-                    onPress={() => selectSavedLocation(search)}
-                  >
-                    <View style={styles.locationIconContainer}>
-                      <Text style={styles.locationIcon}>{search.icon}</Text>
-                    </View>
-                    <View style={styles.locationInfo}>
-                      <Text style={styles.locationName}>{search.name}</Text>
-                      <Text style={styles.locationAddress}>{search.address}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {predictions.length === 0 && recentSearches.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Recent</Text>
+                </View>
+              )}
             </>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.predictionItem}
+              onPress={() => handlePlaceSelect(item)}
+            >
+              <View style={styles.predictionIcon}>
+                <Ionicons name="location-outline" size={24} color="#fff" />
+              </View>
+              <View style={styles.predictionText}>
+                <Text style={styles.predictionMain}>{item.structured_formatting.main_text}</Text>
+                <Text style={styles.predictionSecondary}>
+                  {item.structured_formatting.secondary_text}
+                </Text>
+              </View>
+              {loading && <ActivityIndicator size="small" color="#888" />}
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={() => (
+            <>
+              {predictions.length === 0 && (destinationQuery.length > 0 || pickupQuery.length > 0) && !loading && (
+                <View style={styles.noResults}>
+                  <Text style={styles.noResultsText}>No results found</Text>
+                </View>
+              )}
+            </>
+          )}
+        />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Colors.gray[50],
-  },
   container: {
     flex: 1,
+    backgroundColor: '#000',
   },
   header: {
+    backgroundColor: '#000',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginRight: 16,
   },
-  backIcon: {
+  headerTitle: {
     fontSize: 24,
-    color: Colors.black,
+    fontWeight: '600',
+    color: '#fff',
   },
-  inputCard: {
-    backgroundColor: Colors.white,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
   },
-  locationRow: {
+  forMeButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    borderRadius: 24,
+    alignSelf: 'flex-start',
+    marginBottom: 24,
   },
-  locationDot: {
+  forMeText: {
+    color: '#fff',
+    fontSize: 16,
+    marginHorizontal: 8,
+  },
+  locationCard: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#3a3a3a',
+  },
+  locationInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+  },
+  locationIconContainer: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  pickupDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: Colors.success,
-    marginRight: 12,
+    backgroundColor: '#fff',
   },
-  locationDotRed: {
-    backgroundColor: Colors.error,
+  connectingLine: {
+    width: 2,
+    height: 24,
+    backgroundColor: '#4a4a4a',
+    marginTop: 4,
+  },
+  destinationSquare: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#fff',
   },
   locationInput: {
     flex: 1,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.gray[600],
-    marginBottom: 4,
-  },
-  inputValue: {
-    fontSize: 14,
-    color: Colors.success,
-    fontWeight: '500',
-  },
-  textInput: {
-    fontSize: 14,
-    color: Colors.gray[900],
+    fontSize: 16,
+    color: '#fff',
     padding: 0,
   },
-  addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addIcon: {
-    fontSize: 20,
-    color: Colors.black,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.gray[200],
-    marginVertical: 8,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 32,
-  },
-  loadingContainer: {
-    padding: 20,
-    alignItems: 'center',
+  activeInput: {
+    color: '#fff',
   },
   section: {
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.gray[500],
-    letterSpacing: 0.5,
-    marginHorizontal: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
     marginBottom: 12,
   },
-  currentLocationButton: {
+  savedPlacesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  savedPlaceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flex: 0.48,
+  },
+  savedPlaceInfo: {
+    marginLeft: 12,
+  },
+  savedPlaceTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  savedPlaceAddress: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  savedPlacesTitle: {
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 12,
+  },
+  predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 16,
-    backgroundColor: Colors.white,
-    marginBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[200],
+    borderBottomColor: '#2a2a2a',
   },
-  currentLocationIcon: {
+  predictionIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.gray[100],
+    backgroundColor: '#2a2a2a',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
-  currentLocationIconText: {
-    fontSize: 20,
-  },
-  currentLocationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: 2,
-  },
-  currentLocationAddress: {
-    fontSize: 13,
-    color: Colors.gray[500],
-  },
-  locationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[100],
-  },
-  locationIconContainer: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  locationIcon: {
-    fontSize: 20,
-  },
-  locationInfo: {
+  predictionText: {
     flex: 1,
   },
-  locationName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: 2,
+  predictionMain: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
   },
-  locationAddress: {
-    fontSize: 13,
-    color: Colors.gray[500],
+  predictionSecondary: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 2,
   },
-  distance: {
-    fontSize: 13,
-    color: Colors.gray[500],
-    marginLeft: 8,
-  },
-  savedPlace: {
-    flexDirection: 'row',
+  noResults: {
+    padding: 32,
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[100],
   },
-  savedPlaceIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.gray[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  savedPlaceIconText: {
-    fontSize: 20,
-  },
-  chevron: {
-    fontSize: 24,
-    color: Colors.gray[400],
-    marginLeft: 8,
+  noResultsText: {
+    fontSize: 16,
+    color: '#888',
   },
 });

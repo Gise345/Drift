@@ -18,8 +18,8 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Google Places API Key - Make sure this is in your .env file
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || 'YOUR_API_KEY_HERE';
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 interface PlacePrediction {
   description: string;
@@ -44,23 +44,24 @@ const HomeScreen = () => {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
+
   // Search modal state
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  
+
   // Save address modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveAddressType, setSaveAddressType] = useState<'home' | 'work' | null>(null);
   const [addressToSave, setAddressToSave] = useState<SavedPlace | null>(null);
-  
+
   // Saved addresses (using localStorage for now - you can replace with Firebase)
   const [homeAddress, setHomeAddress] = useState<SavedPlace | null>(null);
   const [workAddress, setWorkAddress] = useState<SavedPlace | null>(null);
-  
+
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const mapRef = useRef<any>(null);
 
   useEffect(() => {
     getCurrentLocation();
@@ -124,14 +125,13 @@ const HomeScreen = () => {
       setPredictions([]);
       return;
     }
-    
+
     try {
       setSearchLoading(true);
-      
-      const locationBias = location 
-        ? `&location=${location.coords.latitude},${location.coords.longitude}&radius=50000`
-        : '';
-      
+
+      // Always bias results towards Cayman Islands center
+      const locationBias = `&location=19.3133,-81.2546&radius=50000`;
+
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/place/autocomplete/json?` +
         `input=${encodeURIComponent(query)}` +
@@ -193,27 +193,75 @@ const HomeScreen = () => {
     setShowSearchModal(false);
     setSearchQuery('');
     setPredictions([]);
-    
+
     // Get full place details
     const placeDetails = await getPlaceDetails(prediction.place_id);
-    
+
     if (!placeDetails) {
       Alert.alert('Error', 'Failed to get place details');
       return;
     }
-    
+
+    // Animate map to the selected location
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: placeDetails.coordinates.latitude,
+        longitude: placeDetails.coordinates.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 1000);
+    }
+
     // If we're in save address mode, show save modal
     if (saveAddressType) {
       setAddressToSave(placeDetails);
       setShowSaveModal(true);
     } else {
-      // Navigate to destination selection with this place
+      // Get current location as pickup
+      await navigateToDestinationWithCurrentPickup(placeDetails);
+    }
+  };
+
+  const navigateToDestinationWithCurrentPickup = async (destination: SavedPlace) => {
+    try {
+      // Use current location as pickup
+      if (!location) {
+        Alert.alert('Error', 'Could not get your current location');
+        return;
+      }
+
+      const [result] = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      const address = result
+        ? [result.street, result.city, result.region, result.country].filter(Boolean).join(', ')
+        : 'Current Location';
+
+      const pickupLocation = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        address: address,
+      };
+
+      const destinationLocation = {
+        latitude: destination.coordinates.latitude,
+        longitude: destination.coordinates.longitude,
+        address: destination.address,
+      };
+
+      // Navigate with both pickup and destination
       router.push({
         pathname: '/(rider)/select-destination',
         params: {
-          destination: JSON.stringify(placeDetails),
+          pickup: JSON.stringify(pickupLocation),
+          destination: JSON.stringify(destinationLocation),
         },
       });
+    } catch (error) {
+      console.error('Error getting pickup location:', error);
+      Alert.alert('Error', 'Failed to get pickup location');
     }
   };
 
@@ -265,9 +313,9 @@ const HomeScreen = () => {
     }
   };
 
-  const handleSavedPlacePress = (type: 'home' | 'work') => {
+  const handleSavedPlacePress = async (type: 'home' | 'work') => {
     const place = type === 'home' ? homeAddress : workAddress;
-    
+
     if (!place) {
       // No saved address - open search to save one
       Alert.alert(
@@ -275,8 +323,8 @@ const HomeScreen = () => {
         `Would you like to set your ${type} address now?`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Set Address', 
+          {
+            text: 'Set Address',
             onPress: () => {
               setSaveAddressType(type);
               setShowSearchModal(true);
@@ -286,14 +334,9 @@ const HomeScreen = () => {
       );
       return;
     }
-    
-    // Navigate with saved place as destination
-    router.push({
-      pathname: '/(rider)/select-destination',
-      params: {
-        destination: JSON.stringify(place),
-      },
-    });
+
+    // Navigate with saved place as destination and current location as pickup
+    await navigateToDestinationWithCurrentPickup(place);
   };
 
   const handleLongPressSavedPlace = (type: 'home' | 'work') => {
@@ -376,26 +419,29 @@ const HomeScreen = () => {
     );
   }
 
-  const currentRegion = location ? {
-    latitude: location.coords.latitude,
-    longitude: location.coords.longitude,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  } : {
-    latitude: 19.3133,
+  // Always center map on Cayman Islands (Grand Cayman)
+  // This allows users anywhere in the world to book rides for friends/family in Cayman
+  const caymanRegion = {
+    latitude: 19.3133, // Grand Cayman
     longitude: -81.2546,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
+    latitudeDelta: 0.15, // Zoom out to show more of the island
+    longitudeDelta: 0.15,
   };
 
   return (
     <View style={styles.container}>
       <MapView
+        ref={(ref: any) => { mapRef.current = ref; }}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
-        initialRegion={currentRegion}
+        initialRegion={caymanRegion}
         showsUserLocation={true}
         showsMyLocationButton={false}
+        loadingEnabled={true}
+        loadingIndicatorColor="#5d1289"
+        loadingBackgroundColor="#ffffff"
+        mapType="standard"
+        onMapReady={() => console.log('✅ Map is ready!')}
       >
         {location && (
           <Marker
@@ -424,12 +470,9 @@ const HomeScreen = () => {
 
       {/* Search Card */}
       <View style={styles.searchCard}>
-        <TouchableOpacity 
-          style={styles.searchInput} 
-          onPress={() => {
-            setSaveAddressType(null);
-            setShowSearchModal(true);
-          }}
+        <TouchableOpacity
+          style={styles.searchInput}
+          onPress={() => router.push('/(rider)/search-location')}
         >
           <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
           <Text style={styles.searchPlaceholder}>Where to?</Text>
@@ -494,12 +537,9 @@ const HomeScreen = () => {
 
       {/* Bottom Action Button */}
       <SafeAreaView style={styles.bottomBar} edges={['bottom']}>
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => {
-            setSaveAddressType(null);
-            setShowSearchModal(true);
-          }}
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => router.push('/(rider)/search-location')}
         >
           <Ionicons name="car" size={24} color="white" />
           <Text style={styles.actionButtonText}>Request a Carpool</Text>
