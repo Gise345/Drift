@@ -12,13 +12,17 @@ import {
   Modal,
   KeyboardAvoidingView,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Region, LatLng } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Google Places API Key
+// CRITICAL: Use separate API keys for different services
+// Maps SDK API key is used by native MapView (Android/iOS restricted)
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+// Places API key for autocomplete searches (Web/JavaScript calls)
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 interface PlacePrediction {
@@ -33,15 +37,14 @@ interface PlacePrediction {
 interface SavedPlace {
   label: string;
   address: string;
-  coordinates: {
-    latitude: number;
-    longitude: number;
-  };
+  coordinates: LatLng;
   placeId?: string;
 }
 
 const HomeScreen = () => {
+  // Location state
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [region, setRegion] = useState<Region | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -56,32 +59,31 @@ const HomeScreen = () => {
   const [saveAddressType, setSaveAddressType] = useState<'home' | 'work' | null>(null);
   const [addressToSave, setAddressToSave] = useState<SavedPlace | null>(null);
 
-  // Saved addresses (using localStorage for now - you can replace with Firebase)
+  // Saved addresses
   const [homeAddress, setHomeAddress] = useState<SavedPlace | null>(null);
   const [workAddress, setWorkAddress] = useState<SavedPlace | null>(null);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
     getCurrentLocation();
     loadSavedAddresses();
   }, []);
 
-  // Debounced search effect
+  // Debounced search for places
   useEffect(() => {
     if (searchQuery.length > 2) {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
-      
       searchTimeoutRef.current = setTimeout(() => {
         searchPlaces(searchQuery);
-      }, 300);
+      }, 500);
     } else {
       setPredictions([]);
     }
-    
+
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -89,584 +91,370 @@ const HomeScreen = () => {
     };
   }, [searchQuery]);
 
-  const loadSavedAddresses = async () => {
-    // TODO: Replace with Firebase fetch
-    // For now, using AsyncStorage would work
-    // const home = await AsyncStorage.getItem('homeAddress');
-    // const work = await AsyncStorage.getItem('workAddress');
-    // if (home) setHomeAddress(JSON.parse(home));
-    // if (work) setWorkAddress(JSON.parse(work));
-  };
-
   const getCurrentLocation = async () => {
     try {
+      // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
+      
       if (status !== 'granted') {
-        setErrorMsg('Location permission denied');
+        setErrorMsg('Permission to access location was denied');
+        // Set default to Cayman Islands
+        const caymanRegion = {
+          latitude: 19.3133,
+          longitude: -81.2546,
+          latitudeDelta: 0.2,
+          longitudeDelta: 0.2,
+        };
+        setRegion(caymanRegion);
         setLoading(false);
         return;
       }
 
+      console.log('Getting current location...');
+
+      // Get current position with high accuracy
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
+
+      console.log('Location received:', currentLocation.coords);
+
       setLocation(currentLocation);
+      
+      // Set initial region centered on user location
+      const initialRegion: Region = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
+      };
+      
+      setRegion(initialRegion);
       setLoading(false);
+
+      // Animate to user location after map loads
+      setTimeout(() => {
+        mapRef.current?.animateToRegion(initialRegion, 1000);
+      }, 500);
+
     } catch (error) {
       console.error('Error getting location:', error);
-      setErrorMsg('Could not get location');
+      setErrorMsg('Failed to get your location. Please enable location services.');
+      
+      // Fallback to Cayman Islands
+      const caymanRegion = {
+        latitude: 19.3133,
+        longitude: -81.2546,
+        latitudeDelta: 0.2,
+        longitudeDelta: 0.2,
+      };
+      setRegion(caymanRegion);
       setLoading(false);
     }
   };
 
   const searchPlaces = async (query: string) => {
-    if (!query || query.length < 3) {
-      setPredictions([]);
+    if (!GOOGLE_PLACES_API_KEY) {
+      console.error('Google Places API key not found');
       return;
     }
 
+    setSearchLoading(true);
     try {
-      setSearchLoading(true);
+      // Use Cayman Islands as location bias
+      const locationBias = location 
+        ? `location=${location.coords.latitude},${location.coords.longitude}&radius=50000`
+        : 'location=19.3133,-81.2546&radius=50000'; // Cayman Islands
 
-      // Always bias results towards Cayman Islands center
-      const locationBias = `&location=19.3133,-81.2546&radius=50000`;
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+        query
+      )}&${locationBias}&key=${GOOGLE_PLACES_API_KEY}&components=country:ky`; // Restrict to Cayman Islands
 
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?` +
-        `input=${encodeURIComponent(query)}` +
-        locationBias +
-        `&components=country:ky` + // Cayman Islands
-        `&key=${GOOGLE_PLACES_API_KEY}`
-      );
-      
+      console.log('Searching places:', query);
+
+      const response = await fetch(url);
       const data = await response.json();
-      
-      if (data.status === 'OK' && data.predictions) {
+
+      if (data.status === 'OK') {
         setPredictions(data.predictions);
-      } else if (data.status === 'ZERO_RESULTS') {
-        setPredictions([]);
       } else {
         console.error('Places API error:', data.status, data.error_message);
-        Alert.alert('Error', 'Failed to search places. Please check your API key.');
         setPredictions([]);
       }
     } catch (error) {
-      console.error('Failed to search places:', error);
-      Alert.alert('Error', 'Failed to search places. Please try again.');
+      console.error('Error searching places:', error);
       setPredictions([]);
     } finally {
       setSearchLoading(false);
     }
   };
 
-  const getPlaceDetails = async (placeId: string): Promise<SavedPlace | null> => {
+  const selectPlace = async (prediction: PlacePrediction) => {
+    if (!GOOGLE_PLACES_API_KEY) {
+      console.error('Google Places API key not found');
+      return;
+    }
+
     try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?` +
-        `place_id=${placeId}` +
-        `&fields=name,formatted_address,geometry` +
-        `&key=${GOOGLE_PLACES_API_KEY}`
-      );
-      
+      // Get place details to get coordinates
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`;
+
+      const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.status === 'OK' && data.result) {
-        return {
-          label: data.result.name,
+        const coords: LatLng = {
+          latitude: data.result.geometry.location.lat,
+          longitude: data.result.geometry.location.lng,
+        };
+
+        const selectedPlace: SavedPlace = {
+          label: prediction.structured_formatting.main_text,
           address: data.result.formatted_address,
-          coordinates: {
-            latitude: data.result.geometry.location.lat,
-            longitude: data.result.geometry.location.lng,
-          },
-          placeId: placeId,
+          coordinates: coords,
+          placeId: prediction.place_id,
         };
-      }
-      return null;
-    } catch (error) {
-      console.error('Failed to get place details:', error);
-      return null;
-    }
-  };
 
-  const handlePlaceSelect = async (prediction: PlacePrediction) => {
-    setShowSearchModal(false);
-    setSearchQuery('');
-    setPredictions([]);
+        // Close search modal
+        setShowSearchModal(false);
+        setSearchQuery('');
+        setPredictions([]);
 
-    // Get full place details
-    const placeDetails = await getPlaceDetails(prediction.place_id);
+        // Navigate to destination selection or save
+        // For now, let's show save dialog
+        setAddressToSave(selectedPlace);
+        setShowSaveModal(true);
 
-    if (!placeDetails) {
-      Alert.alert('Error', 'Failed to get place details');
-      return;
-    }
-
-    // Animate map to the selected location
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
-        latitude: placeDetails.coordinates.latitude,
-        longitude: placeDetails.coordinates.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      }, 1000);
-    }
-
-    // If we're in save address mode, show save modal
-    if (saveAddressType) {
-      setAddressToSave(placeDetails);
-      setShowSaveModal(true);
-    } else {
-      // Get current location as pickup
-      await navigateToDestinationWithCurrentPickup(placeDetails);
-    }
-  };
-
-  const navigateToDestinationWithCurrentPickup = async (destination: SavedPlace) => {
-    try {
-      // Use current location as pickup
-      if (!location) {
-        Alert.alert('Error', 'Could not get your current location');
-        return;
-      }
-
-      const [result] = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-
-      const address = result
-        ? [result.street, result.city, result.region, result.country].filter(Boolean).join(', ')
-        : 'Current Location';
-
-      const pickupLocation = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        address: address,
-      };
-
-      const destinationLocation = {
-        latitude: destination.coordinates.latitude,
-        longitude: destination.coordinates.longitude,
-        address: destination.address,
-      };
-
-      // Navigate with both pickup and destination
-      router.push({
-        pathname: '/(rider)/select-destination',
-        params: {
-          pickup: JSON.stringify(pickupLocation),
-          destination: JSON.stringify(destinationLocation),
-        },
-      });
-    } catch (error) {
-      console.error('Error getting pickup location:', error);
-      Alert.alert('Error', 'Failed to get pickup location');
-    }
-  };
-
-  const handleUseCurrentLocation = async () => {
-    if (!location) {
-      await getCurrentLocation();
-      if (!location) {
-        Alert.alert('Error', 'Could not get your current location');
-        return;
-      }
-    }
-    
-    try {
-      // Reverse geocode to get address
-      const [result] = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-      
-      if (result) {
-        const address = [
-          result.street,
-          result.city,
-          result.region,
-          result.country
-        ].filter(Boolean).join(', ');
-        
-        const currentLocationPlace: SavedPlace = {
-          label: 'Current Location',
-          address: address,
-          coordinates: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-        };
-        
-        router.push({
-          pathname: '/(rider)/select-destination',
-          params: {
-            pickup: JSON.stringify(currentLocationPlace),
-          },
-        });
       } else {
-        Alert.alert('Error', 'Could not determine address');
+        Alert.alert('Error', 'Failed to get place details');
       }
     } catch (error) {
-      console.error('Failed to get address:', error);
-      Alert.alert('Error', 'Failed to get current location address');
+      console.error('Error getting place details:', error);
+      Alert.alert('Error', 'Failed to get place details');
     }
   };
 
-  const handleSavedPlacePress = async (type: 'home' | 'work') => {
-    const place = type === 'home' ? homeAddress : workAddress;
-
-    if (!place) {
-      // No saved address - open search to save one
-      Alert.alert(
-        `Set ${type === 'home' ? 'Home' : 'Work'} Address`,
-        `Would you like to set your ${type} address now?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Set Address',
-            onPress: () => {
-              setSaveAddressType(type);
-              setShowSearchModal(true);
-            }
-          },
-        ]
-      );
-      return;
-    }
-
-    // Navigate with saved place as destination and current location as pickup
-    await navigateToDestinationWithCurrentPickup(place);
-  };
-
-  const handleLongPressSavedPlace = (type: 'home' | 'work') => {
-    const place = type === 'home' ? homeAddress : workAddress;
-    
-    if (place) {
-      // Already have address - ask to update
-      Alert.alert(
-        `Update ${type === 'home' ? 'Home' : 'Work'} Address`,
-        'Do you want to change this address?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Update', 
-            onPress: () => {
-              setSaveAddressType(type);
-              setShowSearchModal(true);
-            }
-          },
-        ]
-      );
-    } else {
-      // No address yet - prompt to add
-      setSaveAddressType(type);
-      setShowSearchModal(true);
-    }
-  };
-
-  const confirmSaveAddress = async () => {
-    if (!addressToSave || !saveAddressType) return;
-    
-    try {
-      // TODO: Save to Firebase
-      // await updateDoc(userRef, {
-      //   [`${saveAddressType}Address`]: addressToSave,
-      //   updatedAt: serverTimestamp()
-      // });
-      
-      // For now, save to state and AsyncStorage
-      if (saveAddressType === 'home') {
+  const saveAddress = (type: 'home' | 'work') => {
+    if (addressToSave) {
+      if (type === 'home') {
         setHomeAddress(addressToSave);
-        // await AsyncStorage.setItem('homeAddress', JSON.stringify(addressToSave));
+        // TODO: Save to AsyncStorage or Firebase
       } else {
         setWorkAddress(addressToSave);
-        // await AsyncStorage.setItem('workAddress', JSON.stringify(addressToSave));
+        // TODO: Save to AsyncStorage or Firebase
       }
-      
-      Alert.alert(
-        'Success', 
-        `${saveAddressType === 'home' ? 'Home' : 'Work'} address saved!`
-      );
-      
       setShowSaveModal(false);
-      setSaveAddressType(null);
       setAddressToSave(null);
-    } catch (error) {
-      console.error('Failed to save address:', error);
-      Alert.alert('Error', 'Failed to save address. Please try again.');
+      Alert.alert('Success', `Address saved as ${type}`);
     }
+  };
+
+  const loadSavedAddresses = async () => {
+    // TODO: Load from AsyncStorage or Firebase
+    // For now, empty
+  };
+
+  const navigateToDestination = (destination: SavedPlace) => {
+    router.push({
+      pathname: '/(rider)/select-destination',
+      params: {
+        pickup: JSON.stringify(location?.coords || region),
+        destination: JSON.stringify(destination),
+      },
+    });
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#5d1289" />
-        <Text style={styles.loadingText}>Getting your location...</Text>
+        <ActivityIndicator size="large" color="#5d1289ff" />
+        <Text style={styles.loadingText}>Loading map...</Text>
       </View>
     );
   }
 
-  if (errorMsg) {
-    return (
-      <SafeAreaView style={styles.errorContainer} edges={['top']}>
-        <Ionicons name="location-outline" size={64} color="#666" />
-        <Text style={styles.errorText}>{errorMsg}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={getCurrentLocation}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    );
-  }
-
-  // Always center map on Cayman Islands (Grand Cayman)
-  // This allows users anywhere in the world to book rides for friends/family in Cayman
-  const caymanRegion = {
-    latitude: 19.3133, // Grand Cayman
-    longitude: -81.2546,
-    latitudeDelta: 0.15, // Zoom out to show more of the island
-    longitudeDelta: 0.15,
-  };
-
   return (
-    <View style={styles.container}>
-      <MapView
-        ref={(ref: any) => { mapRef.current = ref; }}
-        style={styles.map}
-        provider={PROVIDER_GOOGLE}
-        initialRegion={caymanRegion}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-        loadingEnabled={true}
-        loadingIndicatorColor="#5d1289"
-        loadingBackgroundColor="#ffffff"
-        mapType="standard"
-        onMapReady={() => console.log('✅ Map is ready!')}
-      >
-        {location && (
-          <Marker
-            coordinate={{
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            }}
-            title="You are here"
-          />
-        )}
-      </MapView>
-
-      {/* Top Bar */}
-      <SafeAreaView style={styles.topBar} edges={['top']}>
-        <TouchableOpacity 
-          style={styles.menuButton} 
-          onPress={() => router.push('/(rider)/profile')}
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Map View */}
+      {region && (
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={region}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
+          showsCompass={true}
+          loadingEnabled={true}
+          loadingIndicatorColor="#5d1289ff"
+          loadingBackgroundColor="#FFFFFF"
+          onMapReady={() => console.log('Map is ready!')}
         >
-          <Ionicons name="menu" size={28} color="#000" />
-        </TouchableOpacity>
-        <View style={styles.topInfo}>
-          <Text style={styles.greeting}>Hey there!</Text>
-          <Text style={styles.subtitle}>Where are you going?</Text>
+          {/* Current location marker */}
+          {location && (
+            <Marker
+              key={`user-location-${Date.now()}`}
+              coordinate={{
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+              }}
+              title="Your Location"
+              description="You are here"
+              pinColor="#5d1289ff"
+            />
+          )}
+        </MapView>
+      )}
+
+      {/* Error Message */}
+      {errorMsg && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={20} color="#FFFFFF" />
+          <Text style={styles.errorText}>{errorMsg}</Text>
         </View>
-      </SafeAreaView>
+      )}
 
       {/* Search Card */}
       <View style={styles.searchCard}>
         <TouchableOpacity
-          style={styles.searchInput}
-          onPress={() => router.push('/(rider)/search-location')}
+          style={styles.searchButton}
+          onPress={() => setShowSearchModal(true)}
         >
-          <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-          <Text style={styles.searchPlaceholder}>Where to?</Text>
+          <Ionicons name="search" size={20} color="#666" />
+          <Text style={styles.searchPlaceholder}>Where would you like to go?</Text>
         </TouchableOpacity>
 
-        {/* Saved Places */}
-        <View style={styles.savedPlaces}>
-          <TouchableOpacity 
-            style={styles.savedPlace}
-            onPress={() => handleSavedPlacePress('home')}
-            onLongPress={() => handleLongPressSavedPlace('home')}
-          >
-            <View style={styles.placeIcon}>
-              <Ionicons name="home" size={20} color="#5d1289" />
-            </View>
-            <View style={styles.placeInfo}>
-              <Text style={styles.placeLabel}>Home</Text>
-              <Text style={styles.placeAddress} numberOfLines={1}>
-                {homeAddress?.address || 'Add home address'}
-              </Text>
-            </View>
-            {!homeAddress && (
-              <TouchableOpacity onPress={() => handleLongPressSavedPlace('home')}>
-                <Ionicons name="add-circle-outline" size={24} color="#5d1289" />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.placeDivider} />
-
-          <TouchableOpacity 
-            style={styles.savedPlace}
-            onPress={() => handleSavedPlacePress('work')}
-            onLongPress={() => handleLongPressSavedPlace('work')}
-          >
-            <View style={styles.placeIcon}>
-              <Ionicons name="briefcase" size={20} color="#5d1289" />
-            </View>
-            <View style={styles.placeInfo}>
-              <Text style={styles.placeLabel}>Work</Text>
-              <Text style={styles.placeAddress} numberOfLines={1}>
-                {workAddress?.address || 'Add work address'}
-              </Text>
-            </View>
-            {!workAddress && (
-              <TouchableOpacity onPress={() => handleLongPressSavedPlace('work')}>
-                <Ionicons name="add-circle-outline" size={24} color="#5d1289" />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
+        {/* Quick Access Buttons */}
+        <View style={styles.quickAccessRow}>
+          {homeAddress && (
+            <TouchableOpacity
+              style={styles.quickAccessButton}
+              onPress={() => navigateToDestination(homeAddress)}
+            >
+              <Ionicons name="home" size={20} color="#5d1289ff" />
+              <Text style={styles.quickAccessText}>Home</Text>
+            </TouchableOpacity>
+          )}
+          {workAddress && (
+            <TouchableOpacity
+              style={styles.quickAccessButton}
+              onPress={() => navigateToDestination(workAddress)}
+            >
+              <Ionicons name="briefcase" size={20} color="#5d1289ff" />
+              <Text style={styles.quickAccessText}>Work</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        
-        {/* Current Location Button */}
-        <TouchableOpacity 
-          style={styles.currentLocationButton}
-          onPress={handleUseCurrentLocation}
-        >
-          <Ionicons name="locate" size={20} color="#5d1289" style={{ marginRight: 12 }} />
-          <Text style={styles.currentLocationText}>Use Current Location</Text>
-        </TouchableOpacity>
       </View>
-
-      {/* Bottom Action Button */}
-      <SafeAreaView style={styles.bottomBar} edges={['bottom']}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => router.push('/(rider)/search-location')}
-        >
-          <Ionicons name="car" size={24} color="white" />
-          <Text style={styles.actionButtonText}>Request a Carpool</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-
-      {/* Location Button */}
-      <TouchableOpacity 
-        style={styles.locationButton} 
-        onPress={getCurrentLocation}
-      >
-        <Ionicons name="locate" size={24} color="#5d1289" />
-      </TouchableOpacity>
 
       {/* Search Modal */}
       <Modal
         visible={showSearchModal}
         animationType="slide"
-        onRequestClose={() => {
-          setShowSearchModal(false);
-          setSaveAddressType(null);
-        }}
+        onRequestClose={() => setShowSearchModal(false)}
       >
-        <SafeAreaView style={styles.searchModal} edges={['top', 'bottom']}>
-          <View style={styles.searchHeader}>
-            <TouchableOpacity onPress={() => {
-              setShowSearchModal(false);
-              setSaveAddressType(null);
-              setSearchQuery('');
-              setPredictions([]);
-            }}>
+        <SafeAreaView style={styles.modalContainer} edges={['top']}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => setShowSearchModal(false)}
+              style={styles.backButton}
+            >
               <Ionicons name="arrow-back" size={24} color="#000" />
             </TouchableOpacity>
-            <Text style={styles.searchTitle}>
-              {saveAddressType 
-                ? `Set ${saveAddressType === 'home' ? 'Home' : 'Work'} Address`
-                : 'Where to?'
-              }
-            </Text>
-          </View>
-          
-          <View style={styles.searchInputContainer}>
-            <Ionicons name="search" size={20} color="#666" />
             <TextInput
-              style={styles.searchTextInput}
+              style={styles.searchInput}
               placeholder="Search for a place..."
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoFocus
             />
-            {searchLoading && (
-              <ActivityIndicator size="small" color="#5d1289" />
-            )}
           </View>
-          
-          {predictions.length > 0 ? (
-            <FlatList
-              data={predictions}
-              keyExtractor={(item) => item.place_id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.predictionItem}
-                  onPress={() => handlePlaceSelect(item)}
-                >
-                  <Ionicons name="location-outline" size={20} color="#666" />
-                  <View style={styles.predictionText}>
-                    <Text style={styles.predictionMain}>
-                      {item.structured_formatting.main_text}
-                    </Text>
-                    <Text style={styles.predictionSecondary}>
-                      {item.structured_formatting.secondary_text}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            />
-          ) : searchQuery.length > 2 && !searchLoading ? (
-            <View style={styles.noResults}>
-              <Text style={styles.noResultsText}>No results found</Text>
+
+          {searchLoading && (
+            <View style={styles.loadingIndicator}>
+              <ActivityIndicator size="small" color="#5d1289ff" />
             </View>
-          ) : null}
+          )}
+
+          <FlatList
+            data={predictions}
+            keyExtractor={(item) => item.place_id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.predictionItem}
+                onPress={() => selectPlace(item)}
+              >
+                <Ionicons name="location" size={20} color="#666" />
+                <View style={styles.predictionText}>
+                  <Text style={styles.predictionMain}>
+                    {item.structured_formatting.main_text}
+                  </Text>
+                  <Text style={styles.predictionSecondary}>
+                    {item.structured_formatting.secondary_text}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              searchQuery.length > 2 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>No results found</Text>
+                </View>
+              ) : null
+            }
+          />
         </SafeAreaView>
       </Modal>
 
-      {/* Save Address Confirmation Modal */}
+      {/* Save Address Modal */}
       <Modal
         visible={showSaveModal}
         transparent
         animationType="fade"
         onRequestClose={() => setShowSaveModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.saveModal}>
-            <Text style={styles.saveModalTitle}>
-              Save as {saveAddressType === 'home' ? 'Home' : 'Work'}?
-            </Text>
+        <View style={styles.saveModalOverlay}>
+          <View style={styles.saveModalContent}>
+            <Text style={styles.saveModalTitle}>Save this address?</Text>
             <Text style={styles.saveModalAddress}>
               {addressToSave?.address}
             </Text>
+
             <View style={styles.saveModalButtons}>
               <TouchableOpacity
-                style={[styles.saveModalButton, styles.saveModalCancelButton]}
-                onPress={() => {
-                  setShowSaveModal(false);
-                  setSaveAddressType(null);
-                  setAddressToSave(null);
-                }}
+                style={[styles.saveModalButton, styles.homeButton]}
+                onPress={() => saveAddress('home')}
               >
-                <Text style={styles.saveModalCancelText}>Cancel</Text>
+                <Ionicons name="home" size={24} color="#FFFFFF" />
+                <Text style={styles.saveModalButtonText}>Home</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.saveModalButton, styles.saveModalConfirmButton]}
-                onPress={confirmSaveAddress}
+                style={[styles.saveModalButton, styles.workButton]}
+                onPress={() => saveAddress('work')}
               >
-                <Text style={styles.saveModalConfirmText}>Save</Text>
+                <Ionicons name="briefcase" size={24} color="#FFFFFF" />
+                <Text style={styles.saveModalButtonText}>Work</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.saveModalCancel}
+              onPress={() => setShowSaveModal(false)}
+            >
+              <Text style={styles.saveModalCancelText}>Skip</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   map: {
     flex: 1,
@@ -675,267 +463,164 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#666',
+    fontWeight: '500',
   },
   errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 24,
-  },
-  errorText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: 24,
-    backgroundColor: '#5d1289',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  topBar: {
     position: 'absolute',
-    top: 0,
-    left: 16,
-    right: 16,
+    top: 60,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF3B30',
+    padding: 16,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 8,
+    gap: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  menuButton: {
-    width: 48,
-    height: 48,
-    backgroundColor: 'white',
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  topInfo: {
+  errorText: {
     flex: 1,
-    marginLeft: 16,
-  },
-  greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  subtitle: {
+    color: '#FFFFFF',
     fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    fontWeight: '500',
   },
   searchCard: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 140 : 128,
-    left: 16,
-    right: 16,
-    backgroundColor: 'white',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  searchInput: {
+  searchButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f5f5f5',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    marginRight: 12,
   },
   searchPlaceholder: {
+    flex: 1,
     fontSize: 16,
     color: '#666',
   },
-  savedPlaces: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
-    paddingTop: 16,
+  quickAccessRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
   },
-  savedPlace: {
+  quickAccessButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-  },
-  placeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
   },
-  placeInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  placeLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  placeAddress: {
+  quickAccessText: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  placeDivider: {
-    height: 1,
-    backgroundColor: '#e5e5e5',
-    marginVertical: 8,
-  },
-  currentLocationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e5e5',
-  },
-  currentLocationText: {
-    fontSize: 15,
+    color: '#5d1289ff',
     fontWeight: '600',
-    color: '#5d1289',
   },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 16,
-    right: 16,
-    paddingBottom: 16,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    backgroundColor: '#5d1289',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  locationButton: {
-    position: 'absolute',
-    right: 16,
-    bottom: 100,
-    width: 48,
-    height: 48,
-    backgroundColor: 'white',
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  
-  // Search Modal Styles
-  searchModal: {
+  modalContainer: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
   },
-  searchHeader: {
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
+    borderBottomColor: '#E5E5E5',
   },
-  searchTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginLeft: 16,
+  backButton: {
+    padding: 8,
+    marginRight: 8,
   },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f5f5f5',
-    margin: 16,
-    borderRadius: 12,
-  },
-  searchTextInput: {
+  searchInput: {
     flex: 1,
     fontSize: 16,
-    marginLeft: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+  },
+  loadingIndicator: {
+    padding: 20,
+    alignItems: 'center',
   },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F5F5F5',
   },
   predictionText: {
     flex: 1,
-    marginLeft: 12,
   },
   predictionMain: {
     fontSize: 16,
     fontWeight: '500',
     color: '#000',
+    marginBottom: 4,
   },
   predictionSecondary: {
     fontSize: 14,
     color: '#666',
-    marginTop: 2,
   },
-  noResults: {
-    padding: 32,
+  emptyState: {
+    padding: 40,
     alignItems: 'center',
   },
-  noResultsText: {
+  emptyText: {
     fontSize: 16,
     color: '#666',
   },
-  
-  // Save Modal Styles
-  modalOverlay: {
+  saveModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 20,
   },
-  saveModal: {
-    backgroundColor: 'white',
+  saveModalContent: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -944,39 +629,47 @@ const styles = StyleSheet.create({
   saveModalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    textAlign: 'center',
     marginBottom: 12,
   },
   saveModalAddress: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
+    textAlign: 'center',
     marginBottom: 24,
   },
   saveModalButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 16,
   },
   saveModalButton: {
     flex: 1,
-    padding: 14,
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
-  saveModalCancelButton: {
-    backgroundColor: '#f5f5f5',
+  homeButton: {
+    backgroundColor: '#5d1289ff',
   },
-  saveModalConfirmButton: {
-    backgroundColor: '#5d1289',
+  workButton: {
+    backgroundColor: '#3B82F6',
+  },
+  saveModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveModalCancel: {
+    paddingVertical: 12,
+    alignItems: 'center',
   },
   saveModalCancelText: {
     fontSize: 16,
-    fontWeight: '600',
     color: '#666',
-  },
-  saveModalConfirmText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'white',
   },
 });
 
