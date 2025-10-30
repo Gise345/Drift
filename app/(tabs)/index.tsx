@@ -10,7 +10,6 @@ import {
   Alert,
   FlatList,
   Modal,
-  KeyboardAvoidingView,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region, LatLng } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -18,21 +17,12 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// CRITICAL: Use separate API keys for different services
-// Maps SDK API key is used by native MapView (Android/iOS restricted)
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-// Places API key for autocomplete searches (Web/JavaScript calls)
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
-
-interface PlacePrediction {
-  description: string;
-  place_id: string;
-  structured_formatting: {
-    main_text: string;
-    secondary_text: string;
-  };
-}
+/**
+ * NATIVE CONTEXT SOLUTION FOR HOME SCREEN
+ * 
+ * Using expo-location for geocoding (native context)
+ * This avoids fetch() web requests that get blocked by Google
+ */
 
 interface SavedPlace {
   label: string;
@@ -51,12 +41,11 @@ const HomeScreen = () => {
   // Search modal state
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
+  const [searchResults, setSearchResults] = useState<SavedPlace[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
   // Save address modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [saveAddressType, setSaveAddressType] = useState<'home' | 'work' | null>(null);
   const [addressToSave, setAddressToSave] = useState<SavedPlace | null>(null);
 
   // Saved addresses
@@ -71,17 +60,18 @@ const HomeScreen = () => {
     loadSavedAddresses();
   }, []);
 
-  // Debounced search for places
+  // Debounced search using native geocoding
   useEffect(() => {
     if (searchQuery.length > 2) {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
+      
       searchTimeoutRef.current = setTimeout(() => {
-        searchPlaces(searchQuery);
+        searchPlacesNative(searchQuery);
       }, 500);
     } else {
-      setPredictions([]);
+      setSearchResults([]);
     }
 
     return () => {
@@ -93,12 +83,10 @@ const HomeScreen = () => {
 
   const getCurrentLocation = async () => {
     try {
-      // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
         setErrorMsg('Permission to access location was denied');
-        // Set default to Cayman Islands
         const caymanRegion = {
           latitude: 19.3133,
           longitude: -81.2546,
@@ -112,7 +100,6 @@ const HomeScreen = () => {
 
       console.log('Getting current location...');
 
-      // Get current position with high accuracy
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
@@ -121,7 +108,6 @@ const HomeScreen = () => {
 
       setLocation(currentLocation);
       
-      // Set initial region centered on user location
       const initialRegion: Region = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
@@ -132,7 +118,6 @@ const HomeScreen = () => {
       setRegion(initialRegion);
       setLoading(false);
 
-      // Animate to user location after map loads
       setTimeout(() => {
         mapRef.current?.animateToRegion(initialRegion, 1000);
       }, 500);
@@ -141,7 +126,6 @@ const HomeScreen = () => {
       console.error('Error getting location:', error);
       setErrorMsg('Failed to get your location. Please enable location services.');
       
-      // Fallback to Cayman Islands
       const caymanRegion = {
         latitude: 19.3133,
         longitude: -81.2546,
@@ -153,85 +137,85 @@ const HomeScreen = () => {
     }
   };
 
-  const searchPlaces = async (query: string) => {
-    if (!GOOGLE_PLACES_API_KEY) {
-      console.error('Google Places API key not found');
-      return;
-    }
-
+  /**
+   * NATIVE SEARCH using expo-location geocoding
+   * This uses native Android/iOS geocoding, not web requests
+   */
+  const searchPlacesNative = async (query: string) => {
     setSearchLoading(true);
     try {
-      // Use Cayman Islands as location bias
-      const locationBias = location 
-        ? `location=${location.coords.latitude},${location.coords.longitude}&radius=50000`
-        : 'location=19.3133,-81.2546&radius=50000'; // Cayman Islands
+      console.log('🔍 Searching (NATIVE):', query);
 
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
-        query
-      )}&${locationBias}&key=${GOOGLE_PLACES_API_KEY}&components=country:ky`; // Restrict to Cayman Islands
+      // Use expo-location's native geocoding
+      // This calls Android/iOS native geocoding APIs
+      const results = await Location.geocodeAsync(query);
 
-      console.log('Searching places:', query);
+      if (results && results.length > 0) {
+        // Convert geocoding results to our format
+        const places: SavedPlace[] = await Promise.all(
+          results.slice(0, 5).map(async (result, index) => {
+            // Get address for each coordinate using reverse geocoding (also native)
+            let address = query;
+            try {
+              const reverseGeo = await Location.reverseGeocodeAsync({
+                latitude: result.latitude,
+                longitude: result.longitude,
+              });
+              
+              if (reverseGeo && reverseGeo.length > 0) {
+                const r = reverseGeo[0];
+                address = [
+                  r.street,
+                  r.city,
+                  r.region,
+                  r.country
+                ].filter(Boolean).join(', ');
+              }
+            } catch (err) {
+              console.error('Reverse geocoding error:', err);
+            }
 
-      const response = await fetch(url);
-      const data = await response.json();
+            return {
+              label: query,
+              address: address,
+              coordinates: {
+                latitude: result.latitude,
+                longitude: result.longitude,
+              },
+            };
+          })
+        );
 
-      if (data.status === 'OK') {
-        setPredictions(data.predictions);
+        setSearchResults(places);
+        console.log(`✅ Found ${places.length} results (NATIVE)`);
       } else {
-        console.error('Places API error:', data.status, data.error_message);
-        setPredictions([]);
+        setSearchResults([]);
+        console.log('No results found');
       }
     } catch (error) {
-      console.error('Error searching places:', error);
-      setPredictions([]);
+      console.error('Error searching places (native):', error);
+      setSearchResults([]);
+      
+      // Show helpful message
+      Alert.alert(
+        'Search Unavailable',
+        'Native geocoding service is unavailable. Please try again later or enter coordinates directly.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setSearchLoading(false);
     }
   };
 
-  const selectPlace = async (prediction: PlacePrediction) => {
-    if (!GOOGLE_PLACES_API_KEY) {
-      console.error('Google Places API key not found');
-      return;
-    }
+  const selectPlace = async (place: SavedPlace) => {
+    // Close search modal
+    setShowSearchModal(false);
+    setSearchQuery('');
+    setSearchResults([]);
 
-    try {
-      // Get place details to get coordinates
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.status === 'OK' && data.result) {
-        const coords: LatLng = {
-          latitude: data.result.geometry.location.lat,
-          longitude: data.result.geometry.location.lng,
-        };
-
-        const selectedPlace: SavedPlace = {
-          label: prediction.structured_formatting.main_text,
-          address: data.result.formatted_address,
-          coordinates: coords,
-          placeId: prediction.place_id,
-        };
-
-        // Close search modal
-        setShowSearchModal(false);
-        setSearchQuery('');
-        setPredictions([]);
-
-        // Navigate to destination selection or save
-        // For now, let's show save dialog
-        setAddressToSave(selectedPlace);
-        setShowSaveModal(true);
-
-      } else {
-        Alert.alert('Error', 'Failed to get place details');
-      }
-    } catch (error) {
-      console.error('Error getting place details:', error);
-      Alert.alert('Error', 'Failed to get place details');
-    }
+    // Show save dialog
+    setAddressToSave(place);
+    setShowSaveModal(true);
   };
 
   const saveAddress = (type: 'home' | 'work') => {
@@ -251,7 +235,6 @@ const HomeScreen = () => {
 
   const loadSavedAddresses = async () => {
     // TODO: Load from AsyncStorage or Firebase
-    // For now, empty
   };
 
   const navigateToDestination = (destination: SavedPlace) => {
@@ -259,7 +242,7 @@ const HomeScreen = () => {
       pathname: '/(rider)/select-destination',
       params: {
         pickup: JSON.stringify(location?.coords || region),
-        destination: JSON.stringify(destination),
+        destination: JSON.stringify(destination.coordinates),
       },
     });
   };
@@ -293,7 +276,6 @@ const HomeScreen = () => {
           {/* Current location marker */}
           {location && (
             <Marker
-              key={`user-location-${Date.now()}`}
               coordinate={{
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
@@ -370,6 +352,14 @@ const HomeScreen = () => {
             />
           </View>
 
+          {/* Native Search Info */}
+          <View style={styles.nativeSearchInfo}>
+            <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+            <Text style={styles.nativeSearchText}>
+              Using native device search
+            </Text>
+          </View>
+
           {searchLoading && (
             <View style={styles.loadingIndicator}>
               <ActivityIndicator size="small" color="#5d1289ff" />
@@ -377,8 +367,8 @@ const HomeScreen = () => {
           )}
 
           <FlatList
-            data={predictions}
-            keyExtractor={(item) => item.place_id}
+            data={searchResults}
+            keyExtractor={(item, index) => `${index}`}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.predictionItem}
@@ -387,18 +377,21 @@ const HomeScreen = () => {
                 <Ionicons name="location" size={20} color="#666" />
                 <View style={styles.predictionText}>
                   <Text style={styles.predictionMain}>
-                    {item.structured_formatting.main_text}
+                    {item.label}
                   </Text>
                   <Text style={styles.predictionSecondary}>
-                    {item.structured_formatting.secondary_text}
+                    {item.address}
                   </Text>
                 </View>
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              searchQuery.length > 2 ? (
+              searchQuery.length > 2 && !searchLoading ? (
                 <View style={styles.emptyState}>
                   <Text style={styles.emptyText}>No results found</Text>
+                  <Text style={styles.emptySubtext}>
+                    Try searching for a city, street, or landmark
+                  </Text>
                 </View>
               ) : null
             }
@@ -578,6 +571,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
   },
+  nativeSearchInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 8,
+  },
+  nativeSearchText: {
+    fontSize: 12,
+    color: '#10B981',
+    marginLeft: 8,
+    fontWeight: '600',
+  },
   loadingIndicator: {
     padding: 20,
     alignItems: 'center',
@@ -611,6 +619,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#666',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
   saveModalOverlay: {
     flex: 1,

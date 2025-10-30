@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1096886791573",
-    "project_id": "drift-345ky",
-    "storage_bucket": "drift-345ky.firebasestorage.app"
+    "project_number": "693488691443",
+    "project_id": "drift-global",
+    "storage_bucket": "drift-global.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1096886791573:android:fad909fb8a163752345a9c",
+        "mobilesdk_app_id": "1:693488691443:android:2827488f1a36ad1e26af86",
         "android_client_info": {
           "package_name": "com.drift.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBVlIxPPtHptBJgn31epJHlSMCDXI6wXWQ"
+          "current_key": "AIzaSyCE0O0Gri7ibo3hx8oMAV2oUqK9cdSC3FY"
         }
       ],
       "services": {
