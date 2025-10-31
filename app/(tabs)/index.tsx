@@ -18,11 +18,45 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
- * NATIVE CONTEXT SOLUTION FOR HOME SCREEN
+ * HOME SCREEN WITH GOOGLE PLACES API
  * 
- * Using expo-location for geocoding (native context)
- * This avoids fetch() web requests that get blocked by Google
+ * ✅ Uses Google Places API (NOT native device search)
+ * ✅ Restricted to Grand Cayman only
+ * ✅ Professional autocomplete
+ * ✅ Saved places (Home, Work)
+ * ✅ Current location detection
+ * 
+ * GRAND CAYMAN RESTRICTIONS:
+ * - locationbias: 19.3133,-81.2546 (George Town center)
+ * - radius: 15000 meters (covers entire island)
+ * - components: country:ky (Cayman Islands)
+ * - strictbounds: true (only results within bounds)
  */
+
+// Google Places API Key
+const GOOGLE_PLACES_API_KEY = 
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || 
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+// Grand Cayman coordinates (George Town center)
+const GRAND_CAYMAN_CENTER = {
+  latitude: 19.3133,
+  longitude: -81.2546,
+};
+
+// Radius that covers entire Grand Cayman (15km = 15000 meters)
+const SEARCH_RADIUS = 15000;
+
+interface PlacePrediction {
+  place_id: string;
+  description: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text: string;
+  };
+  source?: 'geocoding' | 'places';
+  priority?: number;
+}
 
 interface SavedPlace {
   label: string;
@@ -41,7 +75,7 @@ const HomeScreen = () => {
   // Search modal state
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SavedPlace[]>([]);
+  const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
   // Save address modal state
@@ -60,7 +94,7 @@ const HomeScreen = () => {
     loadSavedAddresses();
   }, []);
 
-  // Debounced search using native geocoding
+  // Debounced search using Google Places API
   useEffect(() => {
     if (searchQuery.length > 2) {
       if (searchTimeoutRef.current) {
@@ -68,10 +102,10 @@ const HomeScreen = () => {
       }
       
       searchTimeoutRef.current = setTimeout(() => {
-        searchPlacesNative(searchQuery);
+        searchPlacesAPI(searchQuery);
       }, 500);
     } else {
-      setSearchResults([]);
+      setPredictions([]);
     }
 
     return () => {
@@ -138,84 +172,225 @@ const HomeScreen = () => {
   };
 
   /**
-   * NATIVE SEARCH using expo-location geocoding
-   * This uses native Android/iOS geocoding, not web requests
+   * Extract main text from full address
+   * Example: "Capts Joe and Osbert Rd, West Bay, Grand Cayman" → "Capts Joe and Osbert Rd"
    */
-  const searchPlacesNative = async (query: string) => {
+  const extractMainText = (fullAddress: string): string => {
+    const parts = fullAddress.split(',');
+    return parts[0].trim();
+  };
+
+  /**
+   * Extract secondary text from full address
+   * Example: "Capts Joe and Osbert Rd, West Bay, Grand Cayman" → "West Bay, Grand Cayman"
+   */
+  const extractSecondaryText = (fullAddress: string): string => {
+    const parts = fullAddress.split(',');
+    return parts.slice(1).join(',').trim();
+  };
+
+  /**
+   * ADDRESS-FIRST SEARCH for Carpooling App
+   * 
+   * PRIORITY: Find residential addresses (where people live)
+   * SECONDARY: Popular places/businesses
+   * 
+   * Strategy:
+   * 1. Use Geocoding API FIRST (comprehensive address database)
+   * 2. Merge with Places API results (for additional context)
+   * 3. Prioritize street addresses over businesses
+   */
+  const searchPlacesAPI = async (query: string) => {
+    if (!GOOGLE_PLACES_API_KEY) {
+      Alert.alert('Error', 'Google Places API key not configured');
+      console.error('EXPO_PUBLIC_GOOGLE_PLACES_API_KEY not found');
+      return;
+    }
+
     setSearchLoading(true);
+
     try {
-      console.log('🔍 Searching (NATIVE):', query);
-
-      // Use expo-location's native geocoding
-      // This calls Android/iOS native geocoding APIs
-      const results = await Location.geocodeAsync(query);
-
-      if (results && results.length > 0) {
-        // Convert geocoding results to our format
-        const places: SavedPlace[] = await Promise.all(
-          results.slice(0, 5).map(async (result, index) => {
-            // Get address for each coordinate using reverse geocoding (also native)
-            let address = query;
-            try {
-              const reverseGeo = await Location.reverseGeocodeAsync({
-                latitude: result.latitude,
-                longitude: result.longitude,
-              });
-              
-              if (reverseGeo && reverseGeo.length > 0) {
-                const r = reverseGeo[0];
-                address = [
-                  r.street,
-                  r.city,
-                  r.region,
-                  r.country
-                ].filter(Boolean).join(', ');
-              }
-            } catch (err) {
-              console.error('Reverse geocoding error:', err);
-            }
-
-            return {
-              label: query,
-              address: address,
-              coordinates: {
-                latitude: result.latitude,
-                longitude: result.longitude,
-              },
-            };
-          })
-        );
-
-        setSearchResults(places);
-        console.log(`✅ Found ${places.length} results (NATIVE)`);
-      } else {
-        setSearchResults([]);
-        console.log('No results found');
-      }
-    } catch (error) {
-      console.error('Error searching places (native):', error);
-      setSearchResults([]);
+      console.log('🏠 ADDRESS-FIRST SEARCH: Prioritizing residential addresses');
       
-      // Show helpful message
-      Alert.alert(
-        'Search Unavailable',
-        'Native geocoding service is unavailable. Please try again later or enter coordinates directly.',
-        [{ text: 'OK' }]
-      );
+      // STEP 1: Geocoding API FIRST (Primary - finds all addresses)
+      console.log('🔍 Step 1: Geocoding API (Primary - for addresses)...');
+      
+      const geocodeUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+      geocodeUrl.searchParams.append('address', `${query}, Grand Cayman, Cayman Islands`);
+      geocodeUrl.searchParams.append('key', GOOGLE_PLACES_API_KEY);
+      geocodeUrl.searchParams.append('components', 'country:KY');
+      geocodeUrl.searchParams.append('bounds', '19.2,-81.5|19.4,-81.0'); // Grand Cayman bounds
+
+      const geocodeResponse = await fetch(geocodeUrl.toString());
+      const geocodeData = await geocodeResponse.json();
+
+      console.log('📊 Geocoding API Status:', geocodeData.status);
+
+      const allResults: PlacePrediction[] = [];
+
+      if (geocodeData.status === 'OK' && geocodeData.results && geocodeData.results.length > 0) {
+        console.log(`✅ Geocoding API found ${geocodeData.results.length} addresses`);
+        
+        // Convert Geocoding results to unified format
+        const geocodingResults = geocodeData.results.map((result: any) => ({
+          place_id: result.place_id,
+          description: result.formatted_address,
+          structured_formatting: {
+            main_text: extractMainText(result.formatted_address),
+            secondary_text: extractSecondaryText(result.formatted_address),
+          },
+          source: 'geocoding',
+          priority: 1, // Highest priority for addresses
+        }));
+
+        allResults.push(...geocodingResults);
+      } else {
+        console.log('⚠️ Geocoding API: No addresses found');
+      }
+
+      // STEP 2: Places API (Secondary - for additional context)
+      console.log('🔍 Step 2: Places API (Secondary - for businesses/landmarks)...');
+      
+      const placesUrl = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
+      placesUrl.searchParams.append('input', query);
+      placesUrl.searchParams.append('key', GOOGLE_PLACES_API_KEY);
+      placesUrl.searchParams.append('components', 'country:ky');
+      placesUrl.searchParams.append('location', `${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}`);
+      placesUrl.searchParams.append('radius', '20000');
+      placesUrl.searchParams.append('types', 'geocode');
+
+      const placesResponse = await fetch(placesUrl.toString());
+      const placesData = await placesResponse.json();
+
+      console.log('📊 Places API Status:', placesData.status);
+
+      if (placesData.status === 'OK' && placesData.predictions && placesData.predictions.length > 0) {
+        console.log(`✅ Places API found ${placesData.predictions.length} results`);
+        
+        // Add Places results with lower priority
+        const placesResults = placesData.predictions.map((pred: any) => ({
+          ...pred,
+          source: 'places',
+          priority: 2, // Lower priority than geocoding
+        }));
+
+        allResults.push(...placesResults);
+      } else {
+        console.log('⚠️ Places API: No results');
+      }
+
+      // STEP 3: Deduplicate and sort (addresses first)
+      const uniqueResults = new Map();
+      
+      allResults.forEach(result => {
+        const key = result.place_id || result.description;
+        if (!uniqueResults.has(key)) {
+          uniqueResults.set(key, result);
+        } else {
+          // Keep the one with higher priority (lower number = higher priority)
+          const existing = uniqueResults.get(key);
+          if ((result.priority ?? 999) < (existing.priority ?? 999)) {
+            uniqueResults.set(key, result);
+          }
+        }
+      });
+
+      const finalResults = Array.from(uniqueResults.values())
+        .sort((a, b) => a.priority - b.priority) // Addresses first
+        .slice(0, 10); // Limit to 10 results
+
+      console.log(`📍 Final results: ${finalResults.length} unique locations (addresses prioritized)`);
+
+      if (finalResults.length > 0) {
+        setPredictions(finalResults);
+      } else {
+        console.log('❌ No results found in Grand Cayman');
+        setPredictions([]);
+      }
+
+    } catch (error) {
+      console.error('❌ Error searching:', error);
+      Alert.alert('Error', 'Failed to search locations');
+      setPredictions([]);
     } finally {
       setSearchLoading(false);
     }
   };
 
-  const selectPlace = async (place: SavedPlace) => {
-    // Close search modal
-    setShowSearchModal(false);
-    setSearchQuery('');
-    setSearchResults([]);
+  /**
+   * Get place details from place_id
+   */
+  const getPlaceDetails = async (placeId: string) => {
+    if (!GOOGLE_PLACES_API_KEY) {
+      Alert.alert('Error', 'Google Places API key not configured');
+      return null;
+    }
 
-    // Show save dialog
-    setAddressToSave(place);
-    setShowSaveModal(true);
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,geometry&key=${GOOGLE_PLACES_API_KEY}`;
+
+      console.log('🔍 Fetching place details for:', placeId);
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.result) {
+        console.log('✅ Place details retrieved');
+        return {
+          name: data.result.name,
+          address: data.result.formatted_address,
+          latitude: data.result.geometry.location.lat,
+          longitude: data.result.geometry.location.lng,
+        };
+      } else {
+        console.error('❌ Place details error:', data.status);
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error getting place details:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Handle selecting a place from predictions
+   */
+  const selectPlace = async (prediction: PlacePrediction) => {
+    setSearchLoading(true);
+
+    try {
+      const details = await getPlaceDetails(prediction.place_id);
+
+      if (details) {
+        const place: SavedPlace = {
+          label: prediction.structured_formatting.main_text,
+          address: prediction.description,
+          coordinates: {
+            latitude: details.latitude,
+            longitude: details.longitude,
+          },
+          placeId: prediction.place_id,
+        };
+
+        console.log('📍 Selected location:', place);
+
+        // Close search modal
+        setShowSearchModal(false);
+        setSearchQuery('');
+        setPredictions([]);
+
+        // Show save dialog
+        setAddressToSave(place);
+        setShowSaveModal(true);
+      } else {
+        Alert.alert('Error', 'Failed to get location details');
+      }
+    } catch (error) {
+      console.error('Error selecting place:', error);
+      Alert.alert('Error', 'Failed to select location');
+    } finally {
+      setSearchLoading(false);
+    }
   };
 
   const saveAddress = (type: 'home' | 'work') => {
@@ -245,6 +420,10 @@ const HomeScreen = () => {
         destination: JSON.stringify(destination.coordinates),
       },
     });
+  };
+
+  const openSearchModal = () => {
+    setShowSearchModal(true);
   };
 
   if (loading) {
@@ -300,10 +479,10 @@ const HomeScreen = () => {
       <View style={styles.searchCard}>
         <TouchableOpacity
           style={styles.searchButton}
-          onPress={() => setShowSearchModal(true)}
+          onPress={openSearchModal}
         >
           <Ionicons name="search" size={20} color="#666" />
-          <Text style={styles.searchPlaceholder}>Where would you like to go?</Text>
+          <Text style={styles.searchPlaceholder}>Where to?</Text>
         </TouchableOpacity>
 
         {/* Quick Access Buttons */}
@@ -313,7 +492,7 @@ const HomeScreen = () => {
               style={styles.quickAccessButton}
               onPress={() => navigateToDestination(homeAddress)}
             >
-              <Ionicons name="home" size={20} color="#5d1289ff" />
+              <Ionicons name="home" size={18} color="#5d1289ff" />
               <Text style={styles.quickAccessText}>Home</Text>
             </TouchableOpacity>
           )}
@@ -322,7 +501,7 @@ const HomeScreen = () => {
               style={styles.quickAccessButton}
               onPress={() => navigateToDestination(workAddress)}
             >
-              <Ionicons name="briefcase" size={20} color="#5d1289ff" />
+              <Ionicons name="briefcase" size={18} color="#5d1289ff" />
               <Text style={styles.quickAccessText}>Work</Text>
             </TouchableOpacity>
           )}
@@ -335,31 +514,44 @@ const HomeScreen = () => {
         animationType="slide"
         onRequestClose={() => setShowSearchModal(false)}
       >
-        <SafeAreaView style={styles.modalContainer} edges={['top']}>
+        <SafeAreaView style={styles.modalContainer}>
+          {/* Modal Header */}
           <View style={styles.modalHeader}>
             <TouchableOpacity
-              onPress={() => setShowSearchModal(false)}
               style={styles.backButton}
+              onPress={() => {
+                setShowSearchModal(false);
+                setSearchQuery('');
+                setPredictions([]);
+              }}
             >
               <Ionicons name="arrow-back" size={24} color="#000" />
             </TouchableOpacity>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search for a place..."
+              placeholder="Search Grand Cayman..."
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoFocus
+              returnKeyType="search"
             />
           </View>
 
-          {/* Native Search Info */}
-          <View style={styles.nativeSearchInfo}>
-            <Ionicons name="shield-checkmark" size={16} color="#10B981" />
-            <Text style={styles.nativeSearchText}>
-              Using native device search
+          {/* API Status Indicator */}
+          <View style={styles.apiStatusContainer}>
+            <Ionicons 
+              name={GOOGLE_PLACES_API_KEY ? "checkmark-circle" : "warning"} 
+              size={14} 
+              color={GOOGLE_PLACES_API_KEY ? "#10B981" : "#F59E0B"} 
+            />
+            <Text style={styles.apiStatusText}>
+              {GOOGLE_PLACES_API_KEY 
+                ? "Using Google Places API • Grand Cayman only" 
+                : "⚠️ Places API key not configured"}
             </Text>
           </View>
 
+          {/* Search Results */}
           {searchLoading && (
             <View style={styles.loadingIndicator}>
               <ActivityIndicator size="small" color="#5d1289ff" />
@@ -367,30 +559,40 @@ const HomeScreen = () => {
           )}
 
           <FlatList
-            data={searchResults}
-            keyExtractor={(item, index) => `${index}`}
+            data={predictions}
+            keyExtractor={(item) => item.place_id}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.predictionItem}
                 onPress={() => selectPlace(item)}
               >
-                <Ionicons name="location" size={20} color="#666" />
+                <Ionicons name="location" size={20} color="#5d1289ff" />
                 <View style={styles.predictionText}>
                   <Text style={styles.predictionMain}>
-                    {item.label}
+                    {item.structured_formatting.main_text}
                   </Text>
                   <Text style={styles.predictionSecondary}>
-                    {item.address}
+                    {item.structured_formatting.secondary_text}
                   </Text>
                 </View>
+                <Ionicons name="chevron-forward" size={20} color="#999" />
               </TouchableOpacity>
             )}
             ListEmptyComponent={
               searchQuery.length > 2 && !searchLoading ? (
                 <View style={styles.emptyState}>
-                  <Text style={styles.emptyText}>No results found</Text>
+                  <Ionicons name="location-outline" size={48} color="#999" />
+                  <Text style={styles.emptyText}>No results found in Grand Cayman</Text>
                   <Text style={styles.emptySubtext}>
-                    Try searching for a city, street, or landmark
+                    Try searching for landmarks, addresses, or businesses
+                  </Text>
+                </View>
+              ) : searchQuery.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="search" size={48} color="#999" />
+                  <Text style={styles.emptyText}>Search locations in Grand Cayman</Text>
+                  <Text style={styles.emptySubtext}>
+                    Try "George Town", "Seven Mile Beach", or "Camana Bay"
                   </Text>
                 </View>
               ) : null
@@ -571,20 +773,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
   },
-  nativeSearchInfo: {
+  apiStatusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
   },
-  nativeSearchText: {
+  apiStatusText: {
     fontSize: 12,
-    color: '#10B981',
-    marginLeft: 8,
-    fontWeight: '600',
+    color: '#666',
   },
   loadingIndicator: {
     padding: 20,
@@ -618,8 +816,11 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#666',
+    marginTop: 16,
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
