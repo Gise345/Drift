@@ -7,6 +7,7 @@ interface RouteInfo {
   polylinePoints: Array<{ latitude: number; longitude: number }>;
   origin?: Location;
   destination?: Location;
+  stops?: Location[]; // Support for multi-stop routes
 }
 
 interface EstimatedCost {
@@ -23,6 +24,7 @@ interface CarpoolState {
   // Booking flow state
   pickupLocation: Location | null;
   destination: Location | null;
+  stops: Location[]; // Multi-stop support (max 2 stops)
   route: RouteInfo | null;
   vehicleType: string | null;
   estimatedCost: EstimatedCost | null;
@@ -42,6 +44,9 @@ interface CarpoolState {
   // Actions - Booking Flow
   setPickupLocation: (location: Location | null) => void;
   setDestination: (location: Location | null) => void;
+  setStops: (stops: Location[]) => void;
+  addStop: (stop: Location) => void;
+  removeStop: (index: number) => void;
   setRoute: (route: RouteInfo | null) => void;
   setVehicleType: (vehicleType: string | null) => void;
   setEstimatedCost: (cost: EstimatedCost | null) => void;
@@ -74,6 +79,7 @@ const initialState = {
   activeTrip: null,
   pickupLocation: null,
   destination: null,
+  stops: [],
   route: null,
   vehicleType: null,
   estimatedCost: null,
@@ -88,6 +94,7 @@ const initialState = {
 /**
  * Zustand store for managing carpool-related state
  * Handles active requests, trips, booking flow, activity history, and saved routes
+ * NOW WITH MULTI-STOP SUPPORT (up to 2 additional stops)
  */
 export const useCarpoolStore = create<CarpoolState>((set) => ({
   ...initialState,
@@ -96,6 +103,19 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
   setPickupLocation: (location) => set({ pickupLocation: location }),
   
   setDestination: (location) => set({ destination: location }),
+  
+  setStops: (stops) => set({ stops: stops.slice(0, 2) }), // Max 2 stops
+  
+  addStop: (stop) => set((state) => {
+    if (state.stops.length < 2) {
+      return { stops: [...state.stops, stop] };
+    }
+    return state;
+  }),
+  
+  removeStop: (index) => set((state) => ({
+    stops: state.stops.filter((_, i) => i !== index)
+  })),
   
   setRoute: (route) => set({ route }),
   
@@ -108,6 +128,7 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
   clearBookingFlow: () => set({
     pickupLocation: null,
     destination: null,
+    stops: [],
     route: null,
     vehicleType: null,
     estimatedCost: null,

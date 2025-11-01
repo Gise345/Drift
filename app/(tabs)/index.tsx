@@ -4,48 +4,67 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
+  ScrollView,
   Platform,
+  Dimensions,
   Alert,
-  FlatList,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Region, LatLng } from 'react-native-maps';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Region } from 'react-native-maps';
+import DriftMapView from '@/components/ui/DriftMapView';
+import SavedAddressItem, { SavedAddress } from '@/components/ui/SavedAddressItem';
 
 /**
- * HOME SCREEN WITH GOOGLE PLACES API
+ * DRIFT HOME SCREEN - PROPER IMPLEMENTATION
  * 
- * ✅ Uses Google Places API (NOT native device search)
- * ✅ Restricted to Grand Cayman only
- * ✅ Professional autocomplete
- * ✅ Saved places (Home, Work)
- * ✅ Current location detection
- * 
- * GRAND CAYMAN RESTRICTIONS:
- * - locationbias: 19.3133,-81.2546 (George Town center)
- * - radius: 15000 meters (covers entire island)
- * - components: country:ky (Cayman Islands)
- * - strictbounds: true (only results within bounds)
+ * Features:
+ * ✅ Solid background by default (NO map)
+ * ✅ "View Map" toggle with user location
+ * ✅ Saved address modal on HOME SCREEN (not search)
+ * ✅ Home, Work + 3 Custom addresses with custom names
+ * ✅ "View More/Less" toggle for custom addresses
+ * ✅ All addresses saved to AsyncStorage
+ * ✅ Saved places navigate directly to select-destination
  */
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Google Places API Key
 const GOOGLE_PLACES_API_KEY = 
   process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || 
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-// Grand Cayman coordinates (George Town center)
+// Grand Cayman coordinates
 const GRAND_CAYMAN_CENTER = {
   latitude: 19.3133,
   longitude: -81.2546,
 };
-
-// Radius that covers entire Grand Cayman (15km = 15000 meters)
 const SEARCH_RADIUS = 15000;
+
+// Storage keys
+const STORAGE_KEYS = {
+  HOME_ADDRESS: '@drift_home_address',
+  WORK_ADDRESS: '@drift_work_address',
+  CUSTOM_ADDRESSES: '@drift_custom_addresses',
+  RECENT_SEARCHES: '@drift_recent_searches',
+};
+
+interface RecentSearch {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  timestamp: number;
+}
 
 interface PlacePrediction {
   place_id: string;
@@ -54,15 +73,6 @@ interface PlacePrediction {
     main_text: string;
     secondary_text: string;
   };
-  source?: 'geocoding' | 'places';
-  priority?: number;
-}
-
-interface SavedPlace {
-  label: string;
-  address: string;
-  coordinates: LatLng;
-  placeId?: string;
 }
 
 const HomeScreen = () => {
@@ -70,31 +80,35 @@ const HomeScreen = () => {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Search modal state
-  const [showSearchModal, setShowSearchModal] = useState(false);
+  // Map visibility toggle
+  const [showMap, setShowMap] = useState(false);
+
+  // Saved data
+  const [homeAddress, setHomeAddress] = useState<SavedAddress | null>(null);
+  const [workAddress, setWorkAddress] = useState<SavedAddress | null>(null);
+  const [customAddresses, setCustomAddresses] = useState<SavedAddress[]>([]);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
+  
+  // View more toggle
+  const [showAllSavedPlaces, setShowAllSavedPlaces] = useState(false);
+
+  // Save Address Modal state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveModalType, setSaveModalType] = useState<'home' | 'work' | 'custom'>('home');
+  const [customAddressName, setCustomAddressName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Save address modal state
-  const [showSaveModal, setShowSaveModal] = useState(false);
-  const [addressToSave, setAddressToSave] = useState<SavedPlace | null>(null);
-
-  // Saved addresses
-  const [homeAddress, setHomeAddress] = useState<SavedPlace | null>(null);
-  const [workAddress, setWorkAddress] = useState<SavedPlace | null>(null);
-
+  const mapRef = useRef<any>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
-  const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
-    getCurrentLocation();
-    loadSavedAddresses();
+    initializeScreen();
   }, []);
 
-  // Debounced search using Google Places API
+  // Debounced search for modal
   useEffect(() => {
     if (searchQuery.length > 2) {
       if (searchTimeoutRef.current) {
@@ -102,7 +116,7 @@ const HomeScreen = () => {
       }
       
       searchTimeoutRef.current = setTimeout(() => {
-        searchPlacesAPI(searchQuery);
+        searchPlaces(searchQuery);
       }, 500);
     } else {
       setPredictions([]);
@@ -115,13 +129,24 @@ const HomeScreen = () => {
     };
   }, [searchQuery]);
 
+  /**
+   * Initialize screen
+   */
+  const initializeScreen = async () => {
+    await getCurrentLocation();
+    await loadSavedAddresses();
+    await loadRecentSearches();
+  };
+
+  /**
+   * Get current location
+   */
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
-        const caymanRegion = {
+        const caymanRegion: Region = {
           latitude: 19.3133,
           longitude: -81.2546,
           latitudeDelta: 0.2,
@@ -132,13 +157,9 @@ const HomeScreen = () => {
         return;
       }
 
-      console.log('Getting current location...');
-
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-
-      console.log('Location received:', currentLocation.coords);
 
       setLocation(currentLocation);
       
@@ -152,15 +173,9 @@ const HomeScreen = () => {
       setRegion(initialRegion);
       setLoading(false);
 
-      setTimeout(() => {
-        mapRef.current?.animateToRegion(initialRegion, 1000);
-      }, 500);
-
     } catch (error) {
       console.error('Error getting location:', error);
-      setErrorMsg('Failed to get your location. Please enable location services.');
-      
-      const caymanRegion = {
+      const caymanRegion: Region = {
         latitude: 19.3133,
         longitude: -81.2546,
         latitudeDelta: 0.2,
@@ -172,477 +187,614 @@ const HomeScreen = () => {
   };
 
   /**
-   * Extract main text from full address
-   * Example: "Capts Joe and Osbert Rd, West Bay, Grand Cayman" → "Capts Joe and Osbert Rd"
+   * Load saved addresses from AsyncStorage
    */
-  const extractMainText = (fullAddress: string): string => {
-    const parts = fullAddress.split(',');
-    return parts[0].trim();
+  const loadSavedAddresses = async () => {
+    try {
+      const [home, work, custom] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.HOME_ADDRESS),
+        AsyncStorage.getItem(STORAGE_KEYS.WORK_ADDRESS),
+        AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_ADDRESSES),
+      ]);
+
+      if (home) setHomeAddress(JSON.parse(home));
+      if (work) setWorkAddress(JSON.parse(work));
+      if (custom) setCustomAddresses(JSON.parse(custom));
+    } catch (error) {
+      console.error('Error loading saved addresses:', error);
+    }
   };
 
   /**
-   * Extract secondary text from full address
-   * Example: "Capts Joe and Osbert Rd, West Bay, Grand Cayman" → "West Bay, Grand Cayman"
+   * Load recent searches
    */
-  const extractSecondaryText = (fullAddress: string): string => {
-    const parts = fullAddress.split(',');
-    return parts.slice(1).join(',').trim();
+  const loadRecentSearches = async () => {
+    try {
+      const recent = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
+      if (recent) {
+        const searches = JSON.parse(recent);
+        searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
+        setRecentSearches(searches.slice(0, 10));
+      }
+    } catch (error) {
+      console.error('Error loading recent searches:', error);
+    }
   };
 
   /**
-   * ADDRESS-FIRST SEARCH for Carpooling App
-   * 
-   * PRIORITY: Find residential addresses (where people live)
-   * SECONDARY: Popular places/businesses
-   * 
-   * Strategy:
-   * 1. Use Geocoding API FIRST (comprehensive address database)
-   * 2. Merge with Places API results (for additional context)
-   * 3. Prioritize street addresses over businesses
+   * Search places using Google Places API
    */
-  const searchPlacesAPI = async (query: string) => {
+  const searchPlaces = async (query: string) => {
     if (!GOOGLE_PLACES_API_KEY) {
       Alert.alert('Error', 'Google Places API key not configured');
-      console.error('EXPO_PUBLIC_GOOGLE_PLACES_API_KEY not found');
       return;
     }
 
     setSearchLoading(true);
 
     try {
-      console.log('🏠 ADDRESS-FIRST SEARCH: Prioritizing residential addresses');
+      // Use Autocomplete API with proper parameters
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&location=${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}&radius=${SEARCH_RADIUS}&strictbounds=true&components=country:ky&key=${GOOGLE_PLACES_API_KEY}`;
       
-      // STEP 1: Geocoding API FIRST (Primary - finds all addresses)
-      console.log('🔍 Step 1: Geocoding API (Primary - for addresses)...');
-      
-      const geocodeUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-      geocodeUrl.searchParams.append('address', `${query}, Grand Cayman, Cayman Islands`);
-      geocodeUrl.searchParams.append('key', GOOGLE_PLACES_API_KEY);
-      geocodeUrl.searchParams.append('components', 'country:KY');
-      geocodeUrl.searchParams.append('bounds', '19.2,-81.5|19.4,-81.0'); // Grand Cayman bounds
+      const response = await fetch(url);
+      const data = await response.json();
 
-      const geocodeResponse = await fetch(geocodeUrl.toString());
-      const geocodeData = await geocodeResponse.json();
+      console.log('Places API response:', data);
 
-      console.log('📊 Geocoding API Status:', geocodeData.status);
-
-      const allResults: PlacePrediction[] = [];
-
-      if (geocodeData.status === 'OK' && geocodeData.results && geocodeData.results.length > 0) {
-        console.log(`✅ Geocoding API found ${geocodeData.results.length} addresses`);
-        
-        // Convert Geocoding results to unified format
-        const geocodingResults = geocodeData.results.map((result: any) => ({
-          place_id: result.place_id,
-          description: result.formatted_address,
-          structured_formatting: {
-            main_text: extractMainText(result.formatted_address),
-            secondary_text: extractSecondaryText(result.formatted_address),
-          },
-          source: 'geocoding',
-          priority: 1, // Highest priority for addresses
-        }));
-
-        allResults.push(...geocodingResults);
-      } else {
-        console.log('⚠️ Geocoding API: No addresses found');
-      }
-
-      // STEP 2: Places API (Secondary - for additional context)
-      console.log('🔍 Step 2: Places API (Secondary - for businesses/landmarks)...');
-      
-      const placesUrl = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
-      placesUrl.searchParams.append('input', query);
-      placesUrl.searchParams.append('key', GOOGLE_PLACES_API_KEY);
-      placesUrl.searchParams.append('components', 'country:ky');
-      placesUrl.searchParams.append('location', `${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}`);
-      placesUrl.searchParams.append('radius', '20000');
-      placesUrl.searchParams.append('types', 'geocode');
-
-      const placesResponse = await fetch(placesUrl.toString());
-      const placesData = await placesResponse.json();
-
-      console.log('📊 Places API Status:', placesData.status);
-
-      if (placesData.status === 'OK' && placesData.predictions && placesData.predictions.length > 0) {
-        console.log(`✅ Places API found ${placesData.predictions.length} results`);
-        
-        // Add Places results with lower priority
-        const placesResults = placesData.predictions.map((pred: any) => ({
-          ...pred,
-          source: 'places',
-          priority: 2, // Lower priority than geocoding
-        }));
-
-        allResults.push(...placesResults);
-      } else {
-        console.log('⚠️ Places API: No results');
-      }
-
-      // STEP 3: Deduplicate and sort (addresses first)
-      const uniqueResults = new Map();
-      
-      allResults.forEach(result => {
-        const key = result.place_id || result.description;
-        if (!uniqueResults.has(key)) {
-          uniqueResults.set(key, result);
-        } else {
-          // Keep the one with higher priority (lower number = higher priority)
-          const existing = uniqueResults.get(key);
-          if ((result.priority ?? 999) < (existing.priority ?? 999)) {
-            uniqueResults.set(key, result);
-          }
-        }
-      });
-
-      const finalResults = Array.from(uniqueResults.values())
-        .sort((a, b) => a.priority - b.priority) // Addresses first
-        .slice(0, 10); // Limit to 10 results
-
-      console.log(`📍 Final results: ${finalResults.length} unique locations (addresses prioritized)`);
-
-      if (finalResults.length > 0) {
-        setPredictions(finalResults);
-      } else {
-        console.log('❌ No results found in Grand Cayman');
+      if (data.status === 'OK' && data.predictions) {
+        setPredictions(data.predictions);
+      } else if (data.status === 'ZERO_RESULTS') {
         setPredictions([]);
+      } else {
+        console.error('Places API error:', data.status, data.error_message);
+        setPredictions([]);
+        
+        if (data.status === 'REQUEST_DENIED') {
+          Alert.alert('API Error', 'Places API key may not be configured correctly');
+        }
       }
-
     } catch (error) {
-      console.error('❌ Error searching:', error);
-      Alert.alert('Error', 'Failed to search locations');
+      console.error('Error searching places:', error);
       setPredictions([]);
+      Alert.alert('Error', 'Failed to search locations. Please check your internet connection.');
     } finally {
       setSearchLoading(false);
     }
   };
 
   /**
-   * Get place details from place_id
+   * Get place details (coordinates)
    */
   const getPlaceDetails = async (placeId: string) => {
     if (!GOOGLE_PLACES_API_KEY) {
-      Alert.alert('Error', 'Google Places API key not configured');
       return null;
     }
 
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,geometry&key=${GOOGLE_PLACES_API_KEY}`;
-
-      console.log('🔍 Fetching place details for:', placeId);
-
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`;
+      
       const response = await fetch(url);
       const data = await response.json();
 
+      console.log('Place details response:', data);
+
       if (data.status === 'OK' && data.result) {
-        console.log('✅ Place details retrieved');
         return {
-          name: data.result.name,
-          address: data.result.formatted_address,
           latitude: data.result.geometry.location.lat,
           longitude: data.result.geometry.location.lng,
         };
       } else {
-        console.error('❌ Place details error:', data.status);
+        console.error('Place details error:', data.status, data.error_message);
         return null;
       }
     } catch (error) {
-      console.error('❌ Error getting place details:', error);
+      console.error('Error getting place details:', error);
       return null;
     }
   };
 
   /**
-   * Handle selecting a place from predictions
+   * Handle selecting a place from search predictions
    */
-  const selectPlace = async (prediction: PlacePrediction) => {
-    setSearchLoading(true);
+  const handleSelectPlace = async (prediction: PlacePrediction) => {
+    const coordinates = await getPlaceDetails(prediction.place_id);
+    
+    if (!coordinates) {
+      Alert.alert('Error', 'Failed to get location coordinates');
+      return;
+    }
 
+    // Validate custom address name if needed
+    if (saveModalType === 'custom') {
+      if (!customAddressName.trim()) {
+        Alert.alert('Name Required', 'Please enter a name for this saved place');
+        return;
+      }
+      
+      if (customAddressName.trim().length < 2) {
+        Alert.alert('Invalid Name', 'Name must be at least 2 characters');
+        return;
+      }
+    }
+
+    // Create saved address object
+    const address: SavedAddress = {
+      id: Date.now().toString(),
+      type: saveModalType,
+      label: saveModalType === 'custom' 
+        ? customAddressName.trim()
+        : saveModalType.charAt(0).toUpperCase() + saveModalType.slice(1),
+      address: prediction.description,
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+    };
+
+    // Save to AsyncStorage
+    await saveAddress(address);
+  };
+
+  /**
+   * Save address to AsyncStorage
+   */
+  const saveAddress = async (address: SavedAddress) => {
     try {
-      const details = await getPlaceDetails(prediction.place_id);
+      if (address.type === 'home') {
+        await AsyncStorage.setItem(STORAGE_KEYS.HOME_ADDRESS, JSON.stringify(address));
+        setHomeAddress(address);
+        Alert.alert('Success', 'Home address saved!');
+      } else if (address.type === 'work') {
+        await AsyncStorage.setItem(STORAGE_KEYS.WORK_ADDRESS, JSON.stringify(address));
+        setWorkAddress(address);
+        Alert.alert('Success', 'Work address saved!');
+      } else if (address.type === 'custom') {
+        // Check limit
+        if (customAddresses.length >= 3) {
+          Alert.alert('Limit Reached', 'You can only save up to 3 custom addresses');
+          return;
+        }
 
-      if (details) {
-        const place: SavedPlace = {
-          label: prediction.structured_formatting.main_text,
-          address: prediction.description,
-          coordinates: {
-            latitude: details.latitude,
-            longitude: details.longitude,
-          },
-          placeId: prediction.place_id,
-        };
-
-        console.log('📍 Selected location:', place);
-
-        // Close search modal
-        setShowSearchModal(false);
-        setSearchQuery('');
-        setPredictions([]);
-
-        // Show save dialog
-        setAddressToSave(place);
-        setShowSaveModal(true);
-      } else {
-        Alert.alert('Error', 'Failed to get location details');
+        const updated = [...customAddresses, address];
+        await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(updated));
+        setCustomAddresses(updated);
+        Alert.alert('Success', `${address.label} saved!`);
       }
+
+      // Close modal and reset
+      closeSaveModal();
     } catch (error) {
-      console.error('Error selecting place:', error);
-      Alert.alert('Error', 'Failed to select location');
-    } finally {
-      setSearchLoading(false);
+      console.error('Error saving address:', error);
+      Alert.alert('Error', 'Failed to save address');
     }
   };
 
-  const saveAddress = (type: 'home' | 'work') => {
-    if (addressToSave) {
-      if (type === 'home') {
-        setHomeAddress(addressToSave);
-        // TODO: Save to AsyncStorage or Firebase
-      } else {
-        setWorkAddress(addressToSave);
-        // TODO: Save to AsyncStorage or Firebase
-      }
-      setShowSaveModal(false);
-      setAddressToSave(null);
-      Alert.alert('Success', `Address saved as ${type}`);
+  /**
+   * Open save address modal
+   */
+  const openSaveModal = (type: 'home' | 'work' | 'custom') => {
+    setSaveModalType(type);
+    setCustomAddressName('');
+    setSearchQuery('');
+    setPredictions([]);
+    setShowSaveModal(true);
+  };
+
+  /**
+   * Close save address modal
+   */
+  const closeSaveModal = () => {
+    setShowSaveModal(false);
+    setSearchQuery('');
+    setPredictions([]);
+    setCustomAddressName('');
+  };
+
+  /**
+   * Toggle map visibility
+   */
+  const toggleMapView = () => {
+    setShowMap(!showMap);
+    
+    if (!showMap && location && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
+        }, 1000);
+      }, 300);
     }
   };
 
-  const loadSavedAddresses = async () => {
-    // TODO: Load from AsyncStorage or Firebase
+  /**
+   * Open search screen
+   */
+  const openSearch = () => {
+    router.push('/(rider)/search-location');
   };
 
-  const navigateToDestination = (destination: SavedPlace) => {
+  /**
+   * Navigate to saved address
+   */
+  const navigateToAddress = (address: SavedAddress) => {
+    const pickup = location ? {
+      name: 'Current Location',
+      address: 'Your current location',
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    } : {
+      name: 'Grand Cayman',
+      address: 'Grand Cayman, Cayman Islands',
+      latitude: 19.3133,
+      longitude: -81.2546,
+    };
+
     router.push({
       pathname: '/(rider)/select-destination',
       params: {
-        pickup: JSON.stringify(location?.coords || region),
-        destination: JSON.stringify(destination.coordinates),
+        pickup: JSON.stringify(pickup),
+        destination: JSON.stringify({
+          name: address.label,
+          address: address.address,
+          latitude: address.latitude,
+          longitude: address.longitude,
+        }),
       },
     });
   };
 
-  const openSearchModal = () => {
-    setShowSearchModal(true);
+  /**
+   * Navigate to recent search
+   */
+  const navigateToRecent = (search: RecentSearch) => {
+    const pickup = location ? {
+      name: 'Current Location',
+      address: 'Your current location',
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    } : {
+      name: 'Grand Cayman',
+      address: 'Grand Cayman, Cayman Islands',
+      latitude: 19.3133,
+      longitude: -81.2546,
+    };
+
+    router.push({
+      pathname: '/(rider)/select-destination',
+      params: {
+        pickup: JSON.stringify(pickup),
+        destination: JSON.stringify({
+          name: search.name,
+          address: search.address,
+          latitude: search.latitude,
+          longitude: search.longitude,
+        }),
+      },
+    });
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#5d1289ff" />
-        <Text style={styles.loadingText}>Loading map...</Text>
+        <ActivityIndicator size="large" color="#5d1289" />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Map View */}
-      {region && (
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={region}
-          showsUserLocation={true}
-          showsMyLocationButton={true}
-          showsCompass={true}
-          loadingEnabled={true}
-          loadingIndicatorColor="#5d1289ff"
-          loadingBackgroundColor="#FFFFFF"
-          onMapReady={() => console.log('Map is ready!')}
-        >
-          {/* Current location marker */}
-          {location && (
-            <Marker
-              coordinate={{
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              }}
-              title="Your Location"
-              description="You are here"
-              pinColor="#5d1289ff"
-            />
-          )}
-        </MapView>
-      )}
-
-      {/* Error Message */}
-      {errorMsg && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={20} color="#FFFFFF" />
-          <Text style={styles.errorText}>{errorMsg}</Text>
-        </View>
-      )}
-
-      {/* Search Card */}
-      <View style={styles.searchCard}>
-        <TouchableOpacity
-          style={styles.searchButton}
-          onPress={openSearchModal}
-        >
-          <Ionicons name="search" size={20} color="#666" />
-          <Text style={styles.searchPlaceholder}>Where to?</Text>
-        </TouchableOpacity>
-
-        {/* Quick Access Buttons */}
-        <View style={styles.quickAccessRow}>
-          {homeAddress && (
-            <TouchableOpacity
-              style={styles.quickAccessButton}
-              onPress={() => navigateToDestination(homeAddress)}
-            >
-              <Ionicons name="home" size={18} color="#5d1289ff" />
-              <Text style={styles.quickAccessText}>Home</Text>
-            </TouchableOpacity>
-          )}
-          {workAddress && (
-            <TouchableOpacity
-              style={styles.quickAccessButton}
-              onPress={() => navigateToDestination(workAddress)}
-            >
-              <Ionicons name="briefcase" size={18} color="#5d1289ff" />
-              <Text style={styles.quickAccessText}>Work</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Search Modal */}
-      <Modal
-        visible={showSearchModal}
-        animationType="slide"
-        onRequestClose={() => setShowSearchModal(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          {/* Modal Header */}
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                setShowSearchModal(false);
-                setSearchQuery('');
-                setPredictions([]);
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#000" />
-            </TouchableOpacity>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search Grand Cayman..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoFocus
-              returnKeyType="search"
-            />
-          </View>
-
-          {/* API Status Indicator */}
-          <View style={styles.apiStatusContainer}>
-            <Ionicons 
-              name={GOOGLE_PLACES_API_KEY ? "checkmark-circle" : "warning"} 
-              size={14} 
-              color={GOOGLE_PLACES_API_KEY ? "#10B981" : "#F59E0B"} 
-            />
-            <Text style={styles.apiStatusText}>
-              {GOOGLE_PLACES_API_KEY 
-                ? "Using Google Places API • Grand Cayman only" 
-                : "⚠️ Places API key not configured"}
-            </Text>
-          </View>
-
-          {/* Search Results */}
-          {searchLoading && (
-            <View style={styles.loadingIndicator}>
-              <ActivityIndicator size="small" color="#5d1289ff" />
-            </View>
-          )}
-
-          <FlatList
-            data={predictions}
-            keyExtractor={(item) => item.place_id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.predictionItem}
-                onPress={() => selectPlace(item)}
-              >
-                <Ionicons name="location" size={20} color="#5d1289ff" />
-                <View style={styles.predictionText}>
-                  <Text style={styles.predictionMain}>
-                    {item.structured_formatting.main_text}
-                  </Text>
-                  <Text style={styles.predictionSecondary}>
-                    {item.structured_formatting.secondary_text}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#999" />
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              searchQuery.length > 2 && !searchLoading ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="location-outline" size={48} color="#999" />
-                  <Text style={styles.emptyText}>No results found in Grand Cayman</Text>
-                  <Text style={styles.emptySubtext}>
-                    Try searching for landmarks, addresses, or businesses
-                  </Text>
-                </View>
-              ) : searchQuery.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="search" size={48} color="#999" />
-                  <Text style={styles.emptyText}>Search locations in Grand Cayman</Text>
-                  <Text style={styles.emptySubtext}>
-                    Try "George Town", "Seven Mile Beach", or "Camana Bay"
-                  </Text>
-                </View>
-              ) : null
-            }
+    <View style={styles.container}>
+      {/* Map View - Full Screen When Active */}
+      {showMap && region && (
+        <View style={styles.fullScreenMap}>
+          <DriftMapView
+            region={region}
+            showUserLocation={true}
+            showsMyLocationButton={true}
+            showsCompass={true}
+            mapRef={mapRef}
           />
+          
+          {/* Map Overlay */}
+          <View style={styles.mapOverlay}>
+            <View style={styles.mapTopBar}>
+              <TouchableOpacity 
+                style={styles.menuButton}
+                onPress={() => router.push('/(rider)/profile')}
+              >
+                <Ionicons name="menu" size={24} color="#000" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.hideMapButton}
+                onPress={toggleMapView}
+              >
+                <Ionicons name="close" size={20} color="#5d1289" />
+                <Text style={styles.hideMapText}>Hide Map</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.searchBarOverMap}
+              onPress={openSearch}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="search" size={24} color="#666" />
+              <Text style={styles.searchBarText}>Where to?</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Main Content */}
+      {!showMap && (
+        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+          <View style={styles.topBar}>
+            <TouchableOpacity 
+              style={styles.menuButton}
+              onPress={() => router.push('/(rider)/profile')}
+            >
+              <Ionicons name="menu" size={24} color="#000" />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.viewMapButton}
+              onPress={toggleMapView}
+            >
+              <Ionicons name="map" size={20} color="#5d1289" />
+              <Text style={styles.viewMapText}>View Map</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Search Bar */}
+            <TouchableOpacity 
+              style={styles.searchBar}
+              onPress={openSearch}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="search" size={24} color="#666" />
+              <Text style={styles.searchBarText}>Where to?</Text>
+              <View style={styles.laterBadge}>
+                <Text style={styles.laterText}>Later</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Saved Places Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Saved places</Text>
+
+              {/* Home Address */}
+              <SavedAddressItem
+                icon="home"
+                label="Home"
+                address={homeAddress?.address}
+                onPress={() => {
+                  if (homeAddress) {
+                    navigateToAddress(homeAddress);
+                  } else {
+                    openSaveModal('home');
+                  }
+                }}
+                showAddIcon={!homeAddress}
+              />
+
+              {/* Work Address */}
+              <SavedAddressItem
+                icon="briefcase"
+                label="Work"
+                address={workAddress?.address}
+                onPress={() => {
+                  if (workAddress) {
+                    navigateToAddress(workAddress);
+                  } else {
+                    openSaveModal('work');
+                  }
+                }}
+                showAddIcon={!workAddress}
+              />
+
+              {/* Custom Addresses - Collapsible */}
+              {customAddresses.length > 0 && (
+                <>
+                  {showAllSavedPlaces && (
+                    <>
+                      {customAddresses.map((address) => (
+                        <SavedAddressItem
+                          key={address.id}
+                          icon="location"
+                          label={address.label}
+                          address={address.address}
+                          onPress={() => navigateToAddress(address)}
+                        />
+                      ))}
+                    </>
+                  )}
+                  
+                  <TouchableOpacity
+                    style={styles.viewMoreButton}
+                    onPress={() => setShowAllSavedPlaces(!showAllSavedPlaces)}
+                  >
+                    <Text style={styles.viewMoreText}>
+                      {showAllSavedPlaces 
+                        ? 'View less' 
+                        : `View ${customAddresses.length} more`}
+                    </Text>
+                    <Ionicons 
+                      name={showAllSavedPlaces ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color="#5d1289" 
+                    />
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* Add Saved Place Button (max 3 custom) */}
+              {customAddresses.length < 3 && (
+                <TouchableOpacity
+                  style={styles.addPlaceButton}
+                  onPress={() => openSaveModal('custom')}
+                >
+                  <View style={styles.addPlaceIconContainer}>
+                    <Ionicons name="add-circle" size={24} color="#5d1289" />
+                  </View>
+                  <Text style={styles.addPlaceText}>Add saved place</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Recent Searches Section */}
+            {recentSearches.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Recent</Text>
+                {recentSearches.slice(0, 5).map((search) => (
+                  <TouchableOpacity
+                    key={search.id}
+                    style={styles.recentItem}
+                    onPress={() => navigateToRecent(search)}
+                  >
+                    <View style={styles.recentIconContainer}>
+                      <Ionicons name="time" size={20} color="#666" />
+                    </View>
+                    <View style={styles.recentTextContainer}>
+                      <Text style={styles.recentName}>{search.name}</Text>
+                      <Text style={styles.recentAddress}>{search.address}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Suggestions Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Suggestions</Text>
+              <View style={styles.suggestionCard}>
+                <Ionicons name="calendar" size={24} color="#5d1289" />
+                <View style={styles.suggestionTextContainer}>
+                  <Text style={styles.suggestionTitle}>Plan your journey</Text>
+                  <Text style={styles.suggestionDescription}>
+                    Schedule carpool trips in advance
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
         </SafeAreaView>
-      </Modal>
+      )}
 
       {/* Save Address Modal */}
       <Modal
         visible={showSaveModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSaveModal(false)}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={closeSaveModal}
       >
-        <View style={styles.saveModalOverlay}>
-          <View style={styles.saveModalContent}>
-            <Text style={styles.saveModalTitle}>Save this address?</Text>
-            <Text style={styles.saveModalAddress}>
-              {addressToSave?.address}
-            </Text>
-
-            <View style={styles.saveModalButtons}>
-              <TouchableOpacity
-                style={[styles.saveModalButton, styles.homeButton]}
-                onPress={() => saveAddress('home')}
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <KeyboardAvoidingView 
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity 
+                style={styles.modalCloseButton}
+                onPress={closeSaveModal}
               >
-                <Ionicons name="home" size={24} color="#FFFFFF" />
-                <Text style={styles.saveModalButtonText}>Home</Text>
+                <Ionicons name="close" size={28} color="#000" />
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.saveModalButton, styles.workButton]}
-                onPress={() => saveAddress('work')}
-              >
-                <Ionicons name="briefcase" size={24} color="#FFFFFF" />
-                <Text style={styles.saveModalButtonText}>Work</Text>
-              </TouchableOpacity>
+              <Text style={styles.modalTitle}>
+                {saveModalType === 'home' && 'Save Home Address'}
+                {saveModalType === 'work' && 'Save Work Address'}
+                {saveModalType === 'custom' && 'Save Custom Place'}
+              </Text>
+              <View style={{ width: 40 }} />
             </View>
 
-            <TouchableOpacity
-              style={styles.saveModalCancel}
-              onPress={() => setShowSaveModal(false)}
-            >
-              <Text style={styles.saveModalCancelText}>Skip</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            {/* Custom Name Input (for custom addresses only) */}
+            {saveModalType === 'custom' && (
+              <View style={styles.customNameContainer}>
+                <Text style={styles.customNameLabel}>Name this place:</Text>
+                <TextInput
+                  style={styles.customNameInput}
+                  placeholder="e.g., Gym, Mom's House, Favorite Beach"
+                  value={customAddressName}
+                  onChangeText={setCustomAddressName}
+                  maxLength={30}
+                  autoCapitalize="words"
+                />
+                <Text style={styles.customNameHint}>
+                  {customAddressName.length}/30 characters
+                </Text>
+              </View>
+            )}
+
+            {/* Search Input */}
+            <View style={styles.modalSearchContainer}>
+              <Ionicons name="search" size={20} color="#666" />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search for address in Grand Cayman..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus={saveModalType !== 'custom'}
+              />
+              {searchLoading && (
+                <ActivityIndicator size="small" color="#5d1289" />
+              )}
+            </View>
+
+            {/* Search Results */}
+            <ScrollView style={styles.modalResults}>
+              {predictions.map((prediction) => (
+                <TouchableOpacity
+                  key={prediction.place_id}
+                  style={styles.modalResultItem}
+                  onPress={() => handleSelectPlace(prediction)}
+                >
+                  <Ionicons name="location" size={20} color="#5d1289" />
+                  <View style={styles.modalResultText}>
+                    <Text style={styles.modalResultMain}>
+                      {prediction.structured_formatting.main_text}
+                    </Text>
+                    <Text style={styles.modalResultSecondary}>
+                      {prediction.structured_formatting.secondary_text}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#999" />
+                </TouchableOpacity>
+              ))}
+
+              {searchQuery.length > 0 && predictions.length === 0 && !searchLoading && (
+                <View style={styles.noResultsContainer}>
+                  <Ionicons name="search" size={48} color="#ccc" />
+                  <Text style={styles.noResultsText}>No results found</Text>
+                  <Text style={styles.noResultsHint}>
+                    Try searching for a different location
+                  </Text>
+                </View>
+              )}
+
+              {searchQuery.length === 0 && (
+                <View style={styles.noResultsContainer}>
+                  <Ionicons name="location" size={48} color="#ccc" />
+                  <Text style={styles.noResultsText}>
+                    Search for an address
+                  </Text>
+                  <Text style={styles.noResultsHint}>
+                    Start typing to see suggestions
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -651,9 +803,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  map: {
-    flex: 1,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -661,94 +810,222 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
-  },
-  errorContainer: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
-    backgroundColor: '#FF3B30',
-    padding: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  errorText: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  searchCard: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    right: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  searchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-  },
-  searchPlaceholder: {
-    flex: 1,
-    fontSize: 16,
-    color: '#666',
-  },
-  quickAccessRow: {
-    flexDirection: 'row',
-    gap: 12,
     marginTop: 12,
+    fontSize: 16,
+    color: '#666',
   },
-  quickAccessButton: {
+  fullScreenMap: {
     flex: 1,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+  },
+  mapTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  hideMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  hideMapText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  searchBarOverMap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0e6f6',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  viewMapText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  searchBarText: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#666',
+  },
+  laterBadge: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  laterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 16,
+  },
+  viewMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
+    paddingVertical: 12,
+    gap: 6,
   },
-  quickAccessText: {
+  viewMoreText: {
     fontSize: 14,
-    color: '#5d1289ff',
     fontWeight: '600',
+    color: '#5d1289',
   },
+  addPlaceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#f5f5f5',
+  },
+  addPlaceIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f0e6f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  addPlaceText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  recentIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  recentTextContainer: {
+    flex: 1,
+  },
+  recentName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 2,
+  },
+  recentAddress: {
+    fontSize: 14,
+    color: '#666',
+  },
+  suggestionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0e6f6',
+    padding: 16,
+    borderRadius: 12,
+  },
+  suggestionTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  suggestionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  suggestionDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
+
+  // Modal Styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -756,135 +1033,107 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
   },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-  },
-  apiStatusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  apiStatusText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  loadingIndicator: {
-    padding: 20,
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  predictionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
-  },
-  predictionText: {
-    flex: 1,
-  },
-  predictionMain: {
-    fontSize: 16,
-    fontWeight: '500',
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: '#000',
-    marginBottom: 4,
   },
-  predictionSecondary: {
+  customNameContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#f9f9f9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  customNameLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  customNameInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#000',
+  },
+  customNameHint: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  modalSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  modalSearchInput: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#000',
+  },
+  modalResults: {
+    flex: 1,
+  },
+  modalResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  modalResultText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  modalResultMain: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 2,
+  },
+  modalResultSecondary: {
     fontSize: 14,
     color: '#666',
   },
-  emptyState: {
-    padding: 40,
+  noResultsContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 60,
   },
-  emptyText: {
+  noResultsText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
+    marginTop: 12,
   },
-  emptySubtext: {
+  noResultsHint: {
     fontSize: 14,
     color: '#999',
-    textAlign: 'center',
-  },
-  saveModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  saveModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-  },
-  saveModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  saveModalAddress: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  saveModalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  saveModalButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  homeButton: {
-    backgroundColor: '#5d1289ff',
-  },
-  workButton: {
-    backgroundColor: '#3B82F6',
-  },
-  saveModalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveModalCancel: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  saveModalCancelText: {
-    fontSize: 16,
-    color: '#666',
+    marginTop: 4,
   },
 });
 
