@@ -414,14 +414,30 @@ const HomeScreen = () => {
   };
 
   /**
-   * Navigate to saved address
+   * Navigate to saved address - FIXED FOR COORDINATES
    */
-  const navigateToAddress = (address: SavedAddress) => {
-    const pickup = location ? {
+  const navigateToAddress = async (address: SavedAddress) => {
+    // Ensure we have current location
+    let currentLoc = location;
+    if (!currentLoc) {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          currentLoc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          setLocation(currentLoc);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
+    }
+
+    const pickup = currentLoc ? {
       name: 'Current Location',
       address: 'Your current location',
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
+      latitude: currentLoc.coords.latitude,
+      longitude: currentLoc.coords.longitude,
     } : {
       name: 'Grand Cayman',
       address: 'Grand Cayman, Cayman Islands',
@@ -429,16 +445,23 @@ const HomeScreen = () => {
       longitude: -81.2546,
     };
 
+    const dest = {
+      name: address.label,
+      address: address.address,
+      latitude: address.latitude,
+      longitude: address.longitude,
+    };
+
+    console.log('🚗 Navigating from home to destination:');
+    console.log('  Pickup:', pickup);
+    console.log('  Destination:', dest);
+
+    // Navigate with params
     router.push({
       pathname: '/(rider)/select-destination',
       params: {
         pickup: JSON.stringify(pickup),
-        destination: JSON.stringify({
-          name: address.label,
-          address: address.address,
-          latitude: address.latitude,
-          longitude: address.longitude,
-        }),
+        destination: JSON.stringify(dest),
       },
     });
   };

@@ -69,7 +69,7 @@ const SelectDestinationScreen = () => {
     };
   }, []);
 
-  // Parse params and set in store
+  // Parse params and set in store - ONLY RUN ONCE
   useEffect(() => {
     let parsedPickup = null;
     let parsedDestination = null;
@@ -78,49 +78,81 @@ const SelectDestinationScreen = () => {
     if (params.pickup && typeof params.pickup === 'string') {
       try {
         parsedPickup = JSON.parse(params.pickup);
+        console.log('✅ Parsed pickup:', parsedPickup);
         setPickupLocation(parsedPickup);
       } catch (e) {
-        console.error('Failed to parse pickup:', e);
+        console.error('❌ Failed to parse pickup:', e);
       }
+    } else if (pickupLocation) {
+      parsedPickup = pickupLocation;
     }
 
     // Parse destination
     if (params.destination && typeof params.destination === 'string') {
       try {
         parsedDestination = JSON.parse(params.destination);
+        console.log('✅ Parsed destination:', parsedDestination);
         setDestination(parsedDestination);
       } catch (e) {
-        console.error('Failed to parse destination:', e);
+        console.error('❌ Failed to parse destination:', e);
       }
+    } else if (destination) {
+      parsedDestination = destination;
     }
 
     // Set initial region based on pickup or destination
-    if ((parsedPickup || pickupLocation) && !region) {
-      const loc = parsedPickup || pickupLocation;
-      if (loc) {
-        const initialRegion: Region = {
-          latitude: loc.latitude,
-          longitude: loc.longitude,
-          latitudeDelta: 0.1,
-          longitudeDelta: 0.1,
-        };
-        setRegion(initialRegion);
-      }
+    if (parsedPickup && !region) {
+      const initialRegion: Region = {
+        latitude: parsedPickup.latitude,
+        longitude: parsedPickup.longitude,
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      };
+      setRegion(initialRegion);
+    } else if (parsedDestination && !region) {
+      const initialRegion: Region = {
+        latitude: parsedDestination.latitude,
+        longitude: parsedDestination.longitude,
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      };
+      setRegion(initialRegion);
     }
-  }, [params.pickup, params.destination]);
+
+    // Log final state for debugging
+    console.log('📍 Select Destination - Final state:');
+    console.log('  Pickup:', parsedPickup || pickupLocation);
+    console.log('  Destination:', parsedDestination || destination);
+  }, []); // Only run once on mount
 
   /**
    * Fetch route when locations or stops change
+   * FIXED: Prevent infinite loops and validate coordinates
    */
   useEffect(() => {
-    // Check if locations exist
+    // Validate that we have proper coordinates
     if (!pickupLocation || !destination) {
+      console.log('⏭️ Skipping route fetch - missing locations');
       return;
     }
 
-    // Check if route already calculated
+    // Validate coordinates are numbers
+    if (
+      typeof pickupLocation.latitude !== 'number' ||
+      typeof pickupLocation.longitude !== 'number' ||
+      typeof destination.latitude !== 'number' ||
+      typeof destination.longitude !== 'number'
+    ) {
+      console.error('❌ Invalid coordinates:', { pickupLocation, destination });
+      return;
+    }
+
+    // Check if route already exists for these exact locations
     if (cachedRoute && routeCoordinates.length > 0) {
       console.log('✅ Using cached route');
+      setRouteCoordinates(cachedRoute.polylinePoints);
+      setDistance(cachedRoute.distance / 1000);
+      setDuration(cachedRoute.duration / 60);
       return;
     }
 
@@ -141,8 +173,12 @@ const SelectDestinationScreen = () => {
       clearTimeout(fetchTimeoutRef.current);
     }
 
+    console.log('📍 Fetching route from Directions API...');
+    console.log('  From:', pickupLocation);
+    console.log('  To:', destination);
+    console.log('  Stops:', stops?.length || 0);
+
     fetchTimeoutRef.current = setTimeout(() => {
-      console.log('📍 Fetching route from Directions API...');
       fetchRoute();
     }, 300);
 
@@ -151,10 +187,11 @@ const SelectDestinationScreen = () => {
         clearTimeout(fetchTimeoutRef.current);
       }
     };
-  }, [pickupLocation, destination, stops, cachedRoute, loading]);
+  }, [pickupLocation?.latitude, pickupLocation?.longitude, destination?.latitude, destination?.longitude, stops?.length]); // Only trigger on coordinate changes
 
   /**
    * Fetch route from Google Directions API with waypoints support
+   * FIXED: Better validation and error handling
    */
   const fetchRoute = async () => {
     if (!pickupLocation || !destination) {
@@ -162,8 +199,26 @@ const SelectDestinationScreen = () => {
       return;
     }
 
+    // Validate coordinates
+    if (
+      typeof pickupLocation.latitude !== 'number' ||
+      typeof pickupLocation.longitude !== 'number' ||
+      typeof destination.latitude !== 'number' ||
+      typeof destination.longitude !== 'number' ||
+      isNaN(pickupLocation.latitude) ||
+      isNaN(pickupLocation.longitude) ||
+      isNaN(destination.latitude) ||
+      isNaN(destination.longitude)
+    ) {
+      console.error('❌ Invalid coordinates detected:');
+      console.error('  Pickup:', pickupLocation);
+      console.error('  Destination:', destination);
+      Alert.alert('Error', 'Invalid location coordinates');
+      return;
+    }
+
     if (!GOOGLE_DIRECTIONS_API_KEY) {
-      console.error('Google API key not configured');
+      console.error('❌ Google API key not configured');
       // Fallback to straight line
       calculateFallbackRoute();
       return;
@@ -184,7 +239,10 @@ const SelectDestinationScreen = () => {
         waypointsParam = `&waypoints=${waypointCoords.join('|')}`;
       }
 
-      console.log('🌐 Making Directions API request with', stops?.length || 0, 'stops...');
+      console.log('🌐 Making Directions API request:');
+      console.log('  Origin:', origin);
+      console.log('  Destination:', dest);
+      console.log('  Stops:', stops?.length || 0);
 
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}${waypointsParam}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
@@ -198,6 +256,7 @@ const SelectDestinationScreen = () => {
 
       // Check if this is still the latest request
       if (currentRequestId !== requestIdRef.current || !isMountedRef.current) {
+        console.log('⏭️ Ignoring stale request');
         return;
       }
 
@@ -402,7 +461,7 @@ const SelectDestinationScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -433,20 +492,30 @@ const SelectDestinationScreen = () => {
         showsCompass={true}
         toolbarEnabled={false}
       >
-        {/* Pickup Marker */}
+        {/* Pickup Marker with Custom Label */}
         {pickupLocation && (
           <Marker
             coordinate={{
               latitude: pickupLocation.latitude,
               longitude: pickupLocation.longitude,
             }}
-            title="Pickup"
-            description={pickupLocation.address}
-            pinColor="#10B981"
-          />
+            title="Pickup Location"
+            description={pickupLocation.name}
+          >
+            <View style={styles.markerContainer}>
+              <View style={styles.pickupMarker}>
+                <Ionicons name="location" size={24} color="#FFFFFF" />
+              </View>
+              <View style={styles.markerLabel}>
+                <Text style={styles.markerLabelText} numberOfLines={1}>
+                  {pickupLocation.name}
+                </Text>
+              </View>
+            </View>
+          </Marker>
         )}
 
-        {/* Stop Markers */}
+        {/* Stop Markers with Custom Labels */}
         {stops && stops.map((stop, index) => (
           <Marker
             key={`stop-${index}`}
@@ -455,12 +524,22 @@ const SelectDestinationScreen = () => {
               longitude: stop.longitude,
             }}
             title={`Stop ${index + 1}`}
-            description={stop.address}
-            pinColor="#F59E0B"
-          />
+            description={stop.name}
+          >
+            <View style={styles.markerContainer}>
+              <View style={styles.stopMarker}>
+                <Text style={styles.stopNumber}>{index + 1}</Text>
+              </View>
+              <View style={styles.markerLabel}>
+                <Text style={styles.markerLabelText} numberOfLines={1}>
+                  {stop.name}
+                </Text>
+              </View>
+            </View>
+          </Marker>
         ))}
 
-        {/* Destination Marker */}
+        {/* Destination Marker with Custom Label */}
         {destination && (
           <Marker
             coordinate={{
@@ -468,9 +547,19 @@ const SelectDestinationScreen = () => {
               longitude: destination.longitude,
             }}
             title="Destination"
-            description={destination.address}
-            pinColor="#EF4444"
-          />
+            description={destination.name}
+          >
+            <View style={styles.markerContainer}>
+              <View style={styles.destinationMarker}>
+                <Ionicons name="flag" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.markerLabel}>
+                <Text style={styles.markerLabelText} numberOfLines={1}>
+                  {destination.name}
+                </Text>
+              </View>
+            </View>
+          </Marker>
         )}
 
         {/* Route Polyline */}
@@ -660,18 +749,19 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 20,
+    bottom: 0, // Start from bottom
     left: 16,
     right: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24, // Extra padding for safe area/nav buttons
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    marginBottom: Platform.OS === 'android' ? 20 : 0,
+    marginBottom: Platform.OS === 'ios' ? 0 : 16, // Extra margin on Android for nav buttons
   },
   stopsContainer: {
     marginBottom: 12,
@@ -766,6 +856,79 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#5d1289',
+  },
+  // Custom Marker Styles
+  markerContainer: {
+    alignItems: 'center',
+  },
+  pickupMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  stopMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  stopNumber: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  destinationMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  markerLabel: {
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+    maxWidth: 120,
+  },
+  markerLabelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#000',
+    textAlign: 'center',
   },
 });
 

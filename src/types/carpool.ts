@@ -2,9 +2,10 @@ export type CarpoolStatus = 'MATCHING' | 'MATCHED' | 'IN_PROGRESS' | 'COMPLETED'
 export type UserMode = 'RIDER' | 'DRIVER';
 
 export interface Location {
+  name: string; // Display name for the location (e.g., "Home", "Work", "Seven Mile Beach")
+  address: string; // Full formatted address
   latitude: number;
   longitude: number;
-  address: string;
 }
 
 export interface CarpoolRequest {
