@@ -97,6 +97,7 @@ const HomeScreen = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveModalType, setSaveModalType] = useState<'home' | 'work' | 'custom'>('home');
   const [customAddressName, setCustomAddressName] = useState('');
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null); // ← NEW: Track which address is being edited
   const [searchQuery, setSearchQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -222,44 +223,135 @@ const HomeScreen = () => {
   };
 
   /**
-   * Search places using Google Places API
+   * 🏠 ADDRESS-FIRST SEARCH STRATEGY
+   * 
+   * Priority Order:
+   * 1. Geocoding API FIRST (residential addresses) - Priority 1
+   * 2. Places API SECOND (businesses/landmarks) - Priority 2
+   * 3. Merge & deduplicate with addresses prioritized
    */
   const searchPlaces = async (query: string) => {
     if (!GOOGLE_PLACES_API_KEY) {
-      Alert.alert('Error', 'Google Places API key not configured');
+      Alert.alert('Error', 'Google API key not configured');
       return;
     }
 
     setSearchLoading(true);
+    console.log('🏠 ADDRESS-FIRST SEARCH: Prioritizing residential addresses');
 
     try {
-      // Use Autocomplete API with proper parameters
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&location=${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}&radius=${SEARCH_RADIUS}&strictbounds=true&components=country:ky&key=${GOOGLE_PLACES_API_KEY}`;
+      const allResults: any[] = [];
+
+      // STEP 1: GEOCODING API (PRIMARY - for addresses) ✅
+      console.log('🔍 Step 1: Geocoding API (Primary - for addresses)...');
+      const geocodingQuery = `${query}, Grand Cayman, Cayman Islands`;
+      const geocodingUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(geocodingQuery)}&components=country:KY&key=${GOOGLE_PLACES_API_KEY}`;
       
-      const response = await fetch(url);
-      const data = await response.json();
-
-      console.log('Places API response:', data);
-
-      if (data.status === 'OK' && data.predictions) {
-        setPredictions(data.predictions);
-      } else if (data.status === 'ZERO_RESULTS') {
-        setPredictions([]);
-      } else {
-        console.error('Places API error:', data.status, data.error_message);
-        setPredictions([]);
+      try {
+        const geocodingResponse = await fetch(geocodingUrl);
+        const geocodingData = await geocodingResponse.json();
         
-        if (data.status === 'REQUEST_DENIED') {
-          Alert.alert('API Error', 'Places API key may not be configured correctly');
+        console.log('📊 Geocoding API Status:', geocodingData.status);
+
+        if (geocodingData.status === 'OK' && geocodingData.results) {
+          console.log(`✅ Geocoding API found ${geocodingData.results.length} addresses`);
+          
+          geocodingData.results.forEach((result: any) => {
+            const location = result.geometry.location;
+            allResults.push({
+              place_id: result.place_id || `geo_${Date.now()}_${Math.random()}`,
+              description: result.formatted_address,
+              structured_formatting: {
+                main_text: result.address_components?.[0]?.long_name || result.formatted_address.split(',')[0],
+                secondary_text: result.formatted_address.split(',').slice(1).join(',').trim(),
+              },
+              latitude: location.lat,
+              longitude: location.lng,
+              priority: 1, // HIGHEST PRIORITY - addresses come first!
+              source: 'geocoding',
+            });
+          });
+        } else {
+          console.log('⚠️ Geocoding API:', geocodingData.status);
         }
+      } catch (error) {
+        console.error('Geocoding API error:', error);
       }
+
+      // STEP 2: PLACES API (SECONDARY - for businesses/landmarks)
+      console.log('🔍 Step 2: Places API (Secondary - for businesses/landmarks)...');
+      const placesUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&location=${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}&radius=${SEARCH_RADIUS}&components=country:ky&key=${GOOGLE_PLACES_API_KEY}`;
+      
+      try {
+        const placesResponse = await fetch(placesUrl);
+        const placesData = await placesResponse.json();
+        
+        console.log('📊 Places API Status:', placesData.status);
+
+        if (placesData.status === 'OK' && placesData.predictions) {
+          console.log(`✅ Places API found ${placesData.predictions.length} results`);
+          
+          placesData.predictions.forEach((prediction: any) => {
+            allResults.push({
+              ...prediction,
+              priority: 2, // LOWER PRIORITY - businesses come after addresses
+              source: 'places',
+            });
+          });
+        } else {
+          console.log('⚠️ Places API:', placesData.status);
+        }
+      } catch (error) {
+        console.error('Places API error:', error);
+      }
+
+      // STEP 3: DEDUPLICATE & SORT (addresses first!)
+      const uniqueResults = deduplicateResults(allResults);
+      
+      // Sort by priority: addresses (1) before businesses (2)
+      uniqueResults.sort((a, b) => a.priority - b.priority);
+      
+      console.log(`📍 Final results: ${uniqueResults.length} unique locations (addresses prioritized)`);
+      
+      setPredictions(uniqueResults.slice(0, 10)); // Limit to 10 results
+
     } catch (error) {
-      console.error('Error searching places:', error);
+      console.error('Error searching locations:', error);
       setPredictions([]);
       Alert.alert('Error', 'Failed to search locations. Please check your internet connection.');
     } finally {
       setSearchLoading(false);
     }
+  };
+
+  /**
+   * Deduplicate results based on similarity
+   */
+  const deduplicateResults = (results: any[]): any[] => {
+    const seen = new Map<string, any>();
+
+    results.forEach(result => {
+      const normalizedDesc = result.description.toLowerCase().trim();
+      
+      // Check if we've seen a similar address
+      let isDuplicate = false;
+      for (const [key, existing] of seen.entries()) {
+        if (normalizedDesc === key || normalizedDesc.includes(key) || key.includes(normalizedDesc)) {
+          // Keep the one with higher priority (lower number = higher priority)
+          if (result.priority < existing.priority) {
+            seen.set(key, result);
+          }
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        seen.set(normalizedDesc, result);
+      }
+    });
+
+    return Array.from(seen.values());
   };
 
   /**
@@ -296,8 +388,18 @@ const HomeScreen = () => {
   /**
    * Handle selecting a place from search predictions
    */
-  const handleSelectPlace = async (prediction: PlacePrediction) => {
-    const coordinates = await getPlaceDetails(prediction.place_id);
+  const handleSelectPlace = async (prediction: any) => {
+    // Check if coordinates are already available (from Geocoding API)
+    let coordinates = null;
+    if (prediction.latitude && prediction.longitude) {
+      coordinates = {
+        latitude: prediction.latitude,
+        longitude: prediction.longitude,
+      };
+    } else {
+      // Get coordinates from Places Details API
+      coordinates = await getPlaceDetails(prediction.place_id);
+    }
     
     if (!coordinates) {
       Alert.alert('Error', 'Failed to get location coordinates');
@@ -319,7 +421,7 @@ const HomeScreen = () => {
 
     // Create saved address object
     const address: SavedAddress = {
-      id: Date.now().toString(),
+      id: editingAddressId || Date.now().toString(), // ← Use existing ID if editing
       type: saveModalType,
       label: saveModalType === 'custom' 
         ? customAddressName.trim()
@@ -347,16 +449,27 @@ const HomeScreen = () => {
         setWorkAddress(address);
         Alert.alert('Success', 'Work address saved!');
       } else if (address.type === 'custom') {
-        // Check limit
-        if (customAddresses.length >= 3) {
-          Alert.alert('Limit Reached', 'You can only save up to 3 custom addresses');
-          return;
+        let updated: SavedAddress[];
+        
+        // Check if editing existing address
+        if (editingAddressId) {
+          // Replace the existing address
+          updated = customAddresses.map(a => 
+            a.id === editingAddressId ? address : a
+          );
+          Alert.alert('Success', `${address.label} updated!`);
+        } else {
+          // Adding new address - check limit
+          if (customAddresses.length >= 3) {
+            Alert.alert('Limit Reached', 'You can only save up to 3 custom addresses');
+            return;
+          }
+          updated = [...customAddresses, address];
+          Alert.alert('Success', `${address.label} saved!`);
         }
 
-        const updated = [...customAddresses, address];
         await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(updated));
         setCustomAddresses(updated);
-        Alert.alert('Success', `${address.label} saved!`);
       }
 
       // Close modal and reset
@@ -370,11 +483,26 @@ const HomeScreen = () => {
   /**
    * Open save address modal
    */
-  const openSaveModal = (type: 'home' | 'work' | 'custom') => {
+  /**
+   * Open save address modal
+   */
+  const openSaveModal = (type: 'home' | 'work' | 'custom', addressId?: string) => {
     setSaveModalType(type);
-    setCustomAddressName('');
     setSearchQuery('');
     setPredictions([]);
+    
+    // If editing a custom address, pre-fill the name
+    if (type === 'custom' && addressId) {
+      const addressToEdit = customAddresses.find(a => a.id === addressId);
+      if (addressToEdit) {
+        setCustomAddressName(addressToEdit.label);
+        setEditingAddressId(addressId);
+      }
+    } else {
+      setCustomAddressName('');
+      setEditingAddressId(null);
+    }
+    
     setShowSaveModal(true);
   };
 
@@ -386,6 +514,48 @@ const HomeScreen = () => {
     setSearchQuery('');
     setPredictions([]);
     setCustomAddressName('');
+    setEditingAddressId(null); // ← NEW: Clear editing state
+  };
+
+  /**
+   * DELETE ADDRESS FUNCTIONALITY
+   */
+  const handleDeleteAddress = async (type: 'home' | 'work' | 'custom', addressId?: string) => {
+    const addressLabel = type === 'custom' 
+      ? customAddresses.find(a => a.id === addressId)?.label || 'saved place'
+      : type;
+
+    Alert.alert(
+      'Delete Address',
+      `Are you sure you want to delete your ${addressLabel} address?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (type === 'home') {
+                await AsyncStorage.removeItem(STORAGE_KEYS.HOME_ADDRESS);
+                setHomeAddress(null);
+              } else if (type === 'work') {
+                await AsyncStorage.removeItem(STORAGE_KEYS.WORK_ADDRESS);
+                setWorkAddress(null);
+              } else if (type === 'custom' && addressId) {
+                const updated = customAddresses.filter(addr => addr.id !== addressId);
+                await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(updated));
+                setCustomAddresses(updated);
+              }
+              
+              Alert.alert('Success', 'Address deleted successfully');
+            } catch (error) {
+              console.error('Error deleting address:', error);
+              Alert.alert('Error', 'Failed to delete address');
+            }
+          },
+        },
+      ]
+    );
   };
 
   /**
@@ -603,6 +773,8 @@ const HomeScreen = () => {
                     openSaveModal('home');
                   }
                 }}
+                onEdit={() => homeAddress && openSaveModal('home')}
+                onDelete={() => homeAddress && handleDeleteAddress('home')}
                 showAddIcon={!homeAddress}
               />
 
@@ -618,6 +790,8 @@ const HomeScreen = () => {
                     openSaveModal('work');
                   }
                 }}
+                onEdit={() => workAddress && openSaveModal('work')}
+                onDelete={() => workAddress && handleDeleteAddress('work')}
                 showAddIcon={!workAddress}
               />
 
@@ -633,6 +807,8 @@ const HomeScreen = () => {
                           label={address.label}
                           address={address.address}
                           onPress={() => navigateToAddress(address)}
+                          onEdit={() => openSaveModal('custom', address.id)}
+                          onDelete={() => handleDeleteAddress('custom', address.id)}
                         />
                       ))}
                     </>
@@ -731,9 +907,9 @@ const HomeScreen = () => {
                 <Ionicons name="close" size={28} color="#000" />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>
-                {saveModalType === 'home' && 'Save Home Address'}
-                {saveModalType === 'work' && 'Save Work Address'}
-                {saveModalType === 'custom' && 'Save Custom Place'}
+                {saveModalType === 'home' && (editingAddressId ? 'Edit Home Address' : 'Save Home Address')}
+                {saveModalType === 'work' && (editingAddressId ? 'Edit Work Address' : 'Save Work Address')}
+                {saveModalType === 'custom' && (editingAddressId ? 'Edit Custom Place' : 'Save Custom Place')}
               </Text>
               <View style={{ width: 40 }} />
             </View>

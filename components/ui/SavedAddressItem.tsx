@@ -1,19 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-/**
- * SAVED ADDRESS ITEM COMPONENT
- * 
- * Reusable component for displaying and managing saved addresses
- * Used for: Home, Work, and Custom saved places
- * 
- * Features:
- * ✅ Icon-based visual identity
- * ✅ Add/Edit states
- * ✅ Consistent styling
- * ✅ Touch feedback
- */
 
 export interface SavedAddress {
   id: string;
@@ -25,10 +12,12 @@ export interface SavedAddress {
 }
 
 interface SavedAddressItemProps {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: 'home' | 'briefcase' | 'location';
   label: string;
   address?: string;
   onPress: () => void;
+  onEdit?: () => void; // ← NEW: Edit handler (opens modal to change address)
+  onDelete?: () => void; // ← NEW: Delete handler (removes address)
   showAddIcon?: boolean;
 }
 
@@ -37,30 +26,90 @@ const SavedAddressItem: React.FC<SavedAddressItemProps> = ({
   label,
   address,
   onPress,
+  onEdit, // ← NEW: Edit button
+  onDelete, // ← NEW: Delete button
   showAddIcon = false,
 }) => {
+  const getIconName = () => {
+    switch (icon) {
+      case 'home':
+        return 'home' as const;
+      case 'briefcase':
+        return 'briefcase' as const;
+      case 'location':
+        return 'location' as const;
+      default:
+        return 'location' as const;
+    }
+  };
+
+  // If no address, show as "Add" button (no edit/delete controls)
+  if (!address || showAddIcon) {
+    return (
+      <TouchableOpacity
+        style={styles.container}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.iconContainer}>
+          <Ionicons name="add" size={20} color="#5d1289" />
+        </View>
+        
+        <View style={styles.textContainer}>
+          <Text style={styles.label}>{label}</Text>
+        </View>
+        
+        <Ionicons name="chevron-forward" size={20} color="#666" />
+      </TouchableOpacity>
+    );
+  }
+
+  // If address exists, show with edit/delete controls
   return (
-    <TouchableOpacity 
-      style={styles.container}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.iconContainer}>
-        <Ionicons name={icon} size={20} color="#5d1289" />
+    <View style={styles.containerWithControls}>
+      {/* Main touchable area - tap to use address */}
+      <TouchableOpacity
+        style={styles.mainArea}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.iconContainer}>
+          <Ionicons name={getIconName()} size={20} color="#5d1289" />
+        </View>
+        
+        <View style={styles.textContainer}>
+          <Text style={styles.label}>{label}</Text>
+          <Text style={styles.address} numberOfLines={1}>
+            {address}
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      {/* Edit/Delete controls */}
+      <View style={styles.controls}>
+        {/* Edit button */}
+        {onEdit && (
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={onEdit}
+            activeOpacity={0.6}
+          >
+            <Ionicons name="pencil" size={18} color="#5d1289" />
+          </TouchableOpacity>
+        )}
+
+        {/* Delete button */}
+        {onDelete && (
+          <TouchableOpacity
+            style={[styles.controlButton, styles.deleteButton]}
+            onPress={onDelete}
+            activeOpacity={0.6}
+          >
+            <Ionicons name="trash-outline" size={18} color="#dc2626" />
+          </TouchableOpacity>
+        )}
       </View>
-      <View style={styles.textContainer}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={styles.address}>
-          {address || `Add ${label.toLowerCase()} address`}
-        </Text>
-      </View>
-      {showAddIcon && (
-        <Ionicons name="add-circle-outline" size={24} color="#5d1289" />
-      )}
-      {!showAddIcon && address && (
-        <Ionicons name="chevron-forward" size={20} color="#999" />
-      )}
-    </TouchableOpacity>
+    </View>
   );
 };
 
@@ -73,11 +122,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f5f5f5',
   },
+  containerWithControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingLeft: 4,
+    paddingRight: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  mainArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
   iconContainer: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0e6f6',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -94,6 +158,23 @@ const styles = StyleSheet.create({
   address: {
     fontSize: 14,
     color: '#666',
+  },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 8,
+  },
+  controlButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f0e6f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButton: {
+    backgroundColor: '#fee2e2',
   },
 });
 
