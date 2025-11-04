@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Region } from 'react-native-maps';
 import DriftMapView from '@/components/ui/DriftMapView';
 import SavedAddressItem, { SavedAddress } from '@/components/ui/SavedAddressItem';
+import DestinationCards from '@/components/ui/DestinationCards';
 
 /**
  * DRIFT HOME SCREEN - PROPER IMPLEMENTATION
@@ -666,6 +667,48 @@ const HomeScreen = () => {
     });
   };
 
+  /**
+   * Navigate to tourist destination
+   */
+  const handleDestinationPress = async (destination: any) => {
+    // Ensure we have current location
+    let currentLoc = location;
+    if (!currentLoc) {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          currentLoc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          setLocation(currentLoc);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
+    }
+
+    const pickup = currentLoc ? {
+      name: 'Current Location',
+      address: 'Your current location',
+      latitude: currentLoc.coords.latitude,
+      longitude: currentLoc.coords.longitude,
+    } : {
+      name: 'Grand Cayman',
+      address: 'Grand Cayman, Cayman Islands',
+      latitude: 19.3133,
+      longitude: -81.2546,
+    };
+
+    // For destinations, we'll need to geocode the name to get coordinates
+    // For now, let's just open search with the destination name pre-filled
+    router.push({
+      pathname: '/(rider)/search-location',
+      params: {
+        searchQuery: destination.name,
+      },
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -756,6 +799,7 @@ const HomeScreen = () => {
                 <Text style={styles.laterText}>Later</Text>
               </View>
             </TouchableOpacity>
+
 
             {/* Saved Places Section */}
             <View style={styles.section}>
@@ -882,6 +926,9 @@ const HomeScreen = () => {
                 </View>
               </View>
             </View>
+
+            {/* Tourist Destinations Carousel */}
+            <DestinationCards onDestinationPress={handleDestinationPress} />
           </ScrollView>
         </SafeAreaView>
       )}
