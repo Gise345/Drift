@@ -287,7 +287,7 @@ const SearchLocationScreen = () => {
       
       const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
         query
-      )}&location=${location.latitude},${location.longitude}&radius=${SEARCH_RADIUS}&key=${GOOGLE_PLACES_API_KEY}`;
+      )}&location=${location.latitude},${location.longitude}&radius=${SEARCH_RADIUS}&components=country:KY&key=${GOOGLE_PLACES_API_KEY}`;
 
       const response = await fetch(url);
       const data = await response.json();

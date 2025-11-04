@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -17,16 +16,15 @@ import { Region, LatLng } from 'react-native-maps';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 
 /**
- * SELECT DESTINATION SCREEN - WITH MULTI-STOP SUPPORT
+ * SELECT DESTINATION SCREEN - ULTIMATE FIX v2
  * 
- * Features:
- * ✅ Shows map with route from pickup → stops → destination
- * ✅ Displays all stop markers on map
- * ✅ Shows complete route polyline through all stops
- * ✅ Calculates total distance and duration
- * ✅ Add stop button navigates to search-location
- * ✅ Fixed bottom spacing (no phone buttons blocking)
- * ✅ Professional error handling
+ * FIXES APPLIED:
+ * ✅ Visible route polyline (double layer with shadow)
+ * ✅ Custom markers with labels  
+ * ✅ Distance in MILES (accurate from Google API)
+ * ✅ Map auto-pans to show full route
+ * ✅ Removed unnecessary mapReady state
+ * ✅ Simplified - no extra components needed
  */
 
 // Google Directions API Key
@@ -49,10 +47,11 @@ const SelectDestinationScreen = () => {
 
   const [loading, setLoading] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<LatLng[]>([]);
-  const [distance, setDistance] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [distanceMiles, setDistanceMiles] = useState(0);
+  const [durationMinutes, setDurationMinutes] = useState(0);
   const [region, setRegion] = useState<Region | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPolyline, setShowPolyline] = useState(false); // Control polyline visibility
   
   const mapRef = useRef<MapView>(null);
   const requestIdRef = useRef(0);
@@ -119,11 +118,10 @@ const SelectDestinationScreen = () => {
       setRegion(initialRegion);
     }
 
-    // Log final state for debugging
     console.log('📍 Select Destination - Final state:');
     console.log('  Pickup:', parsedPickup || pickupLocation);
     console.log('  Destination:', parsedDestination || destination);
-  }, []); // Only run once on mount
+  }, []);
 
   /**
    * Fetch route when locations or stops change
@@ -136,7 +134,7 @@ const SelectDestinationScreen = () => {
       return;
     }
 
-    // Validate coordinates are numbers
+    // Validate coordinates
     if (
       typeof pickupLocation.latitude !== 'number' ||
       typeof pickupLocation.longitude !== 'number' ||
@@ -147,28 +145,32 @@ const SelectDestinationScreen = () => {
       return;
     }
 
-    // Check if route already exists for these exact locations
+    // Check cache
     if (cachedRoute && routeCoordinates.length > 0) {
       console.log('✅ Using cached route');
       setRouteCoordinates(cachedRoute.polylinePoints);
-      setDistance(cachedRoute.distance / 1000);
-      setDuration(cachedRoute.duration / 60);
+      setDistanceMiles(cachedRoute.distance * 0.000621371);
+      setDurationMinutes(cachedRoute.duration / 60);
+      
+      // Fit map to cached route
+      setTimeout(() => {
+        fitMapToRoute(cachedRoute.polylinePoints);
+      }, 500);
+      
       return;
     }
 
-    // Check if already loading
     if (loading) {
       console.log('⏳ Request already in progress');
       return;
     }
 
-    // Check if component is mounted
     if (!isMountedRef.current) {
       console.log('🛑 Component unmounted');
       return;
     }
 
-    // Debounce - wait 300ms before making request
+    // Debounce
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current);
     }
@@ -187,11 +189,36 @@ const SelectDestinationScreen = () => {
         clearTimeout(fetchTimeoutRef.current);
       }
     };
-  }, [pickupLocation?.latitude, pickupLocation?.longitude, destination?.latitude, destination?.longitude, stops?.length]); // Only trigger on coordinate changes
+  }, [pickupLocation?.latitude, pickupLocation?.longitude, destination?.latitude, destination?.longitude, stops?.length]);
 
   /**
-   * Fetch route from Google Directions API with waypoints support
-   * FIXED: Better validation and error handling
+   * Fit map to show entire route
+   */
+  const fitMapToRoute = (coords: LatLng[]) => {
+    if (!mapRef.current || coords.length < 2) {
+      console.log('⚠️ Cannot fit map to route - missing map ref or coordinates');
+      return;
+    }
+
+    console.log('🗺️ Fitting map to route with', coords.length, 'points');
+    
+    try {
+      mapRef.current.fitToCoordinates(coords, {
+        edgePadding: {
+          top: 100,
+          right: 50,
+          bottom: 400,
+          left: 50,
+        },
+        animated: true,
+      });
+    } catch (error) {
+      console.error('❌ Failed to fit map to route:', error);
+    }
+  };
+
+  /**
+   * Fetch route from Google Directions API
    */
   const fetchRoute = async () => {
     if (!pickupLocation || !destination) {
@@ -199,27 +226,8 @@ const SelectDestinationScreen = () => {
       return;
     }
 
-    // Validate coordinates
-    if (
-      typeof pickupLocation.latitude !== 'number' ||
-      typeof pickupLocation.longitude !== 'number' ||
-      typeof destination.latitude !== 'number' ||
-      typeof destination.longitude !== 'number' ||
-      isNaN(pickupLocation.latitude) ||
-      isNaN(pickupLocation.longitude) ||
-      isNaN(destination.latitude) ||
-      isNaN(destination.longitude)
-    ) {
-      console.error('❌ Invalid coordinates detected:');
-      console.error('  Pickup:', pickupLocation);
-      console.error('  Destination:', destination);
-      Alert.alert('Error', 'Invalid location coordinates');
-      return;
-    }
-
     if (!GOOGLE_DIRECTIONS_API_KEY) {
       console.error('❌ Google API key not configured');
-      // Fallback to straight line
       calculateFallbackRoute();
       return;
     }
@@ -232,7 +240,6 @@ const SelectDestinationScreen = () => {
       const origin = `${pickupLocation.latitude},${pickupLocation.longitude}`;
       const dest = `${destination.latitude},${destination.longitude}`;
       
-      // Build waypoints string for stops
       let waypointsParam = '';
       if (stops && stops.length > 0) {
         const waypointCoords = stops.map(stop => `${stop.latitude},${stop.longitude}`);
@@ -254,7 +261,6 @@ const SelectDestinationScreen = () => {
 
       const data = await response.json();
 
-      // Check if this is still the latest request
       if (currentRequestId !== requestIdRef.current || !isMountedRef.current) {
         console.log('⏭️ Ignoring stale request');
         return;
@@ -265,7 +271,7 @@ const SelectDestinationScreen = () => {
       if (data.status === 'OK' && data.routes && data.routes.length > 0) {
         const route = data.routes[0];
         
-        // Decode polyline into coordinates
+        // Decode polyline
         const points = decodePolyline(route.overview_polyline.points);
         
         const coords: LatLng[] = points.map((point: [number, number]) => ({
@@ -273,142 +279,126 @@ const SelectDestinationScreen = () => {
           longitude: point[1],
         }));
 
-        setRouteCoordinates(coords);
+        console.log('✅ Route decoded, total points:', coords.length);
+        console.log('🎯 First point:', coords[0]);
+        console.log('🎯 Last point:', coords[coords.length - 1]);
         
-        // Calculate total distance and duration across all legs
-        let totalDistance = 0;
-        let totalDuration = 0;
+        // CRITICAL: Set route coordinates immediately
+        setRouteCoordinates(coords);
+        console.log('📍 setRouteCoordinates called with', coords.length, 'points');
+        
+        // CRITICAL: Enable polyline rendering after a short delay
+        setTimeout(() => {
+          setShowPolyline(true);
+          console.log('✅ Polyline rendering enabled');
+        }, 100);
+        
+        // Calculate distance and duration
+        let totalDistanceMeters = 0;
+        let totalDurationSeconds = 0;
         
         route.legs.forEach((leg: any) => {
-          totalDistance += leg.distance.value;
-          totalDuration += leg.duration.value;
+          totalDistanceMeters += leg.distance.value;
+          totalDurationSeconds += leg.duration.value;
         });
         
-        const distanceKm = totalDistance / 1000;
-        const durationMin = totalDuration / 60;
+        const totalDistanceMiles = totalDistanceMeters * 0.000621371;
+        const totalDurationMinutes = totalDurationSeconds / 60;
         
-        setDistance(distanceKm);
-        setDuration(durationMin);
-
-        // Save to store (cache for later use)
-        const routeData = {
+        console.log('📏 Distance:', totalDistanceMiles.toFixed(2), 'miles');
+        console.log('⏱️ Duration:', Math.round(totalDurationMinutes), 'minutes');
+        
+        // CRITICAL: Set route coordinates BEFORE fitting map
+        setRouteCoordinates(coords);
+        setDistanceMiles(totalDistanceMiles);
+        setDurationMinutes(totalDurationMinutes);
+        
+        // Store in Zustand
+        setRoute({
+          distance: totalDistanceMeters,
+          duration: totalDurationSeconds,
           polylinePoints: coords,
-          distance: totalDistance,
-          duration: totalDuration,
+          origin: pickupLocation,
+          destination: destination,
           stops: stops || [],
-        };
-        setRoute(routeData);
+        });
 
-        // Fit map to show entire route
-        if (mapRef.current && coords.length > 0) {
-          setTimeout(() => {
-            mapRef.current?.fitToCoordinates(coords, {
-              edgePadding: { 
-                top: 100, 
-                right: 50, 
-                bottom: 350, // Extra padding for bottom info card
-                left: 50 
-              },
-              animated: true,
-            });
-          }, 500);
-        }
+        // Fit map after state update
+        setTimeout(() => {
+          fitMapToRoute(coords);
+        }, 500);
 
-        console.log('✅ Route calculated successfully');
-        console.log(`📏 Total Distance: ${distanceKm.toFixed(2)} km`);
-        console.log(`⏱️ Total Duration: ${Math.round(durationMin)} minutes`);
-        console.log(`🛑 Stops: ${stops?.length || 0}`);
-
+        setLoading(false);
       } else {
         console.error('❌ Directions API error:', data.status);
-        let errorMessage = 'Failed to calculate route';
-        
-        if (data.status === 'NOT_FOUND') {
-          errorMessage = 'Location not found';
-        } else if (data.status === 'ZERO_RESULTS') {
-          errorMessage = 'No route found between locations';
-        } else if (data.status === 'REQUEST_DENIED') {
-          errorMessage = 'API key error';
-        }
-        
-        setError(errorMessage);
+        console.error('Error message:', data.error_message);
+        setError(data.error_message || 'Could not calculate route');
         calculateFallbackRoute();
-      }
-    } catch (error) {
-      console.error('❌ Error fetching route:', error);
-      if (currentRequestId === requestIdRef.current && isMountedRef.current) {
-        setError('Network error');
-        calculateFallbackRoute();
-      }
-    } finally {
-      if (currentRequestId === requestIdRef.current && isMountedRef.current) {
         setLoading(false);
       }
+    } catch (error) {
+      console.error('❌ Route fetch error:', error);
+      setError(error instanceof Error ? error.message : 'Unknown error');
+      calculateFallbackRoute();
+      setLoading(false);
     }
   };
 
   /**
-   * Fallback: Draw straight line and estimate distance
+   * Fallback to straight line
    */
   const calculateFallbackRoute = () => {
     if (!pickupLocation || !destination) return;
 
-    console.log('⚠️ Using fallback straight-line route');
-    
-    // Create array with pickup, stops, and destination
-    const allPoints = [
-      pickupLocation,
-      ...(stops || []),
-      destination,
+    const straightLine = [
+      { latitude: pickupLocation.latitude, longitude: pickupLocation.longitude },
+      { latitude: destination.latitude, longitude: destination.longitude },
     ];
 
-    // Calculate total distance across all segments
-    let totalDistance = 0;
-    for (let i = 0; i < allPoints.length - 1; i++) {
-      const d = calculateDistance(
-        allPoints[i].latitude,
-        allPoints[i].longitude,
-        allPoints[i + 1].latitude,
-        allPoints[i + 1].longitude
-      );
-      totalDistance += d;
-    }
+    const distanceKm = calculateDistance(
+      pickupLocation.latitude,
+      pickupLocation.longitude,
+      destination.latitude,
+      destination.longitude
+    );
+    
+    const distanceMiles = distanceKm * 0.621371;
+    const durationMin = (distanceMiles / 30) * 60;
 
-    // Estimate duration (assume 40 km/h average)
-    const estimatedDuration = (totalDistance / 40) * 60;
+    console.log('⚠️ Using fallback straight-line route');
+    console.log('📏 Distance:', distanceMiles.toFixed(2), 'miles');
 
-    setDistance(totalDistance);
-    setDuration(estimatedDuration);
+    setRouteCoordinates(straightLine);
+    setDistanceMiles(distanceMiles);
+    setDurationMinutes(durationMin);
 
-    // Create simple polyline through all points
-    const coords = allPoints.map(point => ({
-      latitude: point.latitude,
-      longitude: point.longitude,
-    }));
+    setRoute({
+      distance: distanceKm * 1000,
+      duration: durationMin * 60,
+      polylinePoints: straightLine,
+      origin: pickupLocation,
+      destination: destination,
+      stops: stops || [],
+    });
 
-    setRouteCoordinates(coords);
+    setTimeout(() => {
+      fitMapToRoute(straightLine);
+    }, 500);
 
-    // Fit map to show all points
-    if (mapRef.current && coords.length > 0) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coords, {
-          edgePadding: { top: 100, right: 50, bottom: 350, left: 50 },
-          animated: true,
-        });
-      }, 500);
-    }
+    Alert.alert(
+      'Route Calculation',
+      'Using estimated straight-line route. Actual distance may vary.',
+      [{ text: 'OK' }]
+    );
   };
 
-  /**
-   * Haversine formula for distance calculation
-   */
   const calculateDistance = (
     lat1: number, 
     lon1: number, 
     lat2: number, 
     lon2: number
   ): number => {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     
@@ -423,9 +413,6 @@ const SelectDestinationScreen = () => {
 
   const toRad = (deg: number): number => deg * (Math.PI / 180);
 
-  /**
-   * Add a stop
-   */
   const addStop = () => {
     if (stops && stops.length >= 2) {
       Alert.alert('Maximum Stops', 'You can add up to 2 stops only');
@@ -434,23 +421,15 @@ const SelectDestinationScreen = () => {
     
     router.push({
       pathname: '/search-location',
-      params: {
-        mode: 'stop',
-      },
+      params: { mode: 'stop' },
     });
   };
 
-  /**
-   * Remove a stop
-   */
   const removeStop = (index: number) => {
     const updatedStops = stops?.filter((_, i) => i !== index) || [];
     setStops(updatedStops);
   };
 
-  /**
-   * Confirm destination and proceed
-   */
   const confirmDestination = () => {
     if (!pickupLocation || !destination) {
       Alert.alert('Error', 'Please select both pickup and destination');
@@ -461,7 +440,7 @@ const SelectDestinationScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -492,15 +471,15 @@ const SelectDestinationScreen = () => {
         showsCompass={true}
         toolbarEnabled={false}
       >
-        {/* Pickup Marker with Custom Label */}
+        {/* Pickup Marker */}
         {pickupLocation && (
           <Marker
             coordinate={{
               latitude: pickupLocation.latitude,
               longitude: pickupLocation.longitude,
             }}
-            title="Pickup Location"
-            description={pickupLocation.name}
+            title="Pickup"
+            tracksViewChanges={false}
           >
             <View style={styles.markerContainer}>
               <View style={styles.pickupMarker}>
@@ -515,7 +494,7 @@ const SelectDestinationScreen = () => {
           </Marker>
         )}
 
-        {/* Stop Markers with Custom Labels */}
+        {/* Stop Markers */}
         {stops && stops.map((stop, index) => (
           <Marker
             key={`stop-${index}`}
@@ -524,7 +503,7 @@ const SelectDestinationScreen = () => {
               longitude: stop.longitude,
             }}
             title={`Stop ${index + 1}`}
-            description={stop.name}
+            tracksViewChanges={false}
           >
             <View style={styles.markerContainer}>
               <View style={styles.stopMarker}>
@@ -539,7 +518,7 @@ const SelectDestinationScreen = () => {
           </Marker>
         ))}
 
-        {/* Destination Marker with Custom Label */}
+        {/* Destination Marker */}
         {destination && (
           <Marker
             coordinate={{
@@ -547,7 +526,7 @@ const SelectDestinationScreen = () => {
               longitude: destination.longitude,
             }}
             title="Destination"
-            description={destination.name}
+            tracksViewChanges={false}
           >
             <View style={styles.markerContainer}>
               <View style={styles.destinationMarker}>
@@ -562,14 +541,41 @@ const SelectDestinationScreen = () => {
           </Marker>
         )}
 
-        {/* Route Polyline */}
-        {routeCoordinates.length > 0 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#5d1289"
-            strokeWidth={4}
-          />
-        )}
+        {/* CRITICAL: Route Polyline - render AFTER markers */}
+        {showPolyline && routeCoordinates.length > 0 && (() => {
+          const normalizedCoords = routeCoordinates.map(coord => ({
+            latitude: Number(coord.latitude),
+            longitude: Number(coord.longitude),
+          }));
+
+           
+            console.log('🎨 Rendering Polyline with', normalizedCoords.length, 'normalized coordinates');
+            console.log('🔧 Android fix applied: geodesic={true}, plain objects');
+  
+          
+          return (
+            <>
+              <Polyline
+                key="shadow-polyline"
+                coordinates={normalizedCoords}
+                strokeColor="rgba(202, 110, 255, 0.3)"
+                strokeWidth={8}
+                geodesic={true}
+                lineCap="round"
+                lineJoin="round"
+              />
+              <Polyline
+                key="main-polyline"
+                coordinates={normalizedCoords}
+                strokeColor="#7820acff"
+                strokeWidth={4}
+                geodesic={true}
+                lineCap="round"
+                lineJoin="round"
+              />
+            </>
+          );
+        })()}
       </MapView>
 
       {/* Loading Overlay */}
@@ -582,7 +588,7 @@ const SelectDestinationScreen = () => {
         </View>
       )}
 
-      {/* Route Info Card - FIXED WITH PROPER BOTTOM PADDING */}
+      {/* Route Info Card */}
       {!loading && routeCoordinates.length > 0 && (
         <View style={styles.infoCard}>
           {/* Stops List */}
@@ -599,38 +605,27 @@ const SelectDestinationScreen = () => {
                     onPress={() => removeStop(index)}
                     style={styles.removeStopButton}
                   >
-                    <Ionicons name="close-circle" size={20} color="#999" />
+                    <Ionicons name="close-circle" size={20} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               ))}
             </View>
           )}
 
-          {/* Warning Banner (only if using fallback) */}
-          {error && (
-            <View style={styles.warningBanner}>
-              <Ionicons name="warning" size={16} color="#F59E0B" />
-              <Text style={styles.warningText}>
-                Estimated route. Actual distance may vary.
-              </Text>
-            </View>
-          )}
-
+          {/* Distance & Duration */}
           <View style={styles.infoRow}>
             <View style={styles.infoItem}>
-              <Ionicons name="navigate" size={20} color="#5d1289" />
+              <Ionicons name="navigate" size={24} color="#5d1289" />
               <Text style={styles.infoLabel}>Distance</Text>
-              <Text style={styles.infoValue}>
-                {error ? '~' : ''}{distance.toFixed(1)} km
-              </Text>
+              <Text style={styles.infoValue}>{distanceMiles.toFixed(1)} mi</Text>
             </View>
+
             <View style={styles.divider} />
+
             <View style={styles.infoItem}>
-              <Ionicons name="time" size={20} color="#5d1289" />
+              <Ionicons name="time" size={24} color="#5d1289" />
               <Text style={styles.infoLabel}>Duration</Text>
-              <Text style={styles.infoValue}>
-                {error ? '~' : ''}{Math.round(duration)} min
-              </Text>
+              <Text style={styles.infoValue}>{Math.round(durationMinutes)} min</Text>
             </View>
           </View>
 
@@ -638,6 +633,7 @@ const SelectDestinationScreen = () => {
           <TouchableOpacity
             style={styles.confirmButton}
             onPress={confirmDestination}
+            activeOpacity={0.8}
           >
             <Text style={styles.confirmButtonText}>Find Drivers</Text>
             <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
@@ -647,7 +643,7 @@ const SelectDestinationScreen = () => {
           <View style={styles.costEstimate}>
             <Text style={styles.costLabel}>Estimated Cost Share:</Text>
             <Text style={styles.costValue}>
-              ${(distance * 1.5).toFixed(2)} - ${(distance * 2.5).toFixed(2)}
+              ${(distanceMiles * 1.5).toFixed(2)} - ${(distanceMiles * 2.5).toFixed(2)}
             </Text>
           </View>
         </View>
@@ -656,9 +652,6 @@ const SelectDestinationScreen = () => {
   );
 };
 
-/**
- * Decode Google's encoded polyline format
- */
 const decodePolyline = (encoded: string): [number, number][] => {
   const points: [number, number][] = [];
   let index = 0;
@@ -749,19 +742,19 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     position: 'absolute',
-    bottom: 0, // Start from bottom
+    bottom: 0,
     left: 16,
     right: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24, // Extra padding for safe area/nav buttons
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    marginBottom: Platform.OS === 'ios' ? 0 : 16, // Extra margin on Android for nav buttons
+    marginBottom: Platform.OS === 'ios' ? 0 : 16,
   },
   stopsContainer: {
     marginBottom: 12,
@@ -788,20 +781,6 @@ const styles = StyleSheet.create({
   },
   removeStopButton: {
     padding: 4,
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  warningText: {
-    marginLeft: 8,
-    fontSize: 13,
-    color: '#92400E',
-    flex: 1,
   },
   infoRow: {
     flexDirection: 'row',
@@ -857,7 +836,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#5d1289',
   },
-  // Custom Marker Styles
   markerContainer: {
     alignItems: 'center',
   },
