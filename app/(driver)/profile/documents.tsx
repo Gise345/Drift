@@ -1,0 +1,406 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
+  Alert,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+
+type DocumentStatus = 'verified' | 'pending' | 'expired' | 'rejected';
+
+interface Document {
+  id: string;
+  type: string;
+  name: string;
+  status: DocumentStatus;
+  uploadDate: string;
+  expiryDate?: string;
+  icon: string;
+  required: boolean;
+}
+
+export default function DocumentsScreen() {
+  const [documents] = useState<Document[]>([
+    {
+      id: '1',
+      type: 'license',
+      name: "Driver's License",
+      status: 'verified',
+      uploadDate: '2024-01-15',
+      expiryDate: '2026-12-31',
+      icon: 'card',
+      required: true,
+    },
+    {
+      id: '2',
+      type: 'insurance',
+      name: 'Vehicle Insurance',
+      status: 'verified',
+      uploadDate: '2024-01-15',
+      expiryDate: '2025-06-30',
+      icon: 'shield-checkmark',
+      required: true,
+    },
+    {
+      id: '3',
+      type: 'registration',
+      name: 'Vehicle Registration',
+      status: 'pending',
+      uploadDate: '2024-11-01',
+      expiryDate: '2025-12-31',
+      icon: 'document-text',
+      required: true,
+    },
+    {
+      id: '4',
+      type: 'inspection',
+      name: 'Safety Inspection',
+      status: 'expired',
+      uploadDate: '2023-10-15',
+      expiryDate: '2024-10-15',
+      icon: 'checkmark-circle',
+      required: true,
+    },
+  ]);
+
+  const getStatusColor = (status: DocumentStatus) => {
+    switch (status) {
+      case 'verified':
+        return Colors.success;
+      case 'pending':
+        return Colors.warning;
+      case 'expired':
+      case 'rejected':
+        return Colors.error;
+      default:
+        return Colors.textSecondary;
+    }
+  };
+
+  const getStatusText = (status: DocumentStatus) => {
+    switch (status) {
+      case 'verified':
+        return 'Verified';
+      case 'pending':
+        return 'Pending Review';
+      case 'expired':
+        return 'Expired';
+      case 'rejected':
+        return 'Rejected';
+      default:
+        return status;
+    }
+  };
+
+  const getActionText = (status: DocumentStatus) => {
+    switch (status) {
+      case 'expired':
+      case 'rejected':
+        return 'Update Document';
+      case 'pending':
+        return 'View Details';
+      default:
+        return 'View Document';
+    }
+  };
+
+  const handleDocumentAction = (doc: Document) => {
+    if (doc.status === 'expired' || doc.status === 'rejected') {
+      router.push({
+        pathname: '/(driver)/profile/upload-document',
+        params: { documentType: doc.type }
+      });
+    } else {
+      router.push({
+        pathname: '/(driver)/profile/document-detail',
+        params: { documentId: doc.id }
+      });
+    }
+  };
+
+  const expiredDocs = documents.filter(doc => doc.status === 'expired' || doc.status === 'rejected');
+  const pendingDocs = documents.filter(doc => doc.status === 'pending');
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>My Documents</Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        {/* Alerts */}
+        {expiredDocs.length > 0 && (
+          <View style={styles.alert}>
+            <View style={[styles.alertIcon, { backgroundColor: `${Colors.error}15` }]}>
+              <Ionicons name="alert-circle" size={24} color={Colors.error} />
+            </View>
+            <View style={styles.alertContent}>
+              <Text style={styles.alertTitle}>Action Required</Text>
+              <Text style={styles.alertText}>
+                {expiredDocs.length} document{expiredDocs.length > 1 ? 's' : ''} need{expiredDocs.length === 1 ? 's' : ''} your attention
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {pendingDocs.length > 0 && (
+          <View style={[styles.alert, { backgroundColor: `${Colors.warning}10` }]}>
+            <View style={[styles.alertIcon, { backgroundColor: `${Colors.warning}15` }]}>
+              <Ionicons name="time" size={24} color={Colors.warning} />
+            </View>
+            <View style={styles.alertContent}>
+              <Text style={styles.alertTitle}>Under Review</Text>
+              <Text style={styles.alertText}>
+                {pendingDocs.length} document{pendingDocs.length > 1 ? 's are' : ' is'} being verified
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Documents List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Required Documents</Text>
+          <View style={styles.documentsList}>
+            {documents.map((doc) => (
+              <TouchableOpacity
+                key={doc.id}
+                style={styles.documentCard}
+                onPress={() => handleDocumentAction(doc)}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.documentIcon,
+                  { backgroundColor: `${getStatusColor(doc.status)}15` }
+                ]}>
+                  <Ionicons name={doc.icon as any} size={24} color={getStatusColor(doc.status)} />
+                </View>
+                
+                <View style={styles.documentInfo}>
+                  <View style={styles.documentHeader}>
+                    <Text style={styles.documentName}>{doc.name}</Text>
+                    {doc.required && (
+                      <View style={styles.requiredBadge}>
+                        <Text style={styles.requiredText}>Required</Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  <View style={styles.statusRow}>
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: `${getStatusColor(doc.status)}15` }
+                    ]}>
+                      <Text style={[styles.statusText, { color: getStatusColor(doc.status) }]}>
+                        {getStatusText(doc.status)}
+                      </Text>
+                    </View>
+                    {doc.expiryDate && doc.status !== 'expired' && (
+                      <Text style={styles.expiryText}>
+                        Expires: {new Date(doc.expiryDate).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+                  
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleDocumentAction(doc)}
+                  >
+                    <Text style={styles.actionText}>{getActionText(doc.status)}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Help Section */}
+        <View style={styles.helpSection}>
+          <View style={styles.helpIcon}>
+            <Ionicons name="information-circle" size={24} color={Colors.primary} />
+          </View>
+          <View style={styles.helpContent}>
+            <Text style={styles.helpTitle}>Need Help?</Text>
+            <Text style={styles.helpText}>
+              All documents must be clear, valid, and up-to-date to continue driving
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  content: {
+    paddingBottom: Spacing.xl,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  backButton: {
+    padding: Spacing.xs,
+  },
+  headerTitle: {
+    ...Typography.h2,
+    color: Colors.text,
+  },
+  placeholder: {
+    width: 40,
+  },
+  alert: {
+    flexDirection: 'row',
+    backgroundColor: `${Colors.error}10`,
+    margin: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  alertIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  alertContent: {
+    flex: 1,
+  },
+  alertTitle: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  alertText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  section: {
+    padding: Spacing.md,
+  },
+  sectionTitle: {
+    ...Typography.h3,
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  documentsList: {
+    gap: Spacing.md,
+  },
+  documentCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: Spacing.md,
+    ...Colors.shadow,
+  },
+  documentIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  documentInfo: {
+    flex: 1,
+  },
+  documentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  documentName: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+    flex: 1,
+  },
+  requiredBadge: {
+    backgroundColor: `${Colors.primary}15`,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  requiredText: {
+    ...Typography.caption,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+    gap: Spacing.xs,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusText: {
+    ...Typography.caption,
+    fontWeight: '600',
+  },
+  expiryText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionText: {
+    ...Typography.caption,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  helpSection: {
+    flexDirection: 'row',
+    margin: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: `${Colors.primary}10`,
+    borderRadius: 12,
+  },
+  helpIcon: {
+    marginRight: Spacing.sm,
+  },
+  helpContent: {
+    flex: 1,
+  },
+  helpTitle: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  helpText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+});

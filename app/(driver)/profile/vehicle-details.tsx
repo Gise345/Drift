@@ -1,0 +1,268 @@
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+
+export default function VehicleDetailsScreen() {
+  const vehicle = {
+    make: 'Toyota',
+    model: 'Camry',
+    year: 2022,
+    color: 'Silver',
+    plate: 'CAY 12345',
+    seats: 4,
+    vin: '1HGBH41JXMN109186',
+    mileage: 32500,
+    features: ['Air Conditioning', 'Bluetooth', 'USB Charging', 'Child Seat Anchors'],
+    insurance: {
+      provider: 'Cayman Insurance Co.',
+      policy: 'CIC-2024-789456',
+      expiry: '2025-06-30',
+    },
+    registration: {
+      number: 'REG-2024-123456',
+      expiry: '2025-12-31',
+    },
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Vehicle Details</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(driver)/profile/update-vehicle')}
+            style={styles.editButton}
+          >
+            <Ionicons name="create-outline" size={24} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Vehicle Info Card */}
+        <View style={styles.section}>
+          <View style={styles.vehicleHeader}>
+            <View style={styles.vehicleIcon}>
+              <Ionicons name="car-sport" size={48} color={Colors.primary} />
+            </View>
+            <Text style={styles.vehicleName}>
+              {vehicle.year} {vehicle.make} {vehicle.model}
+            </Text>
+            <Text style={styles.vehicleColor}>{vehicle.color}</Text>
+          </View>
+        </View>
+
+        {/* Basic Info */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Basic Information</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>License Plate</Text>
+              <Text style={styles.infoValue}>{vehicle.plate}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Seats Available</Text>
+              <Text style={styles.infoValue}>{vehicle.seats} passengers</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>VIN</Text>
+              <Text style={styles.infoValue}>{vehicle.vin}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Mileage</Text>
+              <Text style={styles.infoValue}>{vehicle.mileage.toLocaleString()} km</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Features */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Features & Amenities</Text>
+          <View style={styles.featuresGrid}>
+            {vehicle.features.map((feature, index) => (
+              <View key={index} style={styles.featureChip}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                <Text style={styles.featureText}>{feature}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Insurance */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Insurance Information</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Provider</Text>
+              <Text style={styles.infoValue}>{vehicle.insurance.provider}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Policy Number</Text>
+              <Text style={styles.infoValue}>{vehicle.insurance.policy}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Expiry Date</Text>
+              <Text style={styles.infoValue}>{vehicle.insurance.expiry}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Registration */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Registration</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Registration Number</Text>
+              <Text style={styles.infoValue}>{vehicle.registration.number}</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Expiry Date</Text>
+              <Text style={styles.infoValue}>{vehicle.registration.expiry}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Update Button */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.updateButton}
+            onPress={() => router.push('/(driver)/profile/update-vehicle')}
+          >
+            <Ionicons name="create-outline" size={20} color={Colors.white} />
+            <Text style={styles.updateButtonText}>Update Vehicle Information</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  backButton: {
+    padding: Spacing.xs,
+  },
+  headerTitle: {
+    ...Typography.h2,
+    color: Colors.text,
+  },
+  editButton: {
+    padding: Spacing.xs,
+  },
+  section: {
+    padding: Spacing.md,
+  },
+  vehicleHeader: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    ...Colors.shadow,
+  },
+  vehicleIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: `${Colors.primary}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  vehicleName: {
+    ...Typography.h2,
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+    textAlign: 'center',
+  },
+  vehicleColor: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  sectionTitle: {
+    ...Typography.h3,
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+  },
+  infoCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: Spacing.md,
+    ...Colors.shadow,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  infoValue: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginVertical: Spacing.sm,
+  },
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  featureChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: 20,
+    gap: 6,
+    ...Colors.shadow,
+  },
+  featureText: {
+    ...Typography.caption,
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  updateButton: {
+    flexDirection: 'row',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    padding: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    ...Colors.shadow,
+  },
+  updateButtonText: {
+    ...Typography.body,
+    color: Colors.white,
+    fontWeight: '600',
+  },
+});

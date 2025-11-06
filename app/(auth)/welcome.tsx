@@ -38,7 +38,7 @@ export default function WelcomeScreen() {
     };
     
     setUser(mockUser);
-    router.replace('/(tabs)');
+    router.replace('/select-role'); // ✅ NOW GOES TO ROLE SELECTION
   };
 
   return (

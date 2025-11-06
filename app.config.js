@@ -42,6 +42,18 @@ module.exports = {
       }
     },
     plugins: [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Drift to access your photos to upload vehicle and document images"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Drift to use your camera to capture vehicle and document photos"
+        }
+      ],
       "expo-router",
       [
         "expo-location",
@@ -70,7 +82,7 @@ module.exports = {
         }
       ],
       "@react-native-firebase/app",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
     ],
     scheme: "drift",
     web: {

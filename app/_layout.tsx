@@ -26,6 +26,9 @@ export default function RootLayout() {
       {/* Entry point */}
       <Stack.Screen name="index" />
       
+      {/* Role selection (Rider or Driver) */}
+      <Stack.Screen name="select-role" />
+      
       {/* Auth flow */}
       <Stack.Screen name="(auth)" />
       
@@ -34,6 +37,9 @@ export default function RootLayout() {
       
       {/* Rider screens */}
       <Stack.Screen name="(rider)" />
+
+      {/* Driver screens */}
+      <Stack.Screen name="(driver)" />
     </Stack>
   );
 }

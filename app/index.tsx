@@ -28,8 +28,8 @@ export default function Index() {
 
   // Route based on auth state
   if (user) {
-    // User is logged in → Go to main app
-    return <Redirect href="/(tabs)" />;
+    // User is logged in → Show role selection
+    return <Redirect href="/select-role" />;
   } else {
     // User not logged in → Go to auth
     return <Redirect href="/(auth)/welcome" />;
