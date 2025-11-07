@@ -15,6 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.drift.app",
+      googleServicesFile: "./GoogleService-Info.plist",
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation."

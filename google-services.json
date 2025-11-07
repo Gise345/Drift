@@ -12,7 +12,12 @@
           "package_name": "com.drift.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "693488691443-hfu36r5nfkd8p8cbmndo2qihneqiduah.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCE0O0Gri7ibo3hx8oMAV2oUqK9cdSC3FY"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "693488691443-hfu36r5nfkd8p8cbmndo2qihneqiduah.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "693488691443-shj0qjsljq12ptnmsabv8pvtv97t67p8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.drift.app"
+              }
+            }
+          ]
         }
       }
     }

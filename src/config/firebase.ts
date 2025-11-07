@@ -2,14 +2,12 @@
 // Using @react-native-firebase packages with NEW modular API (v22+)
 // Auto-initialized via google-services.json (Android) and GoogleService-Info.plist (iOS)
 
-import { getApp } from '@react-native-firebase/app';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import storage, { FirebaseStorageTypes } from '@react-native-firebase/storage';
 
 // Firebase is automatically initialized by React Native Firebase
-// Get the default app instance using the NEW API
-const app = getApp();
+// No need to explicitly call getApp() - it's done automatically
 
 // Auth instance
 export const firebaseAuth = auth();

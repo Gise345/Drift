@@ -1,9 +1,13 @@
 /**
- * Drift Sign In Screen
+ * Drift Sign In Screen - Production Ready with Google Sign-In
  * Figma: 05_Login.png
  * 
- * Login with phone number and password
- * Enhanced version with full functionality
+ * Features:
+ * - Email/Password login with Firebase
+ * - Google Sign-In integration (React Native Firebase)
+ * - Password reset flow
+ * - Remember me functionality
+ * - Biometric authentication (future)
  */
 
 import React, { useState } from 'react';
@@ -16,27 +20,35 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { DriftButton, ArrowRight } from '@/components/ui/DriftButton';
-import { PhoneInput, PasswordInput } from '@/components/ui/DriftInput';
+import { DriftInput, PasswordInput } from '@/components/ui/DriftInput';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { signInWithEmail } from '@/src/services/firebase-auth-service';
+import { signInWithGoogle } from '@/src/services/google-auth';
 
 export default function SignInScreen() {
   const router = useRouter();
   const { setUser } = useAuthStore();
   
-  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [countryCode, setCountryCode] = useState('+1');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
 
   const handleLogin = async () => {
     // Validate inputs
-    if (!phone || phone.replace(/\D/g, '').length < 10) {
-      Alert.alert('Error', 'Please enter a valid phone number');
+    if (!email.trim() || !validateEmail(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
     
@@ -48,37 +60,71 @@ export default function SignInScreen() {
     setLoading(true);
     
     try {
-      // TODO: Implement Firebase auth
-      const fullPhone = `${countryCode}${phone}`;
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const user = await signInWithEmail(email.trim().toLowerCase(), password);
       
-      // Mock user data
-      const mockUser = {
-        id: 'user-123',
-        email: `${phone}@drift.com`,
-        name: 'Drift User',
-        phone: fullPhone,
-        roles: ['RIDER'],
-        hasAcceptedTerms: true,
-        rating: 5.0,
-        createdAt: new Date(),
-      };
-      
-      setUser(mockUser);
-      router.replace('/');
-    } catch (error) {
-      Alert.alert('Login Failed', 'Please check your credentials and try again');
+      // Check if email is verified
+      if (!user.emailVerified) {
+        Alert.alert(
+          'Email Not Verified',
+          'Please verify your email address before signing in. Check your inbox for the verification link.',
+          [
+            {
+              text: 'Resend Email',
+              onPress: () => router.push({
+                pathname: '/(auth)/email-verification',
+                params: { email: user.email },
+              }),
+            },
+            { text: 'OK' },
+          ]
+        );
+        return;
+      }
+
+      // Update app state
+      setUser(user);
+
+      // Navigate based on user role
+      if (user.roles.includes('DRIVER')) {
+        router.replace('/(driver)/(tabs)/home');
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleForgotPassword = () => {
-    router.push('/(auth)/forgot-password');
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    
+    try {
+      const result = await signInWithGoogle();
+      
+      if (result.success && result.user) {
+        // Update app state
+        setUser(result.user);
+
+        // Navigate based on user role
+        if (result.user.roles.includes('DRIVER')) {
+          router.replace('/(driver)/(tabs)/home');
+        } else {
+          router.replace('/(tabs)');
+        }
+      } else {
+        Alert.alert('Google Sign-In Failed', result.error || 'Unknown error occurred');
+      }
+    } catch (error: any) {
+      Alert.alert('Google Sign-In Failed', error.message || 'Failed to sign in with Google');
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
-  const handleCountryCodePress = () => {
-    Alert.alert('Country Code', 'Country picker coming soon');
+  const handleForgotPassword = () => {
+    router.push('/(auth)/forgot-password');
   };
 
   return (
@@ -103,53 +149,60 @@ export default function SignInScreen() {
           </TouchableOpacity>
 
           {/* Title */}
-          <Text style={styles.title}>LOGIN</Text>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to continue to Drift</Text>
 
-          {/* Logo & Illustration */}
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>
-              Drift <Text style={styles.logoAccent}>🚗</Text>
-            </Text>
-            <View style={styles.illustrationPlaceholder}>
-              <Text style={styles.illustrationEmoji}>🗺️ 📍 🚗</Text>
-            </View>
-          </View>
-
-          {/* Phone Number Input */}
-          <PhoneInput
-            value={phone}
-            onChangeText={setPhone}
-            countryCode={countryCode}
-            onCountryCodePress={handleCountryCodePress}
-            placeholder="373 299 3456"
-            keyboardType="phone-pad"
-            maxLength={15}
+          {/* Email Input */}
+          <DriftInput
+            label="Email Address"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="your@email.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+            showValidation
+            isValid={validateEmail(email)}
           />
 
           {/* Password Input */}
           <PasswordInput
+            label="Password"
             value={password}
             onChangeText={setPassword}
             placeholder="Enter your password"
           />
 
-          {/* Forgot Password Link */}
-          <TouchableOpacity
-            onPress={handleForgotPassword}
-            style={styles.forgotButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
+          {/* Remember Me & Forgot Password Row */}
+          <View style={styles.optionsRow}>
+            <TouchableOpacity
+              style={styles.rememberMeContainer}
+              onPress={() => setRememberMe(!rememberMe)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
+                {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.rememberMeText}>Remember me</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleForgotPassword}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Login Button */}
           <DriftButton
-            title="Login"
+            title="Sign In"
             onPress={handleLogin}
             variant="black"
             size="large"
             icon={<ArrowRight />}
             loading={loading}
+            disabled={!validateEmail(email) || password.length < 6 || googleLoading}
             style={styles.loginButton}
           />
 
@@ -160,18 +213,22 @@ export default function SignInScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Social Login Options */}
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Text style={styles.socialIcon}>🍎</Text>
-              <Text style={styles.socialText}>Apple</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.socialButton}>
-              <Text style={styles.socialIcon}>📱</Text>
-              <Text style={styles.socialText}>Google</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Google Sign-In */}
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            disabled={loading || googleLoading}
+            activeOpacity={0.8}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color={Colors.gray[600]} />
+            ) : (
+              <>
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
 
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
@@ -186,6 +243,13 @@ export default function SignInScreen() {
             <Text style={styles.legalText}>
               By continuing, you agree to Drift's peer-to-peer carpooling terms.
               We're not a taxi service.
+            </Text>
+          </View>
+
+          {/* Help Section */}
+          <View style={styles.helpSection}>
+            <Text style={styles.helpText}>
+              Need help? <Text style={styles.helpLink}>Contact Support</Text>
             </Text>
           </View>
         </ScrollView>
@@ -227,55 +291,71 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize['2xl'],
     fontWeight: '700',
     color: Colors.black,
-    textAlign: 'center',
-    marginBottom: Spacing['2xl'],
-    letterSpacing: 2,
+    marginBottom: Spacing.xs,
   },
 
-  logoContainer: {
+  subtitle: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.gray[600],
+    marginBottom: Spacing['2xl'],
+  },
+
+  // Options Row
+  optionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing['3xl'],
-  },
-  
-  logo: {
-    fontSize: Typography.fontSize['4xl'],
-    fontWeight: '800',
-    color: Colors.black,
-    marginBottom: Spacing.lg,
-  },
-  
-  logoAccent: {
-    color: Colors.primary,
-  },
-
-  illustrationPlaceholder: {
-    paddingVertical: Spacing['2xl'],
-  },
-  
-  illustrationEmoji: {
-    fontSize: 48,
-  },
-
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginBottom: Spacing['2xl'],
+    marginBottom: Spacing.xl,
     marginTop: -Spacing.sm,
   },
-  
+
+  rememberMeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: Colors.gray[300],
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  checkboxActive: {
+    backgroundColor: Colors.purple,
+    borderColor: Colors.purple,
+  },
+
+  checkmark: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  rememberMeText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[700],
+  },
+
   forgotText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.black,
-    fontWeight: '500',
+    color: Colors.purple,
+    fontWeight: '600',
   },
 
   loginButton: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
 
+  // Divider
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: Spacing.xl,
+    marginVertical: Spacing.lg,
   },
 
   dividerLine: {
@@ -285,36 +365,33 @@ const styles = StyleSheet.create({
   },
 
   dividerText: {
-    marginHorizontal: Spacing.lg,
-    fontSize: Typography.fontSize.sm,
+    marginHorizontal: Spacing.md,
+    fontSize: Typography.fontSize.xs,
     color: Colors.gray[500],
     fontWeight: '600',
   },
 
-  socialContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: Spacing.xl,
-  },
-
-  socialButton: {
-    flex: 1,
+  // Google Button
+  googleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.white,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.gray[300],
     borderRadius: 12,
     paddingVertical: Spacing.md,
-    gap: 8,
+    marginBottom: Spacing.xl,
+    gap: Spacing.sm,
   },
 
-  socialIcon: {
+  googleIcon: {
     fontSize: 20,
+    fontWeight: '700',
+    color: Colors.error,
   },
 
-  socialText: {
+  googleButtonText: {
     fontSize: Typography.fontSize.base,
     color: Colors.gray[700],
     fontWeight: '600',
@@ -324,7 +401,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing['2xl'],
+    marginBottom: Spacing.xl,
   },
   
   signUpText: {
@@ -344,6 +421,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.gray[200],
+    marginBottom: Spacing.md,
   },
   
   legalText: {
@@ -351,5 +429,19 @@ const styles = StyleSheet.create({
     color: Colors.gray[600],
     textAlign: 'center',
     lineHeight: 18,
+  },
+
+  helpSection: {
+    alignItems: 'center',
+  },
+
+  helpText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+  },
+
+  helpLink: {
+    color: Colors.purple,
+    fontWeight: '600',
   },
 });

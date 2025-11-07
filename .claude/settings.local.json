@@ -9,7 +9,9 @@
       "Bash(npm install react-native-maps@1.18.0)",
       "mcp__ide__getDiagnostics",
       "Bash(npx tsc:*)",
-      "Bash(npx expo install expo-task-manager)"
+      "Bash(npx expo install expo-task-manager)",
+      "Bash(npx expo install:*)",
+      "Bash(npx expo prebuild:*)"
     ],
     "deny": [],
     "ask": []
