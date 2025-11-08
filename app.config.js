@@ -25,7 +25,7 @@ module.exports = {
       }
     },
     android: {
-      package: "com.drift.app",
+      package: "com.drift.global",
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#3B82F6"

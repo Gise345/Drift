@@ -11,7 +11,12 @@
       "Bash(npx tsc:*)",
       "Bash(npx expo install expo-task-manager)",
       "Bash(npx expo install:*)",
-      "Bash(npx expo prebuild:*)"
+      "Bash(npx expo prebuild:*)",
+      "Bash(findstr:*)",
+      "Bash(keytool -list -v -keystore \"%USERPROFILE%\\.android\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android:*)",
+      "Bash(./gradlew:*)",
+      "Bash(gradlew.bat signingReport:*)",
+      "Bash(./get-sha1.bat)"
     ],
     "deny": [],
     "ask": []

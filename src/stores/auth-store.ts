@@ -1,7 +1,6 @@
 import { create } from 'zustand';
-import { firebaseAuth, firebaseDb } from '../config/firebase';
-import { onAuthStateChanged } from '@react-native-firebase/auth';
-import { doc, getDoc } from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import { FirebaseService } from '../services/firebase-service';
 
 interface User {
@@ -50,13 +49,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   initialize: () => {
     // Listen to Firebase auth state with v22 modular API
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
         try {
           // Fetch full user data from Firestore using modular API
-          const userRef = doc(firebaseDb, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userRef);
-          
+          const userDoc = await firestore()
+            .collection('users')
+            .doc(firebaseUser.uid)
+            .get();
+
           if (userDoc.exists) {
             set({
               user: { id: userDoc.id, ...userDoc.data() } as User,

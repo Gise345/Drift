@@ -7,12 +7,20 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:693488691443:android:2827488f1a36ad1e26af86",
+        "mobilesdk_app_id": "1:693488691443:android:e43b0db95833fbd326af86",
         "android_client_info": {
-          "package_name": "com.drift.app"
+          "package_name": "com.drift.global"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "693488691443-k65ttf4pi1phnkcmhblt6rba87he568r.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.drift.global",
+            "certificate_hash": "3a7abaf4631ed2c3b2d7316b502f14ce175229f1"
+          }
+        },
         {
           "client_id": "693488691443-hfu36r5nfkd8p8cbmndo2qihneqiduah.apps.googleusercontent.com",
           "client_type": 3
