@@ -1,24 +1,52 @@
 /**
- * Drift Firebase Authentication Service - React Native Firebase
+ * Drift Firebase Authentication Service - React Native Firebase v22 Modular API
  *
- * Production-ready authentication with:
- * - Email/Password registration and login
- * - Google Sign-In
- * - Email verification
- * - Password reset
- * - User profile management
- *
- * Uses @react-native-firebase for proper native mobile support
+ * CORRECT v22 MODULAR API USAGE:
+ * ✅ Import functions directly from module
+ * ✅ Pass auth instance as first parameter
+ * ✅ Use serverTimestamp from Firestore
+ * ❌ Do NOT use getAuth(), getFirestore(), getApp()
+ * ❌ Do NOT chain methods like auth().signInWithEmailAndPassword()
  */
 
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import auth, {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithCredential,
+  sendPasswordResetEmail as firebaseSendPasswordReset,
+  sendEmailVerification,
+  signOut,
+  updateProfile,
+  reload,
+  onAuthStateChanged as firebaseOnAuthStateChanged,
+  GoogleAuthProvider,
+  FirebaseAuthTypes
+} from '@react-native-firebase/auth';
+
+import firestore, {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp
+} from '@react-native-firebase/firestore';
+
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-// User roles type
+// ============================================================================
+// Get Firebase instances - v22 modular way
+// ============================================================================
+
+const authInstance = auth();
+const firestoreInstance = firestore();
+
+// ============================================================================
+// Types
+// ============================================================================
+
 export type UserRole = 'RIDER' | 'DRIVER' | 'ADMIN';
 
-// User data interface
 export interface DriftUser {
   id: string;
   email: string;
@@ -33,10 +61,9 @@ export interface DriftUser {
   createdAt: Date;
   lastLoginAt: Date;
   stripeCustomerId?: string;
-  stripeAccountId?: string; // For drivers
+  stripeAccountId?: string;
 }
 
-// Registration data interface
 export interface RegistrationData {
   email: string;
   password: string;
@@ -45,7 +72,10 @@ export interface RegistrationData {
   role: UserRole;
 }
 
-// Authentication error messages
+// ============================================================================
+// Error Messages
+// ============================================================================
+
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/email-already-in-use': 'This email is already registered. Please sign in instead.',
   'auth/invalid-email': 'Invalid email address format.',
@@ -59,40 +89,81 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   'auth/network-request-failed': 'Network error. Please check your connection.',
 };
 
-/**
- * Get user-friendly error message
- */
 function getErrorMessage(error: any): string {
   const code = error?.code || '';
   return AUTH_ERROR_MESSAGES[code] || error?.message || 'An error occurred. Please try again.';
 }
 
+// ============================================================================
+// Configure Google Sign-In
+// ============================================================================
+
+export function configureGoogleSignIn() {
+  GoogleSignin.configure({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
+    offlineAccess: true,
+  });
+}
+
+// ============================================================================
+// Authentication Functions
+// ============================================================================
+
 /**
  * Register new user with email and password
  */
-export async function registerWithEmail(data: RegistrationData): Promise<{ user: DriftUser; needsVerification: boolean }> {
+export async function registerWithEmail(
+  data: RegistrationData
+): Promise<{ user: DriftUser; needsVerification: boolean }> {
   try {
-    // Create Firebase Auth user
-    const userCredential = await auth().createUserWithEmailAndPassword(
+    console.log('🚀 Starting email registration...');
+    
+    // Step 1: Create Firebase Auth user using modular API
+    const userCredential = await createUserWithEmailAndPassword(
+      authInstance,
       data.email,
       data.password
     );
 
-    // Update profile with display name
-    await userCredential.user.updateProfile({
+    const firebaseUser = userCredential.user;
+    console.log('✅ Firebase user created:', firebaseUser.uid);
+
+    // Step 2: Update profile with display name
+    await updateProfile(firebaseUser, {
       displayName: data.fullName,
     });
+    console.log('✅ Profile updated with display name');
 
-    // Send email verification
-    await userCredential.user.sendEmailVerification();
+    // Step 3: Send email verification
+    await sendEmailVerification(firebaseUser);
+    console.log('✅ Verification email sent');
 
-    // Create Firestore user document
-    const userData: DriftUser = {
-      id: userCredential.user.uid,
+    // Step 4: Create Firestore user document using modular API
+    const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
+    
+    await setDoc(userRef, {
+      userId: firebaseUser.uid,  // CRITICAL: Required by Firestore security rules
       email: data.email,
       name: data.fullName,
       phone: data.phone || '',
-      photoURL: userCredential.user.photoURL || '',
+      photoURL: firebaseUser.photoURL || '',
+      roles: [data.role],
+      hasAcceptedTerms: true,
+      emailVerified: false,
+      rating: 5.0,
+      totalTrips: 0,
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+    });
+
+    console.log('✅ Firestore user document created successfully');
+
+    const userData: DriftUser = {
+      id: firebaseUser.uid,
+      email: data.email,
+      name: data.fullName,
+      phone: data.phone || '',
+      photoURL: firebaseUser.photoURL || '',
       roles: [data.role],
       hasAcceptedTerms: true,
       emailVerified: false,
@@ -102,17 +173,12 @@ export async function registerWithEmail(data: RegistrationData): Promise<{ user:
       lastLoginAt: new Date(),
     };
 
-    await firestore().collection('users').doc(userCredential.user.uid).set({
-      ...userData,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      lastLoginAt: firestore.FieldValue.serverTimestamp(),
-    });
-
     return {
       user: userData,
       needsVerification: true,
     };
   } catch (error: any) {
+    console.error('❌ Registration error:', error);
     throw new Error(getErrorMessage(error));
   }
 }
@@ -122,34 +188,36 @@ export async function registerWithEmail(data: RegistrationData): Promise<{ user:
  */
 export async function signInWithEmail(email: string, password: string): Promise<DriftUser> {
   try {
-    const userCredential = await auth().signInWithEmailAndPassword(email, password);
+    console.log('🚀 Starting email sign in...');
+    
+    const userCredential = await signInWithEmailAndPassword(
+      authInstance,
+      email,
+      password
+    );
+    const firebaseUser = userCredential.user;
+
+    console.log('✅ Firebase sign in successful:', firebaseUser.uid);
 
     // Update last login timestamp
-    await firestore().collection('users').doc(userCredential.user.uid).update({
-      lastLoginAt: firestore.FieldValue.serverTimestamp(),
+    const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
+    await updateDoc(userRef, {
+      lastLoginAt: serverTimestamp(),
     });
 
     // Get user data from Firestore
-    const userData = await getUserData(userCredential.user.uid);
+    const userData = await getUserData(firebaseUser.uid);
 
     if (!userData) {
       throw new Error('User data not found. Please contact support.');
     }
 
+    console.log('✅ User data fetched successfully');
     return userData;
   } catch (error: any) {
+    console.error('❌ Sign in error:', error);
     throw new Error(getErrorMessage(error));
   }
-}
-
-/**
- * Configure Google Sign-In
- */
-export function configureGoogleSignIn() {
-  GoogleSignin.configure({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
-    offlineAccess: true,
-  });
 }
 
 /**
@@ -157,14 +225,17 @@ export function configureGoogleSignIn() {
  */
 export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftUser> {
   try {
+    console.log('🚀 Starting Google sign in...');
+    
     // Configure Google Sign-In if not already configured
     configureGoogleSignIn();
 
-    // Check if your device supports Google Play
+    // Check if device supports Google Play
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
     // Get the users ID token
     const response = await GoogleSignin.signIn();
+    console.log('✅ Google Sign-In response received');
 
     // Handle cancellation
     if (response.type === 'cancelled') {
@@ -177,53 +248,77 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
       throw new Error('No ID token received from Google');
     }
 
-    // Create a Google credential with the token
-    const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+    console.log('✅ Got ID token, creating credential...');
 
-    // Sign-in the user with the credential
-    const userCredential = await auth().signInWithCredential(googleCredential);
+    // Create a Google credential with the token
+    const googleCredential = GoogleAuthProvider.credential(idToken);
+
+    // Sign-in the user with the credential using modular API
+    const userCredential = await signInWithCredential(authInstance, googleCredential);
+    const firebaseUser = userCredential.user;
+
+    console.log('✅ Firebase user authenticated:', firebaseUser.uid);
 
     // Check if user already exists
-    const userDoc = await firestore().collection('users').doc(userCredential.user.uid).get();
+    const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
+    const userDoc = await getDoc(userRef);
 
     if (userDoc.exists) {
+      console.log('✅ Existing user found, updating...');
+      
       // Update last login
-      await firestore().collection('users').doc(userCredential.user.uid).update({
-        lastLoginAt: firestore.FieldValue.serverTimestamp(),
+      await updateDoc(userRef, {
+        lastLoginAt: serverTimestamp(),
       });
 
       const data = userDoc.data();
       return {
         ...data,
-        id: userCredential.user.uid,
-        emailVerified: userCredential.user.emailVerified,
+        id: firebaseUser.uid,
+        emailVerified: firebaseUser.emailVerified,
+        createdAt: data?.createdAt?.toDate() || new Date(),
+        lastLoginAt: data?.lastLoginAt?.toDate() || new Date(),
       } as DriftUser;
     } else {
+      console.log('✅ New user, creating document...');
+      
       // Create new user document
-      const userData: DriftUser = {
-        id: userCredential.user.uid,
-        email: userCredential.user.email || '',
-        name: userCredential.user.displayName || 'Drift User',
+      await setDoc(userRef, {
+        userId: firebaseUser.uid,  // CRITICAL: Required by Firestore rules
+        email: firebaseUser.email || '',
+        name: firebaseUser.displayName || 'Drift User',
         phone: '',
-        photoURL: userCredential.user.photoURL || '',
+        photoURL: firebaseUser.photoURL || '',
         roles: [role],
         hasAcceptedTerms: true,
-        emailVerified: userCredential.user.emailVerified,
+        emailVerified: firebaseUser.emailVerified,
+        rating: 5.0,
+        totalTrips: 0,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      });
+
+      console.log('✅ User document created successfully');
+
+      const userData: DriftUser = {
+        id: firebaseUser.uid,
+        email: firebaseUser.email || '',
+        name: firebaseUser.displayName || 'Drift User',
+        phone: '',
+        photoURL: firebaseUser.photoURL || '',
+        roles: [role],
+        hasAcceptedTerms: true,
+        emailVerified: firebaseUser.emailVerified,
         rating: 5.0,
         totalTrips: 0,
         createdAt: new Date(),
         lastLoginAt: new Date(),
       };
 
-      await firestore().collection('users').doc(userCredential.user.uid).set({
-        ...userData,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        lastLoginAt: firestore.FieldValue.serverTimestamp(),
-      });
-
       return userData;
     }
   } catch (error: any) {
+    console.error('❌ Google sign in error:', error);
     throw new Error(getErrorMessage(error));
   }
 }
@@ -233,9 +328,13 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
  */
 export async function getUserData(userId: string): Promise<DriftUser | null> {
   try {
-    const userDoc = await firestore().collection('users').doc(userId).get();
+    console.log('📖 Fetching user data for:', userId);
+    
+    const userRef = doc(firestoreInstance, 'users', userId);
+    const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists) {
+      console.warn('⚠️ User document not found');
       return null;
     }
 
@@ -247,7 +346,7 @@ export async function getUserData(userId: string): Promise<DriftUser | null> {
       lastLoginAt: data?.lastLoginAt?.toDate() || new Date(),
     } as DriftUser;
   } catch (error) {
-    console.error('Error fetching user data:', error);
+    console.error('❌ Error fetching user data:', error);
     return null;
   }
 }
@@ -257,7 +356,7 @@ export async function getUserData(userId: string): Promise<DriftUser | null> {
  */
 export async function sendPasswordReset(email: string): Promise<void> {
   try {
-    await auth().sendPasswordResetEmail(email);
+    await firebaseSendPasswordReset(authInstance, email);
   } catch (error: any) {
     throw new Error(getErrorMessage(error));
   }
@@ -268,7 +367,7 @@ export async function sendPasswordReset(email: string): Promise<void> {
  */
 export async function resendEmailVerification(): Promise<void> {
   try {
-    const user = auth().currentUser;
+    const user = authInstance.currentUser;
     if (!user) {
       throw new Error('No user is currently signed in.');
     }
@@ -277,7 +376,7 @@ export async function resendEmailVerification(): Promise<void> {
       throw new Error('Email is already verified.');
     }
 
-    await user.sendEmailVerification();
+    await sendEmailVerification(user);
   } catch (error: any) {
     throw new Error(getErrorMessage(error));
   }
@@ -288,15 +387,15 @@ export async function resendEmailVerification(): Promise<void> {
  */
 export async function checkEmailVerification(): Promise<boolean> {
   try {
-    const user = auth().currentUser;
+    const user = authInstance.currentUser;
     if (!user) {
       return false;
     }
 
-    await user.reload();
+    await reload(user);
     return user.emailVerified;
   } catch (error) {
-    console.error('Error checking email verification:', error);
+    console.error('❌ Error checking email verification:', error);
     return false;
   }
 }
@@ -306,7 +405,7 @@ export async function checkEmailVerification(): Promise<boolean> {
  */
 export async function signOutUser(): Promise<void> {
   try {
-    await auth().signOut();
+    await signOut(authInstance);
     await GoogleSignin.signOut();
   } catch (error: any) {
     throw new Error(getErrorMessage(error));
@@ -318,7 +417,8 @@ export async function signOutUser(): Promise<void> {
  */
 export async function updateUserProfile(userId: string, updates: Partial<DriftUser>): Promise<void> {
   try {
-    await firestore().collection('users').doc(userId).update(updates);
+    const userRef = doc(firestoreInstance, 'users', userId);
+    await updateDoc(userRef, updates);
   } catch (error: any) {
     throw new Error('Failed to update profile. Please try again.');
   }
@@ -328,12 +428,12 @@ export async function updateUserProfile(userId: string, updates: Partial<DriftUs
  * Get current Firebase auth user
  */
 export function getCurrentUser(): FirebaseAuthTypes.User | null {
-  return auth().currentUser;
+  return authInstance.currentUser;
 }
 
 /**
  * Listen to auth state changes
  */
 export function onAuthStateChanged(callback: (user: FirebaseAuthTypes.User | null) => void) {
-  return auth().onAuthStateChanged(callback);
+  return firebaseOnAuthStateChanged(authInstance, callback);
 }

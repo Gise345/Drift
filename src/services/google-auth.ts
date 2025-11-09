@@ -1,37 +1,48 @@
-// ============================================================================
-// Google Sign-In Service - React Native Firebase Version (Updated)
-// ============================================================================
-// Works with @react-native-firebase/auth (NOT web Firebase SDK)
-// Compatible with Expo SDK 52
-// Returns User type that matches auth store
-// ============================================================================
+/**
+ * Google Sign-In Service - React Native Firebase v22 Modular API
+ * 
+ * CORRECT v22 MODULAR API USAGE:
+ * ✅ Call auth() and firestore() directly
+ * ✅ Import functions like signInWithCredential, signOut
+ * ✅ Pass auth/firestore instance as first parameter
+ * ❌ Do NOT use getAuth() or getFirestore()
+ */
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
+import auth, {
+  signInWithCredential,
+  signOut,
+  GoogleAuthProvider
+} from '@react-native-firebase/auth';
+import firestore, {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp
+} from '@react-native-firebase/firestore';
 import { Platform } from 'react-native';
+
+// ============================================================================
+// Get Firebase instances - v22 modular way
+// ============================================================================
+
+const authInstance = auth();
+const firestoreInstance = firestore();
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-// Configure Google Sign-In
 GoogleSignin.configure({
-  // Web Client ID from Firebase Console (works for all platforms)
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
-  
-  // iOS Client ID (optional, can use webClientId)
   iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  
-  // Request these permissions
   scopes: ['email', 'profile'],
-  
-  // Offline access for refresh tokens
   offlineAccess: true,
 });
 
 // ============================================================================
-// Types - Matches your auth store
+// Types
 // ============================================================================
 
 export interface User {
@@ -60,13 +71,16 @@ export interface GoogleSignInResult {
 
 export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
   try {
-    // Step 1: Check if device supports Google Play Services (Android only)
+    console.log('🚀 Starting Google Sign-In...');
+
+    // Check if device supports Google Play Services (Android only)
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     }
 
-    // Step 2: Sign in with Google
+    // Sign in with Google
     const response = await GoogleSignin.signIn();
+    console.log('✅ Google Sign-In response received');
 
     // Check if sign-in was successful
     if (response.type === 'cancelled') {
@@ -76,28 +90,35 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
       };
     }
 
-    // Step 3: Get the ID token from the response data
+    // Get the ID token from the response data
     const idToken = response.data.idToken;
 
     if (!idToken) {
       throw new Error('No ID token received from Google');
     }
 
-    // Step 4: Create Firebase credential
-    const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+    console.log('✅ Got ID token, creating Firebase credential...');
 
-    // Step 5: Sign in to Firebase with the credential
-    const userCredential = await auth().signInWithCredential(googleCredential);
+    // Create Firebase credential
+    const googleCredential = GoogleAuthProvider.credential(idToken);
+
+    // Sign in to Firebase with the credential using modular API
+    console.log('🔐 Signing in to Firebase...');
+    const userCredential = await signInWithCredential(authInstance, googleCredential);
     const firebaseUser = userCredential.user;
+    
+    console.log('✅ Firebase user authenticated:', firebaseUser.uid);
 
-    // Step 6: Create or update user profile in Firestore
-    const userRef = firestore().collection('users').doc(firebaseUser.uid);
-    const userDoc = await userRef.get();
+    // Create or update user profile in Firestore
+    const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
+    const userDoc = await getDoc(userRef);
 
     let userData: User;
 
     if (!userDoc.exists) {
       // New user - create profile
+      console.log('✅ Creating new user profile...');
+      
       if (!firebaseUser.email) {
         throw new Error('No email address associated with Google account');
       }
@@ -108,20 +129,33 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
         name: firebaseUser.displayName || 'Google User',
         photoURL: firebaseUser.photoURL,
         roles: ['RIDER'],
-        hasAcceptedTerms: true, // Auto-accept for Google Sign-In
+        hasAcceptedTerms: true,
         rating: 5.0,
         emailVerified: firebaseUser.emailVerified,
         verified: true,
         createdAt: new Date(),
       };
 
-      await userRef.set({
-        ...userData,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+      // Create document with userId field to match Firestore rules
+      await setDoc(userRef, {
+        userId: firebaseUser.uid,  // CRITICAL: Required by Firestore rules
+        email: firebaseUser.email,
+        name: firebaseUser.displayName || 'Google User',
+        photoURL: firebaseUser.photoURL,
+        roles: ['RIDER'],
+        hasAcceptedTerms: true,
+        rating: 5.0,
+        emailVerified: firebaseUser.emailVerified,
+        verified: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
+
+      console.log('✅ User profile created successfully');
     } else {
       // Existing user - update profile and get roles
+      console.log('✅ Updating existing user profile...');
+      
       const existingData = userDoc.data();
 
       if (!firebaseUser.email) {
@@ -142,12 +176,14 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
         createdAt: existingData?.createdAt?.toDate() || new Date(),
       };
 
-      await userRef.update({
+      await updateDoc(userRef, {
         name: firebaseUser.displayName,
         photoURL: firebaseUser.photoURL,
         emailVerified: firebaseUser.emailVerified,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
+
+      console.log('✅ User profile updated successfully');
     }
 
     return {
@@ -155,10 +191,10 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
       user: userData,
     };
   } catch (error: any) {
-    console.error('Google Sign-In Error:', error);
+    console.error('❌ Google Sign-In Error:', error);
 
     // Handle specific error cases
-    if (error.code === '12501') { // Sign-in cancelled (Android)
+    if (error.code === '12501') {
       return {
         success: false,
         error: 'Sign-in cancelled',
@@ -202,10 +238,10 @@ export const signOutGoogle = async (): Promise<void> => {
     // Sign out from Google
     await GoogleSignin.signOut();
     
-    // Sign out from Firebase
-    await auth().signOut();
+    // Sign out from Firebase using modular API
+    await signOut(authInstance);
   } catch (error) {
-    console.error('Google Sign-Out Error:', error);
+    console.error('❌ Google Sign-Out Error:', error);
     throw error;
   }
 };
@@ -219,7 +255,7 @@ export const getCurrentGoogleUser = async () => {
     const currentUser = await GoogleSignin.getCurrentUser();
     return currentUser;
   } catch (error) {
-    console.error('Get Current User Error:', error);
+    console.error('❌ Get Current User Error:', error);
     return null;
   }
 };
@@ -232,7 +268,7 @@ export const isSignedInWithGoogle = (): boolean => {
   try {
     return GoogleSignin.hasPreviousSignIn();
   } catch (error) {
-    console.error('Check Sign-In Status Error:', error);
+    console.error('❌ Check Sign-In Status Error:', error);
     return false;
   }
 };
@@ -244,9 +280,9 @@ export const isSignedInWithGoogle = (): boolean => {
 export const revokeGoogleAccess = async (): Promise<void> => {
   try {
     await GoogleSignin.revokeAccess();
-    await auth().signOut();
+    await signOut(authInstance);
   } catch (error) {
-    console.error('Revoke Access Error:', error);
+    console.error('❌ Revoke Access Error:', error);
     throw error;
   }
 };

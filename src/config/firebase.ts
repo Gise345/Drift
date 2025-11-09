@@ -1,35 +1,52 @@
-// Firebase Configuration - React Native Firebase
-// Using @react-native-firebase packages with NEW modular API (v22+)
-// Auto-initialized via google-services.json (Android) and GoogleService-Info.plist (iOS)
+/**
+ * Firebase Configuration - React Native Firebase v22 Modular API
+ * 
+ * IMPORTANT: React Native Firebase v22 modular API is DIFFERENT from Web SDK!
+ * - Do NOT use getAuth(), getFirestore(), getApp()
+ * - Instead, call auth(), firestore() directly
+ * - Auto-initialized via google-services.json (Android) and GoogleService-Info.plist (iOS)
+ */
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import storage, { FirebaseStorageTypes } from '@react-native-firebase/storage';
 
-// Firebase is automatically initialized by React Native Firebase
-// No need to explicitly call getApp() - it's done automatically
+// ============================================================================
+// Firebase Instances - v22 Modular API
+// ============================================================================
 
-// Auth instance
+// Auth instance - call auth() directly, don't use getAuth()
 export const firebaseAuth = auth();
 
-// Firestore instance
-export const db = firestore();
-export const firebaseDb = db; // Alias for consistency
+// Firestore instance - call firestore() directly, don't use getFirestore()
+export const firebaseDb = firestore();
+export const db = firebaseDb; // Alias for consistency
 
 // Storage instance
 export const firebaseStorage = storage();
 
-// Helper to get current user
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Get current authenticated user
+ */
 export const getCurrentUser = (): FirebaseAuthTypes.User | null => {
-  return auth().currentUser;
+  return firebaseAuth.currentUser;
 };
 
-// Helper to check if user is authenticated
+/**
+ * Check if user is authenticated
+ */
 export const isAuthenticated = (): boolean => {
-  return auth().currentUser !== null;
+  return firebaseAuth.currentUser !== null;
 };
 
-// Export types for TypeScript
+// ============================================================================
+// TypeScript Types
+// ============================================================================
+
 export type User = FirebaseAuthTypes.User;
 export type Firestore = FirebaseFirestoreTypes.Module;
 export type DocumentReference = FirebaseFirestoreTypes.DocumentReference;
@@ -37,11 +54,12 @@ export type CollectionReference = FirebaseFirestoreTypes.CollectionReference;
 export type DocumentSnapshot = FirebaseFirestoreTypes.DocumentSnapshot;
 export type QuerySnapshot = FirebaseFirestoreTypes.QuerySnapshot;
 
-// Export default instances
-export { auth, firestore, storage };
+// ============================================================================
+// Default Export
+// ============================================================================
 
 export default {
   auth: firebaseAuth,
-  db,
+  db: firebaseDb,
   storage: firebaseStorage,
 };
