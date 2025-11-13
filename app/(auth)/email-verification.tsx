@@ -1,6 +1,10 @@
 /**
  * Drift Email Verification Screen
  * 
+ * ✅ UPDATED: Now with ScrollView to prevent content cutoff
+ * ✅ UPDATED: Proper SafeAreaView with edges
+ * ✅ UPDATED: Extra bottom padding for phone navigation buttons
+ * 
  * Prompts users to verify their email
  * Allows resending verification email
  * Checks verification status
@@ -14,6 +18,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -116,8 +121,13 @@ export default function EmailVerificationScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.container}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <ScrollView 
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Verify Your Email</Text>
@@ -190,7 +200,7 @@ export default function EmailVerificationScreen() {
                 <ActivityIndicator size="small" color={Colors.purple} />
               ) : (
                 <Text style={styles.resendButtonText}>
-                  📨 Resend Verification Email
+                  🔨 Resend Verification Email
                 </Text>
               )}
             </TouchableOpacity>
@@ -215,7 +225,10 @@ export default function EmailVerificationScreen() {
         >
           <Text style={styles.signOutText}>← Sign Out</Text>
         </TouchableOpacity>
-      </View>
+
+        {/* Extra bottom spacing to prevent cutoff */}
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -226,16 +239,26 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
 
-  container: {
+  scroll: {
     flex: 1,
+  },
+
+  scrollContent: {
+    flexGrow: 1, // KEY: Use flexGrow instead of flex
     padding: Spacing.xl,
-    justifyContent: 'space-between',
+    paddingBottom: Spacing['3xl'], // Extra bottom padding
+  },
+
+  // Extra bottom spacer to prevent cutoff by phone navigation
+  bottomSpacer: {
+    height: 40,
   },
 
   // Header
   header: {
     alignItems: 'center',
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.md,
+    marginBottom: Spacing.xl,
   },
 
   title: {
@@ -288,6 +311,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.gray[200],
+    marginBottom: Spacing.xl,
   },
 
   instructionsTitle: {
@@ -325,6 +349,7 @@ const styles = StyleSheet.create({
   // Actions
   actionsContainer: {
     gap: Spacing.md,
+    marginBottom: Spacing.xl,
   },
 
   verifyButton: {
@@ -359,6 +384,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.gray[200],
+    marginBottom: Spacing.xl,
   },
 
   helpTitle: {
@@ -378,6 +404,7 @@ const styles = StyleSheet.create({
   signOutButton: {
     alignSelf: 'center',
     paddingVertical: Spacing.md,
+    marginBottom: Spacing.lg,
   },
 
   signOutText: {

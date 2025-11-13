@@ -8,6 +8,7 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, BorderRadius, Spacing } from '@/src/constants/theme';
 
 interface DriftButtonProps {
@@ -17,7 +18,8 @@ interface DriftButtonProps {
   size?: 'small' | 'medium' | 'large';
   loading?: boolean;
   disabled?: boolean;
-  icon?: React.ReactNode;
+  fullWidth?: boolean;
+  icon?: React.ReactNode | string;
   style?: ViewStyle;
   textStyle?: TextStyle;
 }
@@ -33,6 +35,7 @@ export function DriftButton({
   size = 'large',
   loading = false,
   disabled = false,
+  fullWidth = false,
   icon,
   style,
   textStyle,
@@ -41,6 +44,7 @@ export function DriftButton({
     styles.base,
     styles[`size_${size}`],
     styles[`variant_${variant}`],
+    fullWidth && styles.fullWidth,
     disabled && styles.disabled,
     style,
   ];
@@ -66,7 +70,19 @@ export function DriftButton({
       ) : (
         <View style={styles.content}>
           <Text style={textStyles}>{title}</Text>
-          {icon && <View style={styles.icon}>{icon}</View>}
+          {icon && (
+            <View style={styles.icon}>
+              {typeof icon === 'string' ? (
+                <Ionicons
+                  name={icon as any}
+                  size={20}
+                  color={variant === 'black' || variant === 'primary' ? Colors.white : Colors.black}
+                />
+              ) : (
+                icon
+              )}
+            </View>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -112,6 +128,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: Colors.black,
+  },
+  
+  // Full width
+  fullWidth: {
+    width: '100%',
   },
   
   // Text styles

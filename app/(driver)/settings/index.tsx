@@ -118,15 +118,6 @@ export default function SettingsScreen() {
           icon: 'card-outline',
           route: '/(driver)/settings/payout-methods',
         },
-        {
-          id: 'tax',
-          title: 'Tax Information',
-          subtitle: 'Tax forms and documents',
-          icon: 'document-text-outline',
-          action: () => {
-            Alert.alert('Coming Soon', 'Tax information will be available soon.');
-          },
-        },
       ],
     },
     {

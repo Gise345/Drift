@@ -1,9 +1,16 @@
 /**
- * Firebase Configuration - React Native Firebase v22 Modular API
- * 
- * IMPORTANT: React Native Firebase v22 modular API is DIFFERENT from Web SDK!
- * - Do NOT use getAuth(), getFirestore(), getApp()
- * - Instead, call auth(), firestore() directly
+ * Firebase Configuration - React Native Firebase v21
+ *
+ * CURRENT VERSION: v21.14.0
+ * The deprecation warnings about using getApp() are for v22 migration.
+ * Current implementation is CORRECT for v21.
+ *
+ * When upgrading to v22:
+ * - Follow migration guide: https://rnfirebase.io/migrating-to-v22
+ * - Update to modular API matching Firebase Web SDK
+ *
+ * Current setup (v21):
+ * - Call auth(), firestore() directly (CORRECT)
  * - Auto-initialized via google-services.json (Android) and GoogleService-Info.plist (iOS)
  */
 

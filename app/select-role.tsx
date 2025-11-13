@@ -25,9 +25,9 @@ export default function SelectRole() {
 
   const handleDriverMode = () => {
     // Check if driver is registered
-    // For now, go straight to driver dashboard
+    // For now, go straight to driver tabs (Home, Earnings, Inbox, Menu)
     // You can add registration check here later
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
   };
 
   return (

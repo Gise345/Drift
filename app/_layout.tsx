@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 /**
  * ROOT LAYOUT
@@ -17,6 +18,7 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <SafeAreaProvider>
     <Stack
       screenOptions={{
         headerShown: false, // Hide header by default
@@ -41,5 +43,6 @@ export default function RootLayout() {
       {/* Driver screens */}
       <Stack.Screen name="(driver)" />
     </Stack>
+    </SafeAreaProvider>
   );
 }

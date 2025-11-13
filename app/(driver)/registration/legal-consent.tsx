@@ -162,7 +162,7 @@ export default function LegalConsent() {
             </View>
           </TouchableOpacity>
 
-          {/* Term 4: Taxes & Reporting */}
+          {/* Term 4: Taxes & Reporting
           <TouchableOpacity
             style={styles.checkboxRow}
             onPress={() => setAgreedToTaxes(!agreedToTaxes)}
@@ -179,7 +179,7 @@ export default function LegalConsent() {
                 received and will comply with Cayman Islands tax regulations.
               </Text>
             </View>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
 
         {/* Key Points */}

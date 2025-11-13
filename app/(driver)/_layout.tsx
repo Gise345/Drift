@@ -1,10 +1,15 @@
 import { Stack } from 'expo-router';
 
 /**
- * DRIVER LAYOUT - UPDATED WITH ALL PHASE 4 SCREENS
+ * DRIVER LAYOUT - UPDATED WITH NEW TABS INTERFACE
  * 
  * Complete navigation structure for the Drift driver app
- * Includes all phases: Registration, Dashboard, Active Ride, Profile & History
+ * 
+ * CRITICAL CHANGE: Main interface now uses tabs instead of dashboard/home
+ * - tabs/ contains: Home (Map), Earnings, Inbox, Menu
+ * - All other screens accessible via navigation
+ * 
+ * EXPO SDK 52 Compatible
  */
 export default function DriverLayout() {
   return (
@@ -17,6 +22,22 @@ export default function DriverLayout() {
         },
       }}
     >
+      {/* ==================== MAIN INTERFACE: TABS (4 screens) ==================== */}
+      {/* 
+        ⭐ CRITICAL: This "tabs" screen is the main driver interface ⭐
+        Contains: Home (Map), Earnings, Inbox, Menu with bottom tab navigation
+        Location: app/(driver)/tabs/_layout.tsx
+        
+        This replaces the old dashboard/home as the main entry point
+      */}
+      <Stack.Screen 
+        name="tabs" 
+        options={{ 
+          headerShown: false,
+          gestureEnabled: false, // Prevent swipe back from main tabs
+        }}
+      />
+      
       {/* ==================== PHASE 1: REGISTRATION (15 screens) ==================== */}
       <Stack.Screen name="registration/welcome" />
       <Stack.Screen name="registration/legal-consent" />
@@ -34,7 +55,11 @@ export default function DriverLayout() {
       <Stack.Screen name="registration/approved" />
       <Stack.Screen name="registration/rejected" />
       
-      {/* ==================== PHASE 2: DASHBOARD (12 screens) ==================== */}
+      {/* ==================== LEGACY DASHBOARD SCREENS ==================== */}
+      {/* 
+        Note: dashboard/earnings is replaced by tabs/earnings
+        Keep these for backward compatibility during transition
+      */}
       <Stack.Screen name="dashboard/home" />
       <Stack.Screen name="dashboard/earnings" />
       <Stack.Screen name="dashboard/wallet" />
@@ -46,9 +71,10 @@ export default function DriverLayout() {
       <Stack.Screen name="dashboard/feedback" />
       <Stack.Screen name="dashboard/schedule" />
       
-      {/* Request Management */}
-      <Stack.Screen name="requests/incoming" />
-      <Stack.Screen name="requests/request-detail" />
+      {/* ==================== REQUEST MANAGEMENT ==================== */}
+      {/* Using dashboard/incoming-requests and dashboard/request-detail instead */}
+      <Stack.Screen name="dashboard/incoming-requests" />
+      <Stack.Screen name="dashboard/request-detail" />
       
       {/* ==================== PHASE 3: ACTIVE RIDE (13 screens) ==================== */}
       <Stack.Screen name="active-ride/navigate-to-pickup" />
@@ -74,13 +100,23 @@ export default function DriverLayout() {
       <Stack.Screen name="history/trip-filters" />
       <Stack.Screen name="history/trip-support" />
       
-      {/* Driver Profile (8 screens) */}
+      {/* Driver Profile (screens) */}
       <Stack.Screen name="profile/view" />
-      <Stack.Screen name="profile/edit" />
+      <Stack.Screen name="profile/edit-profile" />
       <Stack.Screen name="profile/upload-photo" />
-      <Stack.Screen name="profile/stats" />
+      <Stack.Screen name="profile/performance-stats" />
       <Stack.Screen name="profile/achievements" />
       <Stack.Screen name="profile/weekly-summary" />
+      
+      {/* Registration Status (NEW) */}
+      <Stack.Screen 
+        name="profile/registration-status" 
+        options={{ 
+          presentation: 'modal',
+          headerShown: true,
+          headerTitle: 'Registration Status',
+        }}
+      />
       
       {/* Documents (3 screens) */}
       <Stack.Screen name="profile/documents" />
@@ -92,20 +128,46 @@ export default function DriverLayout() {
       <Stack.Screen name="profile/update-vehicle" />
       
       {/* Ratings & Referrals (3 screens) */}
-      <Stack.Screen name="profile/ratings" />
+      <Stack.Screen name="profile/ratings-reviews" />
       <Stack.Screen name="profile/review-detail" />
       <Stack.Screen name="profile/referrals" />
       
-      {/* ==================== PHASE 5: SETTINGS (6 screens) ==================== */}
-      <Stack.Screen name="settings/index" />
-      <Stack.Screen name="settings/notifications" />
-      <Stack.Screen name="settings/preferences" />
-      <Stack.Screen name="settings/payout-methods" />
+      {/* ==================== TODO: WALLET & EARNINGS - Create these screens ==================== */}
+      {/* TODO: Create wallet/* and earnings/* directories with screens */}
+
+      {/* ==================== TODO: TRIPS - Create these screens ==================== */}
+      {/* TODO: Create trips/* directory with screens */}
+
+      {/* ==================== TODO: PREFERENCES - Create these screens ==================== */}
+      {/* TODO: Create preferences/* directory with screens */}
+
+      {/* ==================== TODO: FEEDBACK - Create these screens ==================== */}
+      {/* TODO: Create feedback/* directory with screens */}
+
+      {/* ==================== TODO: HELP & SUPPORT - Create these screens ==================== */}
+      {/* TODO: Create help/* directory with screens */}
+
+      {/* ==================== TODO: LEGAL - Create these screens ==================== */}
+      {/* TODO: Create legal/* directory with screens */}
       
-      {/* Support */}
-      <Stack.Screen name="support/help" />
-      <Stack.Screen name="support/faq" />
-      <Stack.Screen name="support/contact" />
+      {/* ==================== PHASE 5: SETTINGS (6 screens) ==================== */}
+      {/* ==================== TODO: SETTINGS - Create these screens ==================== */}
+      {/* TODO: Create settings/* directory with screens */}
+
+      {/* ==================== TODO: SUPPORT - Create these screens ==================== */}
+      {/* TODO: Create support/* directory with screens */}
+
+      {/* ==================== TODO: OPPORTUNITIES - Create this screen ==================== */}
+      {/* TODO: Create opportunities.tsx screen */}
+
+      {/* Development Menu */}
+      <Stack.Screen
+        name="dev-menu"
+        options={{
+          headerShown: true,
+          headerTitle: 'Dev Menu',
+        }}
+      />
     </Stack>
   );
 }

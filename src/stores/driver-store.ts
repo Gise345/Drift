@@ -117,10 +117,9 @@ export interface RideRequest {
   estimatedEarnings: number;
   requestedAt: Date;
   expiresAt: Date;
-  riderTrips?: number;        // ✅ ADD THIS - Number of trips rider has taken
+  riderTrips?: number;
   passengers?: number;
   notes?: string;
-  
 }
 
 export interface ActiveRide extends RideRequest {
@@ -170,6 +169,7 @@ interface DriverStore {
   registrationStep: number;
   registrationData: Partial<DriverRegistration>;
   isRegistrationComplete: boolean;
+  registrationStatus: 'incomplete' | 'pending' | 'approved' | 'rejected';
   
   // Online status
   isOnline: boolean;
@@ -184,6 +184,8 @@ interface DriverStore {
   earnings: Earnings;
   stats: DriverStats;
   balance: number;
+  todayEarnings: number;
+  todayTrips: number;
   
   // Location
   currentLocation: {
@@ -197,6 +199,7 @@ interface DriverStore {
   setRegistrationStep: (step: number) => void;
   updateRegistrationData: (data: Partial<DriverRegistration>) => void;
   submitRegistration: () => Promise<void>;
+  setRegistrationStatus: (status: 'incomplete' | 'pending' | 'approved' | 'rejected') => void;
   
   // Actions - Profile
   setDriver: (driver: Driver) => void;
@@ -231,6 +234,8 @@ interface DriverStore {
   // Actions - Earnings
   refreshEarnings: () => Promise<void>;
   requestPayout: (amount: number) => Promise<void>;
+  setTodayEarnings: (earnings: number) => void;
+  setTodayTrips: (trips: number) => void;
   
   // Reset
   resetStore: () => void;
@@ -244,6 +249,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   registrationStep: 0,
   registrationData: {},
   isRegistrationComplete: false,
+  registrationStatus: 'incomplete',
   isOnline: false,
   lastOnlineAt: null,
   activeRide: null,
@@ -268,6 +274,8 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     totalDistance: 0,
   },
   balance: 0,
+  todayEarnings: 125.50, // Default mock data
+  todayTrips: 8,
   currentLocation: null,
   
   // Registration actions
@@ -280,8 +288,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   submitRegistration: async () => {
     // TODO: Submit to Firebase
     console.log('Submitting registration:', get().registrationData);
-    set({ isRegistrationComplete: true });
+    set({ isRegistrationComplete: true, registrationStatus: 'pending' });
   },
+  
+  setRegistrationStatus: (status) => set({ registrationStatus: status }),
   
   // Profile actions
   setDriver: (driver) => set({ driver }),
@@ -410,6 +420,8 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
           allTime: state.earnings.allTime + earnings + tip,
         },
         balance: state.balance + earnings + tip,
+        todayEarnings: state.todayEarnings + earnings + tip,
+        todayTrips: state.todayTrips + 1,
         stats: {
           ...state.stats,
           totalTrips: state.stats.totalTrips + 1,
@@ -438,6 +450,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     }));
   },
   
+  setTodayEarnings: (earnings) => set({ todayEarnings: earnings }),
+  
+  setTodayTrips: (trips) => set({ todayTrips: trips }),
+  
   // Reset
   resetStore: () => set({
     driver: null,
@@ -446,12 +462,15 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     registrationStep: 0,
     registrationData: {},
     isRegistrationComplete: false,
+    registrationStatus: 'incomplete',
     isOnline: false,
     lastOnlineAt: null,
     activeRide: null,
     incomingRequests: [],
     rideHistory: [],
     balance: 0,
+    todayEarnings: 0,
+    todayTrips: 0,
     currentLocation: null,
   }),
 }));
