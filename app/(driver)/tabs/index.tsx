@@ -28,6 +28,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { DriftButton } from '@/components/ui/DriftButton';
 import DriftMapView from '@/components/ui/DriftMapView';
+import RideRequestModal from '@/components/modal/RideRequestModal';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { Region } from 'react-native-maps';
 
@@ -35,21 +36,51 @@ const { width, height } = Dimensions.get('window');
 
 export default function DriverHomeScreen() {
   const router = useRouter();
-  const { driver, isOnline, toggleOnline, todayEarnings, todayTrips } = useDriverStore();
+  const {
+    driver,
+    isOnline,
+    toggleOnline,
+    todayEarnings,
+    todayTrips,
+    incomingRequests,
+    acceptRequest,
+    declineRequest,
+    updateLocation,
+    loadDriverProfile,
+  } = useDriverStore();
   const { user } = useAuthStore();
 
   const [region, setRegion] = useState<Region | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [currentRequest, setCurrentRequest] = useState<any>(null);
+
+  // Load driver profile from Firebase on mount
+  useEffect(() => {
+    if (user?.id) {
+      loadDriverProfile(user.id);
+    }
+  }, [user?.id]);
 
   // Get user location and set region
   useEffect(() => {
     getCurrentLocation();
   }, []);
 
+  // Listen for incoming ride requests
+  useEffect(() => {
+    if (incomingRequests.length > 0 && !showRequestModal) {
+      // Show modal for the first request in the queue
+      const request = incomingRequests[0];
+      setCurrentRequest(request);
+      setShowRequestModal(true);
+    }
+  }, [incomingRequests]);
+
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (status !== 'granted') {
         Alert.alert(
           'Location Permission',
@@ -58,11 +89,18 @@ export default function DriverHomeScreen() {
         );
         setLoading(false);
         // Default to George Town, Cayman Islands
-        setRegion({
+        const defaultLocation = {
           latitude: 19.2866,
           longitude: -81.3744,
           latitudeDelta: 0.05,
           longitudeDelta: 0.05,
+        };
+        setRegion(defaultLocation);
+        updateLocation({
+          lat: defaultLocation.latitude,
+          lng: defaultLocation.longitude,
+          heading: 0,
+          speed: 0,
         });
         return;
       }
@@ -71,30 +109,58 @@ export default function DriverHomeScreen() {
         accuracy: Location.Accuracy.High,
       });
 
-      setRegion({
+      const locationData = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
+      };
+
+      setRegion(locationData);
+
+      // Update driver location in store
+      updateLocation({
+        lat: currentLocation.coords.latitude,
+        lng: currentLocation.coords.longitude,
+        heading: currentLocation.coords.heading || 0,
+        speed: currentLocation.coords.speed || 0,
       });
+
       setLoading(false);
     } catch (error) {
       console.error('Error getting location:', error);
       setLoading(false);
-      
+
       // Default to George Town, Cayman Islands
-      setRegion({
+      const defaultLocation = {
         latitude: 19.2866,
         longitude: -81.3744,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
+      };
+      setRegion(defaultLocation);
+      updateLocation({
+        lat: defaultLocation.latitude,
+        lng: defaultLocation.longitude,
+        heading: 0,
+        speed: 0,
       });
     }
   };
 
   const handleToggleOnline = () => {
+    // Check if driver is approved before allowing them to go online
+    if (!isOnline && driver?.status !== 'approved') {
+      Alert.alert(
+        'Account Not Approved',
+        'Your driver account is still pending approval. You\'ll be able to go online once our team has reviewed and approved your application.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     toggleOnline();
-    
+
     if (!isOnline) {
       Alert.alert(
         'You\'re Online!',
@@ -106,6 +172,62 @@ export default function DriverHomeScreen() {
 
   const handleViewOpportunities = () => {
     router.push('/(driver)/opportunities');
+  };
+
+  const handleAcceptRequest = async () => {
+    if (!currentRequest) return;
+
+    try {
+      await acceptRequest(currentRequest.id);
+      setShowRequestModal(false);
+      setCurrentRequest(null);
+
+      // Navigate to active ride screen
+      Alert.alert(
+        'Ride Accepted!',
+        'Navigating to pickup location...',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // TODO: Navigate to active ride screen
+              console.log('Navigate to active ride');
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Failed to accept ride. It may have been taken by another driver.',
+        [{ text: 'OK' }]
+      );
+      setShowRequestModal(false);
+      setCurrentRequest(null);
+    }
+  };
+
+  const handleDeclineRequest = async () => {
+    if (!currentRequest) return;
+
+    try {
+      await declineRequest(currentRequest.id, 'Driver declined');
+      setShowRequestModal(false);
+      setCurrentRequest(null);
+
+      // Show next request if available
+      if (incomingRequests.length > 1) {
+        setTimeout(() => {
+          const nextRequest = incomingRequests[1];
+          setCurrentRequest(nextRequest);
+          setShowRequestModal(true);
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Failed to decline request:', error);
+      setShowRequestModal(false);
+      setCurrentRequest(null);
+    }
   };
 
   if (loading || !region) {
@@ -150,7 +272,7 @@ export default function DriverHomeScreen() {
           <View style={styles.headerIcons}>
             <TouchableOpacity 
               style={styles.iconButton}
-              onPress={() => router.push('/(driver)/notifications')}
+              onPress={() => router.push('/(driver)/dashboard/notifications')}
             >
               <Ionicons name="notifications-outline" size={24} color={Colors.black} />
               <View style={styles.badge}>
@@ -245,6 +367,15 @@ export default function DriverHomeScreen() {
       >
         <Ionicons name="locate" size={24} color={Colors.primary} />
       </TouchableOpacity>
+
+      {/* Ride Request Modal */}
+      <RideRequestModal
+        visible={showRequestModal}
+        request={currentRequest}
+        onAccept={handleAcceptRequest}
+        onDecline={handleDeclineRequest}
+        autoExpireSeconds={30}
+      />
     </View>
   );
 }

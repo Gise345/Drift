@@ -1,30 +1,38 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function VehicleDetailsScreen() {
-  const vehicle = {
-    make: 'Toyota',
-    model: 'Camry',
-    year: 2022,
-    color: 'Silver',
-    plate: 'CAY 12345',
-    seats: 4,
-    vin: '1HGBH41JXMN109186',
-    mileage: 32500,
-    features: ['Air Conditioning', 'Bluetooth', 'USB Charging', 'Child Seat Anchors'],
-    insurance: {
-      provider: 'Cayman Insurance Co.',
-      policy: 'CIC-2024-789456',
-      expiry: '2025-06-30',
-    },
-    registration: {
-      number: 'REG-2024-123456',
-      expiry: '2025-12-31',
-    },
-  };
+  const { user } = useAuthStore();
+  const { vehicle, loadDriverProfile } = useDriverStore();
+
+  useEffect(() => {
+    if (user?.id && !vehicle) {
+      loadDriverProfile(user.id);
+    }
+  }, [user?.id]);
+
+  if (!vehicle) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Vehicle Details</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading vehicle details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -61,75 +69,16 @@ export default function VehicleDetailsScreen() {
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>License Plate</Text>
-              <Text style={styles.infoValue}>{vehicle.plate}</Text>
+              <Text style={styles.infoValue}>{vehicle.licensePlate}</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Seats Available</Text>
               <Text style={styles.infoValue}>{vehicle.seats} passengers</Text>
             </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>VIN</Text>
-              <Text style={styles.infoValue}>{vehicle.vin}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Mileage</Text>
-              <Text style={styles.infoValue}>{vehicle.mileage.toLocaleString()} km</Text>
-            </View>
           </View>
         </View>
 
-        {/* Features */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Features & Amenities</Text>
-          <View style={styles.featuresGrid}>
-            {vehicle.features.map((feature, index) => (
-              <View key={index} style={styles.featureChip}>
-                <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                <Text style={styles.featureText}>{feature}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Insurance */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Insurance Information</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Provider</Text>
-              <Text style={styles.infoValue}>{vehicle.insurance.provider}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Policy Number</Text>
-              <Text style={styles.infoValue}>{vehicle.insurance.policy}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Expiry Date</Text>
-              <Text style={styles.infoValue}>{vehicle.insurance.expiry}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Registration */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Registration</Text>
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Registration Number</Text>
-              <Text style={styles.infoValue}>{vehicle.registration.number}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Expiry Date</Text>
-              <Text style={styles.infoValue}>{vehicle.registration.expiry}</Text>
-            </View>
-          </View>
-        </View>
 
         {/* Update Button */}
         <View style={styles.section}>
@@ -264,5 +213,16 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.white,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xl,
+  },
+  loadingText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
   },
 });

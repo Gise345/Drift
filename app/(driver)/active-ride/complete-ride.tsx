@@ -7,20 +7,24 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { completeTrip } from '@/src/services/ride-request.service';
 
 export default function CompleteRide() {
   const router = useRouter();
-  const { activeRide } = useDriverStore();
+  const { activeRide, completeRide: completeRideInStore } = useDriverStore();
   const [additionalCharges, setAdditionalCharges] = useState('');
   const [notes, setNotes] = useState('');
+  const [completing, setCompleting] = useState(false);
 
   if (!activeRide) {
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
     return null;
   }
 
@@ -28,8 +32,34 @@ export default function CompleteRide() {
   const additional = parseFloat(additionalCharges) || 0;
   const totalEarnings = baseFare + additional;
 
-  const handleComplete = () => {
-    router.replace('/(driver)/active-ride/payment-received');
+  // Calculate actual distance and duration if available
+  const actualDistance = activeRide.distance; // in meters
+  const actualDuration = activeRide.estimatedDuration; // in minutes
+
+  const handleComplete = async () => {
+    if (completing) return;
+
+    try {
+      setCompleting(true);
+
+      // Complete trip in Firebase
+      await completeTrip(
+        activeRide.id,
+        totalEarnings,
+        actualDistance,
+        actualDuration
+      );
+
+      // Update local state
+      await completeRideInStore(totalEarnings, 0); // No tip for now
+
+      // Navigate to payment received screen
+      router.replace('/(driver)/active-ride/payment-received');
+    } catch (error) {
+      console.error('Failed to complete ride:', error);
+      Alert.alert('Error', 'Failed to complete ride. Please try again.');
+      setCompleting(false);
+    }
   };
 
   return (
@@ -57,11 +87,13 @@ export default function CompleteRide() {
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Distance</Text>
-            <Text style={styles.summaryValue}>4.2 km</Text>
+            <Text style={styles.summaryValue}>
+              {(actualDistance / 1000).toFixed(1)} km
+            </Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Duration</Text>
-            <Text style={styles.summaryValue}>12 min</Text>
+            <Text style={styles.summaryValue}>{Math.round(actualDuration)} min</Text>
           </View>
         </View>
 
@@ -98,8 +130,16 @@ export default function CompleteRide() {
           <Text style={styles.totalValue}>CI${totalEarnings.toFixed(2)}</Text>
         </View>
 
-        <TouchableOpacity style={styles.completeButton} onPress={handleComplete}>
-          <Text style={styles.completeText}>Finish Trip</Text>
+        <TouchableOpacity
+          style={[styles.completeButton, completing && styles.completeButtonDisabled]}
+          onPress={handleComplete}
+          disabled={completing}
+        >
+          {completing ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={styles.completeText}>Finish Trip</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -197,6 +237,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: Spacing.lg,
     alignItems: 'center',
+  },
+  completeButtonDisabled: {
+    backgroundColor: Colors.gray[400],
+    opacity: 0.6,
   },
   completeText: {
     fontSize: Typography.fontSize.base,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,40 +7,68 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function ProfileViewScreen() {
-  // Mock driver data
-  const driver = {
-    name: 'John Smith',
-    photo: '👨‍💼',
-    email: 'john.smith@example.com',
-    phone: '+1 345 923 4567',
-    memberSince: 'Jan 2024',
-    rating: 4.9,
-    totalTrips: 487,
-    completionRate: 98,
-    acceptanceRate: 92,
-    cancellationRate: 2,
-    level: 'Gold',
-    badges: ['5-Star', 'Top Earner', '100 Trips'],
-    vehicle: {
-      make: 'Toyota',
-      model: 'Camry',
-      year: 2022,
-      color: 'Silver',
-      plate: 'CAY 12345',
-      seats: 4,
-    },
-    documents: {
-      license: { status: 'verified', expiry: '2026-12-31' },
-      insurance: { status: 'verified', expiry: '2025-06-30' },
-      registration: { status: 'verified', expiry: '2025-12-31' },
-      inspection: { status: 'verified', expiry: '2025-03-31' },
-    },
+  const { user } = useAuthStore();
+  const { driver, vehicle, documents, stats, loadDriverProfile } = useDriverStore();
+
+  // Load driver profile from Firebase
+  useEffect(() => {
+    if (user?.id && !driver) {
+      loadDriverProfile(user.id);
+    }
+  }, [user?.id]);
+
+  // Show loading state while fetching data
+  if (!driver || !vehicle) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={[Typography.body, { marginTop: Spacing.md, color: Colors.textSecondary }]}>
+            Loading profile...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Format member since date
+  const memberSince = driver.createdAt
+    ? new Date(driver.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : 'N/A';
+
+  // Calculate level based on total trips
+  const getDriverLevel = (trips: number) => {
+    if (trips >= 500) return 'Platinum';
+    if (trips >= 200) return 'Gold';
+    if (trips >= 50) return 'Silver';
+    return 'Bronze';
+  };
+
+  // Calculate badges based on achievements
+  const getBadges = () => {
+    const badges: string[] = [];
+    if (driver.rating >= 4.9) badges.push('5-Star');
+    if (driver.totalTrips >= 100) badges.push('100 Trips');
+    if (driver.totalTrips >= 500) badges.push('Top Earner');
+    return badges;
+  };
+
+  // Map document status from Firebase
+  const getDocumentStatus = (docType: 'license' | 'insurance' | 'registration' | 'inspection') => {
+    const doc = documents.find((d) => d.type === docType);
+    return {
+      status: doc?.status === 'approved' ? 'verified' : doc?.status || 'pending',
+      expiry: doc?.expiryDate || 'N/A',
+    };
   };
 
   const DocumentStatus = ({ status }: { status: string }) => {
@@ -103,17 +131,25 @@ export default function ProfileViewScreen() {
             style={styles.photoContainer}
             onPress={() => router.push('/(driver)/profile/upload-photo')}
           >
-            <Text style={styles.profilePhoto}>{driver.photo}</Text>
+            {driver.photoUrl ? (
+            <Image source={{ uri: driver.photoUrl }} style={styles.profilePhotoImage} />
+          ) : (
+            <View style={styles.profilePhotoPlaceholder}>
+              <Text style={styles.profilePhotoText}>
+                {driver.firstName[0]}{driver.lastName[0]}
+              </Text>
+            </View>
+          )}
             <View style={styles.photoEditBadge}>
               <Ionicons name="camera" size={16} color={Colors.white} />
             </View>
           </TouchableOpacity>
           
-          <Text style={styles.driverName}>{driver.name}</Text>
-          
+          <Text style={styles.driverName}>{driver.firstName} {driver.lastName}</Text>
+
           <View style={styles.levelBadge}>
             <Ionicons name="trophy" size={16} color={Colors.warning} />
-            <Text style={styles.levelText}>{driver.level} Driver</Text>
+            <Text style={styles.levelText}>{getDriverLevel(driver.totalTrips)} Driver</Text>
           </View>
 
           <View style={styles.ratingContainer}>
@@ -127,11 +163,11 @@ export default function ProfileViewScreen() {
                 />
               ))}
             </View>
-            <Text style={styles.ratingText}>{driver.rating} • {driver.totalTrips} trips</Text>
+            <Text style={styles.ratingText}>{driver.rating.toFixed(1)} • {driver.totalTrips} trips</Text>
           </View>
 
           <View style={styles.badgesContainer}>
-            {driver.badges.map((badge, index) => (
+            {getBadges().map((badge, index) => (
               <View key={index} style={styles.badge}>
                 <Text style={styles.badgeText}>{badge}</Text>
               </View>
@@ -144,15 +180,15 @@ export default function ProfileViewScreen() {
           <Text style={styles.sectionTitle}>Performance</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{driver.completionRate}%</Text>
+              <Text style={styles.statValue}>{Math.round((1 - (stats?.cancellationRate || 0)) * 100)}%</Text>
               <Text style={styles.statLabel}>Completion</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{driver.acceptanceRate}%</Text>
+              <Text style={styles.statValue}>{Math.round((stats?.acceptanceRate || 0) * 100)}%</Text>
               <Text style={styles.statLabel}>Acceptance</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{driver.cancellationRate}%</Text>
+              <Text style={styles.statValue}>{Math.round((stats?.cancellationRate || 0) * 100)}%</Text>
               <Text style={styles.statLabel}>Cancellation</Text>
             </View>
           </View>
@@ -188,7 +224,7 @@ export default function ProfileViewScreen() {
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Member Since</Text>
-                <Text style={styles.infoValue}>{driver.memberSince}</Text>
+                <Text style={styles.infoValue}>{memberSince}</Text>
               </View>
             </View>
           </View>
@@ -210,12 +246,12 @@ export default function ProfileViewScreen() {
             </View>
             <View style={styles.vehicleInfo}>
               <Text style={styles.vehicleName}>
-                {driver.vehicle.year} {driver.vehicle.make} {driver.vehicle.model}
+                {vehicle.year} {vehicle.make} {vehicle.model}
               </Text>
               <Text style={styles.vehicleDetails}>
-                {driver.vehicle.color} • {driver.vehicle.plate}
+                {vehicle.color} • {vehicle.licensePlate}
               </Text>
-              <Text style={styles.vehicleSeats}>{driver.vehicle.seats} seats</Text>
+              <Text style={styles.vehicleSeats}>{vehicle.seats} seats</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color={Colors.textSecondary} />
           </View>
@@ -238,9 +274,9 @@ export default function ProfileViewScreen() {
               </View>
               <View style={styles.documentInfo}>
                 <Text style={styles.documentName}>Driver's License</Text>
-                <Text style={styles.documentExpiry}>Expires: {driver.documents.license.expiry}</Text>
+                <Text style={styles.documentExpiry}>Expires: {getDocumentStatus('license').expiry}</Text>
               </View>
-              <DocumentStatus status={driver.documents.license.status} />
+              <DocumentStatus status={getDocumentStatus('license').status} />
             </View>
             <View style={styles.documentDivider} />
             <View style={styles.documentRow}>
@@ -249,9 +285,9 @@ export default function ProfileViewScreen() {
               </View>
               <View style={styles.documentInfo}>
                 <Text style={styles.documentName}>Insurance</Text>
-                <Text style={styles.documentExpiry}>Expires: {driver.documents.insurance.expiry}</Text>
+                <Text style={styles.documentExpiry}>Expires: {getDocumentStatus('insurance').expiry}</Text>
               </View>
-              <DocumentStatus status={driver.documents.insurance.status} />
+              <DocumentStatus status={getDocumentStatus('insurance').status} />
             </View>
             <View style={styles.documentDivider} />
             <View style={styles.documentRow}>
@@ -260,9 +296,9 @@ export default function ProfileViewScreen() {
               </View>
               <View style={styles.documentInfo}>
                 <Text style={styles.documentName}>Registration</Text>
-                <Text style={styles.documentExpiry}>Expires: {driver.documents.registration.expiry}</Text>
+                <Text style={styles.documentExpiry}>Expires: {getDocumentStatus('registration').expiry}</Text>
               </View>
-              <DocumentStatus status={driver.documents.registration.status} />
+              <DocumentStatus status={getDocumentStatus('registration').status} />
             </View>
           </View>
         </View>
@@ -347,6 +383,24 @@ const styles = StyleSheet.create({
   },
   profilePhoto: {
     fontSize: 80,
+  },
+  profilePhotoImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  profilePhotoPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: `${Colors.primary}20`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profilePhotoText: {
+    fontSize: 40,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   photoEditBadge: {
     position: 'absolute',

@@ -16,7 +16,8 @@
       "Bash(keytool -list -v -keystore \"%USERPROFILE%\\.android\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android:*)",
       "Bash(./gradlew:*)",
       "Bash(gradlew.bat signingReport:*)",
-      "Bash(./get-sha1.bat)"
+      "Bash(./get-sha1.bat)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

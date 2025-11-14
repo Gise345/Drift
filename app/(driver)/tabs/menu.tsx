@@ -15,7 +15,7 @@
  * EXPO SDK 52 Compatible
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -25,12 +25,14 @@ import {
   SafeAreaView,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { addRoleToUser } from '@/src/services/role-service';
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -49,7 +51,52 @@ interface MenuSection {
 export default function DriverMenuScreen() {
   const router = useRouter();
   const { driver, registrationStatus } = useDriverStore();
-  const { logout } = useAuthStore();
+  const { user, logout, setMode } = useAuthStore();
+  const [switching, setSwitching] = useState(false);
+
+  const handleSwitchToRider = async () => {
+    if (!user) return;
+
+    // Check if user already has rider role
+    const hasRiderRole = user?.roles?.includes('RIDER');
+
+    if (hasRiderRole) {
+      // User has rider role, just switch mode and navigate
+      console.log('✅ Switching to rider mode');
+      setMode('RIDER');
+      router.replace('/(tabs)');
+    } else {
+      // User doesn't have rider role, ask if they want to become a rider
+      Alert.alert(
+        'Switch to Rider Mode',
+        'Would you like to use Drift as a rider?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Switch to Rider',
+            onPress: async () => {
+              setSwitching(true);
+              try {
+                // Add rider role to user
+                await addRoleToUser('RIDER');
+
+                // Switch to rider mode
+                setMode('RIDER');
+
+                // Navigate to rider home
+                router.replace('/(tabs)');
+              } catch (error: any) {
+                console.error('Failed to add rider role:', error);
+                Alert.alert('Error', error.message || 'Failed to switch to rider mode');
+              } finally {
+                setSwitching(false);
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -366,6 +413,35 @@ export default function DriverMenuScreen() {
           </View>
         ))}
 
+        {/* Admin Dashboard Button */}
+        {user?.roles?.includes('ADMIN') && (
+          <TouchableOpacity
+            style={styles.adminButton}
+            onPress={() => router.push('/(admin)')}
+          >
+            <Ionicons name="shield-checkmark" size={22} color={Colors.white} />
+            <Text style={styles.adminButtonText}>Admin Dashboard</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Switch to Rider Button */}
+        <TouchableOpacity
+          style={styles.switchToRiderButton}
+          onPress={handleSwitchToRider}
+          disabled={switching}
+        >
+          {switching ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <>
+              <Ionicons name="car-outline" size={22} color={Colors.white} />
+              <Text style={styles.switchToRiderText}>
+                {user?.roles?.includes('RIDER') ? 'Switch to Rider' : 'Use Drift as Rider'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
         {/* Logout Button */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={22} color={Colors.error} />
@@ -556,7 +632,47 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
     color: Colors.white,
   },
-  
+
+  // Admin Dashboard Button
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: Spacing.base,
+    marginTop: Spacing.xl,
+    padding: Spacing.base,
+    backgroundColor: Colors.error,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.lg,
+  },
+  adminButtonText: {
+    ...Typography.buttonText,
+    color: Colors.white,
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: Spacing.xs,
+  },
+
+  // Switch to Rider Button
+  switchToRiderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: Spacing.base,
+    marginTop: Spacing.base,
+    padding: Spacing.base,
+    backgroundColor: Colors.purple,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.lg,
+  },
+
+  switchToRiderText: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.white,
+    marginLeft: Spacing.sm,
+  },
+
   // Logout Button
   logoutButton: {
     flexDirection: 'row',

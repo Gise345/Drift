@@ -43,11 +43,10 @@ export const EarningsService = {
       };
     } catch (error) {
       console.error('Error getting today earnings:', error);
-      // Return mock data if Firebase fails
       return {
-        amount: 125.50,
-        trips: 8,
-        hours: 4.5,
+        amount: 0,
+        trips: 0,
+        hours: 0,
       };
     }
   },
@@ -82,9 +81,9 @@ export const EarningsService = {
     } catch (error) {
       console.error('Error getting weekly earnings:', error);
       return {
-        amount: 650.25,
-        trips: 42,
-        hours: 21.0,
+        amount: 0,
+        trips: 0,
+        hours: 0,
       };
     }
   },
@@ -119,9 +118,9 @@ export const EarningsService = {
     } catch (error) {
       console.error('Error getting monthly earnings:', error);
       return {
-        amount: 2340.00,
-        trips: 156,
-        hours: 78.0,
+        amount: 0,
+        trips: 0,
+        hours: 0,
       };
     }
   },

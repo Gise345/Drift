@@ -86,7 +86,7 @@ export default function SignInScreen() {
 
       // Navigate based on user role
       if (user.roles.includes('DRIVER')) {
-        router.replace('/(driver)/(tabs)/home');
+        router.replace('/(driver)/(tabs)/index');
       } else {
         router.replace('/(tabs)');
       }
@@ -105,11 +105,14 @@ export default function SignInScreen() {
       
       if (result.success && result.user) {
         // Update app state
-        setUser(result.user);
+        setUser({
+          ...result.user,
+          photoURL: result.user.photoURL || undefined,
+        });
 
         // Navigate based on user role
         if (result.user.roles.includes('DRIVER')) {
-          router.replace('/(driver)/(tabs)/home');
+          router.replace('/(driver)/(tabs)');
         } else {
           router.replace('/(tabs)');
         }

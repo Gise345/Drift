@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,95 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { addRoleToUser } from '@/src/services/role-service';
+import { DriverService } from '@/src/services/driver.service';
+import firestore from '@react-native-firebase/firestore';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, setMode } = useAuthStore();
+  const { driver } = useDriverStore();
+  const [switching, setSwitching] = useState(false);
+
+  const handleSwitchToDriver = async () => {
+    if (!user) return;
+
+    setSwitching(true);
+
+    try {
+      // Check if user already has driver role
+      const hasDriverRole = user?.roles?.includes('DRIVER');
+
+      // Check if driver profile exists in Firebase
+      const driverDoc = await firestore()
+        .collection('drivers')
+        .doc(user.id)
+        .get();
+
+      const driverExists = driverDoc.exists;
+      const driverData = driverDoc.data();
+
+      console.log('🔍 Driver check:', { hasDriverRole, driverExists, userId: user.id });
+
+      if (driverExists && hasDriverRole) {
+        // Driver profile exists - they've completed registration
+        // Go to driver home regardless of approval status
+        // They can check their approval status on the driver dashboard
+        console.log('✅ Driver profile exists - going to driver home');
+        setMode('DRIVER');
+        router.replace('/(driver)/tabs');
+      } else if (hasDriverRole && !driverExists) {
+        // Has role but no profile - hasn't completed registration yet
+        // Go to driver registration welcome to start the signup process
+        console.log('📝 Has role but no profile - going to driver registration');
+        setMode('DRIVER');
+        router.replace('/(driver)/registration/welcome');
+      } else {
+        // User doesn't have driver role, ask if they want to become a driver
+        setSwitching(false);
+        Alert.alert(
+          'Become a Driver',
+          'Would you like to start earning by becoming a Drift driver?',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Get Started',
+              onPress: async () => {
+                setSwitching(true);
+                try {
+                  // Add driver role to user
+                  await addRoleToUser('DRIVER');
+
+                  // Switch to driver mode
+                  setMode('DRIVER');
+
+                  // Navigate to driver registration welcome
+                  router.replace('/(driver)/registration/welcome');
+                } catch (error: any) {
+                  console.error('Failed to add driver role:', error);
+                  Alert.alert('Error', error.message || 'Failed to switch to driver mode');
+                } finally {
+                  setSwitching(false);
+                }
+              },
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error switching to driver:', error);
+      Alert.alert('Error', 'Failed to check driver status. Please try again.');
+      setSwitching(false);
+    }
+  };
 
   const menuItems = [
     {
@@ -128,6 +208,37 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Admin Dashboard Button */}
+        {user?.roles?.includes('ADMIN') && (
+          <TouchableOpacity
+            style={styles.adminButton}
+            onPress={() => router.push('/(admin)')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="shield-checkmark" size={20} color="#FFF" />
+            <Text style={styles.adminButtonText}>Admin Dashboard</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Switch to Driver Button */}
+        <TouchableOpacity
+          style={styles.switchToDriverButton}
+          onPress={handleSwitchToDriver}
+          activeOpacity={0.8}
+          disabled={switching}
+        >
+          {switching ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <Ionicons name="car-sport" size={20} color="#FFF" />
+              <Text style={styles.switchToDriverText}>
+                {user?.roles?.includes('DRIVER') ? 'Switch to Driver' : 'Become a Driver'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
 
         {/* Logout Button */}
         <TouchableOpacity
@@ -274,6 +385,48 @@ const styles = StyleSheet.create({
   menuSubtitle: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    marginHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  adminButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+    marginLeft: 8,
+  },
+  switchToDriverButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#5d1289ff',
+    marginHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#5d1289ff',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  switchToDriverText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+    marginLeft: 8,
   },
   logoutButton: {
     flexDirection: 'row',

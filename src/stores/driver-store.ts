@@ -1,9 +1,17 @@
 import { create } from 'zustand';
+import {
+  listenForRideRequests,
+  acceptRideRequest as acceptRideService,
+  declineRideRequest as declineRideService,
+  RideRequest as FirebaseRideRequest,
+} from '../services/ride-request.service';
+import { useTripStore } from './trip-store';
 
 /**
- * DRIVER STORE
- * 
+ * DRIVER STORE - Production Mode
+ *
  * Central state management for driver app
+ * Connected to Firebase for real-time ride requests
  * Handles registration, online status, rides, earnings
  */
 
@@ -35,6 +43,7 @@ export interface Vehicle {
   year: number;
   color: string;
   licensePlate: string;
+  vin: string;
   seats: number;
   photos: {
     front?: string;
@@ -194,7 +203,10 @@ interface DriverStore {
     heading: number;
     speed: number;
   } | null;
-  
+
+  // Real-time listeners
+  rideRequestListener: (() => void) | null;
+
   // Actions - Registration
   setRegistrationStep: (step: number) => void;
   updateRegistrationData: (data: Partial<DriverRegistration>) => void;
@@ -212,6 +224,8 @@ interface DriverStore {
   toggleOnline: () => void;
   goOnline: () => void;
   goOffline: () => void;
+  startListeningForRequests: () => void;
+  stopListeningForRequests: () => void;
   
   // Actions - Requests
   addIncomingRequest: (request: RideRequest) => void;
@@ -236,7 +250,10 @@ interface DriverStore {
   requestPayout: (amount: number) => Promise<void>;
   setTodayEarnings: (earnings: number) => void;
   setTodayTrips: (trips: number) => void;
-  
+
+  // Actions - Profile Loading
+  loadDriverProfile: (userId: string) => Promise<boolean>;
+
   // Reset
   resetStore: () => void;
 }
@@ -274,21 +291,79 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     totalDistance: 0,
   },
   balance: 0,
-  todayEarnings: 125.50, // Default mock data
-  todayTrips: 8,
+  todayEarnings: 0, // No more mock data - will load from Firebase
+  todayTrips: 0,
   currentLocation: null,
+  rideRequestListener: null,
   
   // Registration actions
   setRegistrationStep: (step) => set({ registrationStep: step }),
   
   updateRegistrationData: (data) => set((state) => ({
-    registrationData: { ...state.registrationData, ...data }
+    registrationData: {
+      ...state.registrationData,
+      ...data,
+      // Deep merge for nested documents object
+      documents: data.documents
+        ? {
+            ...state.registrationData.documents,
+            ...data.documents,
+          }
+        : state.registrationData.documents,
+    }
   })),
   
   submitRegistration: async () => {
-    // TODO: Submit to Firebase
-    console.log('Submitting registration:', get().registrationData);
-    set({ isRegistrationComplete: true, registrationStatus: 'pending' });
+    const { submitDriverRegistration } = require('../services/driver-registration.service');
+
+    try {
+      const registrationData = get().registrationData as DriverRegistration;
+
+      console.log('🔍 Validating registration data:', {
+        hasPersonalInfo: !!registrationData.personalInfo,
+        hasVehicle: !!registrationData.vehicle,
+        hasDocuments: !!registrationData.documents,
+        hasLicense: !!registrationData.documents?.license,
+        hasInsurance: !!registrationData.documents?.insurance,
+        hasRegistration: !!registrationData.documents?.registration,
+        hasBackgroundCheck: !!registrationData.backgroundCheck,
+      });
+
+      // Validate required fields
+      if (!registrationData.personalInfo?.firstName || !registrationData.personalInfo?.lastName) {
+        throw new Error('Personal information is incomplete');
+      }
+      if (!registrationData.vehicle?.make || !registrationData.vehicle?.model) {
+        throw new Error('Vehicle information is incomplete');
+      }
+      if (!registrationData.documents?.license?.front || !registrationData.documents?.license?.back) {
+        throw new Error('Driver\'s license (both front and back) is required');
+      }
+      if (!registrationData.documents?.insurance?.image) {
+        throw new Error('Vehicle insurance is required');
+      }
+      if (!registrationData.documents?.registration?.image) {
+        throw new Error('Vehicle registration is required');
+      }
+      if (!registrationData.backgroundCheck?.consented) {
+        throw new Error('Background check consent is required');
+      }
+
+      console.log('📝 Submitting driver registration to Firebase...');
+
+      // Submit to Firebase
+      await submitDriverRegistration(registrationData);
+
+      set({
+        isRegistrationComplete: true,
+        registrationStatus: 'pending'
+      });
+
+      console.log('✅ Registration submitted successfully');
+    } catch (error: any) {
+      console.error('❌ Error submitting registration:', error);
+      throw error;
+    }
   },
   
   setRegistrationStatus: (status) => set({ registrationStatus: status }),
@@ -313,17 +388,88 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   })),
   
   // Online status actions
-  toggleOnline: () => set((state) => ({
-    isOnline: !state.isOnline,
-    lastOnlineAt: state.isOnline ? new Date() : state.lastOnlineAt
-  })),
-  
-  goOnline: () => set({ isOnline: true }),
-  
-  goOffline: () => set({ 
-    isOnline: false,
-    lastOnlineAt: new Date()
-  }),
+  toggleOnline: () => {
+    const state = get();
+    if (state.isOnline) {
+      get().goOffline();
+    } else {
+      get().goOnline();
+    }
+  },
+
+  goOnline: () => {
+    set({ isOnline: true });
+    get().startListeningForRequests();
+    console.log('🟢 Driver went online - listening for ride requests');
+  },
+
+  goOffline: () => {
+    set({ isOnline: false, lastOnlineAt: new Date() });
+    get().stopListeningForRequests();
+    console.log('🔴 Driver went offline - stopped listening for requests');
+  },
+
+  startListeningForRequests: () => {
+    const state = get();
+
+    // Don't start if already listening or if no location
+    if (state.rideRequestListener || !state.currentLocation) {
+      console.log('⚠️ Cannot start listening:', {
+        hasListener: !!state.rideRequestListener,
+        hasLocation: !!state.currentLocation,
+      });
+      return;
+    }
+
+    // Start listening for ride requests within 10km
+    const unsubscribe = listenForRideRequests(
+      {
+        latitude: state.currentLocation.lat,
+        longitude: state.currentLocation.lng,
+      },
+      10, // 10km radius
+      (requests: FirebaseRideRequest[]) => {
+        console.log('📱 Received ride requests:', requests.length);
+
+        // Convert Firebase requests to app format
+        const appRequests: RideRequest[] = requests.map((req) => ({
+          id: req.id,
+          riderId: req.riderId,
+          riderName: 'Rider', // TODO: Fetch rider name from users collection
+          riderRating: 4.5, // TODO: Fetch from users collection
+          pickup: {
+            lat: req.pickup.coordinates.latitude,
+            lng: req.pickup.coordinates.longitude,
+            address: req.pickup.address,
+          },
+          destination: {
+            lat: req.destination.coordinates.latitude,
+            lng: req.destination.coordinates.longitude,
+            address: req.destination.address,
+          },
+          distance: req.distance,
+          estimatedDuration: req.duration,
+          estimatedEarnings: req.estimatedCost,
+          requestedAt: req.requestedAt,
+          expiresAt: new Date(req.requestedAt.getTime() + 5 * 60 * 1000), // 5 min expiry
+        }));
+
+        set({ incomingRequests: appRequests });
+      }
+    );
+
+    set({ rideRequestListener: unsubscribe });
+    console.log('✅ Started listening for ride requests');
+  },
+
+  stopListeningForRequests: () => {
+    const state = get();
+    if (state.rideRequestListener) {
+      state.rideRequestListener();
+      set({ rideRequestListener: null, incomingRequests: [] });
+      console.log('🛑 Stopped listening for ride requests');
+    }
+  },
   
   // Request actions
   addIncomingRequest: (request) => set((state) => ({
@@ -335,30 +481,69 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   })),
   
   acceptRequest: async (requestId) => {
-    const request = get().incomingRequests.find(r => r.id === requestId);
-    if (request) {
+    const state = get();
+    const request = state.incomingRequests.find((r) => r.id === requestId);
+    const driver = state.driver;
+    const vehicle = state.vehicle;
+
+    if (!request || !driver || !vehicle) {
+      console.error('❌ Cannot accept: missing request, driver, or vehicle data');
+      return;
+    }
+
+    try {
+      // Accept ride in Firebase
+      await acceptRideService(requestId, driver.id, {
+        name: `${driver.firstName} ${driver.lastName}`,
+        phone: driver.phone,
+        vehicleModel: `${vehicle.make} ${vehicle.model}`,
+        vehiclePlate: vehicle.licensePlate,
+        vehicleColor: vehicle.color,
+        rating: driver.rating,
+      });
+
+      // Update local state
       const activeRide: ActiveRide = {
         ...request,
         status: 'accepted',
         acceptedAt: new Date(),
       };
+
       set({
         activeRide,
-        incomingRequests: get().incomingRequests.filter(r => r.id !== requestId)
+        incomingRequests: state.incomingRequests.filter((r) => r.id !== requestId),
       });
-      
-      // TODO: Update Firebase
-      console.log('Accepted request:', requestId);
+
+      console.log('✅ Accepted ride request:', requestId);
+    } catch (error) {
+      console.error('❌ Failed to accept ride:', error);
+      throw error;
     }
   },
-  
+
   declineRequest: async (requestId, reason) => {
-    set((state) => ({
-      incomingRequests: state.incomingRequests.filter(r => r.id !== requestId)
-    }));
-    
-    // TODO: Update Firebase with decline reason
-    console.log('Declined request:', requestId, 'Reason:', reason);
+    const state = get();
+    const driver = state.driver;
+
+    if (!driver) {
+      console.error('❌ Cannot decline: missing driver data');
+      return;
+    }
+
+    try {
+      // Decline ride in Firebase
+      await declineRideService(requestId, driver.id);
+
+      // Remove from local state
+      set((state) => ({
+        incomingRequests: state.incomingRequests.filter((r) => r.id !== requestId),
+      }));
+
+      console.log('✅ Declined ride request:', requestId, 'Reason:', reason);
+    } catch (error) {
+      console.error('❌ Failed to decline ride:', error);
+      throw error;
+    }
   },
   
   // Active ride actions
@@ -454,6 +639,63 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   
   setTodayTrips: (trips) => set({ todayTrips: trips }),
   
+  // Load driver profile from Firebase
+  loadDriverProfile: async (userId: string) => {
+    try {
+      const { loadDriverProfile, loadDriverEarnings, loadDriverStats } = require(
+        '../services/driver-profile.service'
+      );
+
+      console.log('📥 Loading driver profile from Firebase...');
+
+      // Load profile data
+      const { driver, vehicle, documents } = await loadDriverProfile(userId);
+
+      if (!driver) {
+        console.log('⚠️ No driver profile found');
+        return false;
+      }
+
+      // Load earnings and stats
+      const earningsData = await loadDriverEarnings(userId);
+      const statsData = await loadDriverStats(userId);
+
+      // Update store with proper typing
+      set({
+        driver,
+        vehicle,
+        documents,
+        earnings: earningsData ? {
+          today: earningsData.today || 0,
+          yesterday: earningsData.yesterday || 0,
+          thisWeek: earningsData.thisWeek || 0,
+          lastWeek: earningsData.lastWeek || 0,
+          thisMonth: earningsData.thisMonth || 0,
+          lastMonth: earningsData.lastMonth || 0,
+          allTime: earningsData.allTime || 0,
+        } : undefined,
+        stats: statsData ? {
+          totalTrips: statsData.totalTrips || 0,
+          acceptanceRate: statsData.acceptanceRate || 0,
+          cancellationRate: statsData.cancellationRate || 0,
+          rating: statsData.rating || 0,
+          totalRatings: statsData.totalRatings || 0,
+          onlineHours: statsData.onlineHours || 0,
+          totalDistance: statsData.totalDistance || 0,
+        } : undefined,
+        registrationStatus: driver.status as any,
+        todayEarnings: earningsData?.today || 0,
+        todayTrips: statsData?.totalTrips || 0,
+      });
+
+      console.log('✅ Driver profile loaded successfully');
+      return true;
+    } catch (error) {
+      console.error('❌ Error loading driver profile:', error);
+      return false;
+    }
+  },
+
   // Reset
   resetStore: () => set({
     driver: null,

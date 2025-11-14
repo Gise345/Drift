@@ -13,33 +13,24 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTripStore, TripLocation } from '@/src/stores/trip-store';
+import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
+import { cancelTrip } from '@/src/services/ride-request.service';
 
 export default function DriverArrivingScreen() {
   const { currentTrip, subscribeToTrip, startLocationTracking } = useTripStore();
+  const { clearBookingFlow } = useCarpoolStore();
   const [eta, setEta] = useState(5); // minutes
   const [showShareModal, setShowShareModal] = useState(false);
-  
-  // Mock driver for now - will come from real trip data
-  const driver = {
-    id: '1',
-    name: 'John Smith',
-    rating: 4.9,
-    totalTrips: 247,
-    photo: 'https://via.placeholder.com/150',
-    phone: '+1 (345) 926-0000',
-    vehicle: {
-      make: 'Toyota',
-      model: 'Camry',
-      year: 2021,
-      color: 'Silver',
-      plate: 'ABC 123',
-    },
-    location: {
-      latitude: 19.3133,
-      longitude: -81.2546,
-    },
-  };
+
+  // If no current trip, redirect back
+  if (!currentTrip) {
+    router.replace('/(rider)');
+    return null;
+  }
+
+  // Get driver info from current trip
+  const driver = currentTrip.driverInfo || null;
 
   useEffect(() => {
     // Start background location tracking
@@ -131,12 +122,21 @@ export default function DriverArrivingScreen() {
       'Are you sure you want to cancel this ride?',
       [
         { text: 'No', style: 'cancel' },
-        { 
-          text: 'Yes, Cancel', 
+        {
+          text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Cancel trip in database
-            router.replace('/(rider)');
+          onPress: async () => {
+            try {
+              if (currentTrip?.id) {
+                await cancelTrip(currentTrip.id, 'RIDER', 'Rider cancelled after driver accepted');
+                console.log('✅ Trip cancelled in Firebase');
+              }
+              clearBookingFlow();
+              router.replace('/(rider)');
+            } catch (error) {
+              console.error('❌ Failed to cancel trip:', error);
+              Alert.alert('Error', 'Failed to cancel trip. Please try again.');
+            }
           }
         },
       ]
@@ -148,12 +148,26 @@ export default function DriverArrivingScreen() {
   };
 
   // Calculate map region to show both driver and pickup
+  const driverLat = currentTrip.driverLocation?.latitude || currentTrip.pickup.coordinates.latitude;
+  const driverLng = currentTrip.driverLocation?.longitude || currentTrip.pickup.coordinates.longitude;
+
   const mapRegion = {
-    latitude: (driver.location.latitude + (currentTrip?.pickup?.coordinates.latitude || 19.3133)) / 2,
-    longitude: (driver.location.longitude + (currentTrip?.pickup?.coordinates.longitude || -81.2546)) / 2,
+    latitude: (driverLat + currentTrip.pickup.coordinates.latitude) / 2,
+    longitude: (driverLng + currentTrip.pickup.coordinates.longitude) / 2,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   };
+
+  // Don't render if no driver info
+  if (!driver) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, color: '#666' }}>Loading driver information...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -165,15 +179,20 @@ export default function DriverArrivingScreen() {
         showsUserLocation={true}
       >
         {/* Driver Marker */}
-        <Marker
-          coordinate={driver.location}
-          title={driver.name}
-          description={`${driver.vehicle.make} ${driver.vehicle.model}`}
-        >
-          <View style={styles.driverMarker}>
-            <Ionicons name="car" size={24} color="white" />
-          </View>
-        </Marker>
+        {currentTrip.driverLocation && (
+          <Marker
+            coordinate={{
+              latitude: currentTrip.driverLocation.latitude,
+              longitude: currentTrip.driverLocation.longitude,
+            }}
+            title={driver.name}
+            description={`${driver.vehicle.make} ${driver.vehicle.model}`}
+          >
+            <View style={styles.driverMarker}>
+              <Ionicons name="car" size={24} color="white" />
+            </View>
+          </Marker>
+        )}
 
         {/* Pickup Marker */}
         {currentTrip?.pickup && (

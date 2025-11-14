@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   ScrollView,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { addRoleToUser } from '@/src/services/role-service';
 
 /**
  * SETTINGS INDEX SCREEN
@@ -36,6 +39,52 @@ interface SettingItem {
 
 export default function SettingsScreen() {
   const appVersion = '1.0.0';
+  const { user, setMode } = useAuthStore();
+  const [switching, setSwitching] = useState(false);
+
+  const handleSwitchToRider = async () => {
+    if (!user) return;
+
+    // Check if user already has rider role
+    const hasRiderRole = user?.roles?.includes('RIDER');
+
+    if (hasRiderRole) {
+      // User has rider role, just switch mode and navigate
+      console.log('✅ Switching to rider mode');
+      setMode('RIDER');
+      router.replace('/(tabs)');
+    } else {
+      // User doesn't have rider role, ask if they want to become a rider
+      Alert.alert(
+        'Switch to Rider Mode',
+        'Would you like to use Drift as a rider?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Switch to Rider',
+            onPress: async () => {
+              setSwitching(true);
+              try {
+                // Add rider role to user
+                await addRoleToUser('RIDER');
+
+                // Switch to rider mode
+                setMode('RIDER');
+
+                // Navigate to rider home
+                router.replace('/(tabs)');
+              } catch (error: any) {
+                console.error('Failed to add rider role:', error);
+                Alert.alert('Error', error.message || 'Failed to switch to rider mode');
+              } finally {
+                setSwitching(false);
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -190,6 +239,13 @@ export default function SettingsScreen() {
       title: 'Account',
       items: [
         {
+          id: 'switch-rider',
+          title: user?.roles?.includes('RIDER') ? 'Switch to Rider' : 'Use Drift as Rider',
+          subtitle: 'Switch to rider mode',
+          icon: 'car-outline',
+          action: handleSwitchToRider,
+        },
+        {
           id: 'logout',
           title: 'Logout',
           subtitle: 'Sign out of your account',
@@ -219,7 +275,10 @@ export default function SettingsScreen() {
         }
       }}
     >
-      <View style={styles.settingIcon}>
+      <View style={[
+        styles.settingIcon,
+        item.id === 'switch-rider' && styles.switchRiderIcon,
+      ]}>
         <Ionicons
           name={item.icon as any}
           size={24}
@@ -228,6 +287,8 @@ export default function SettingsScreen() {
               ? Colors.error[500]
               : item.id === 'logout'
               ? Colors.warning[500]
+              : item.id === 'switch-rider'
+              ? Colors.white
               : Colors.primary[500]
           }
         />
@@ -360,6 +421,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
+  },
+  switchRiderIcon: {
+    backgroundColor: Colors.purple,
   },
   settingContent: {
     flex: 1,

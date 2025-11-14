@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   SafeAreaView,
   FlatList,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { loadDriverTripHistory } from '@/src/services/driver-profile.service';
 
 type TripStatus = 'completed' | 'cancelled' | 'no-show';
 
@@ -30,91 +33,82 @@ interface Trip {
   status: TripStatus;
 }
 
-// Mock data
-const mockTrips: Trip[] = [
-  {
-    id: '1',
-    riderName: 'Sarah Johnson',
-    riderPhoto: '👩‍💼',
-    pickup: 'Grand Cayman Marriott',
-    destination: 'Owen Roberts Airport',
-    date: 'Today',
-    time: '2:30 PM',
-    earnings: 45.00,
-    distance: 12.5,
-    duration: 25,
-    rating: 5,
-    status: 'completed',
-  },
-  {
-    id: '2',
-    riderName: 'Michael Chen',
-    riderPhoto: '👨‍💻',
-    pickup: 'Camana Bay',
-    destination: 'Seven Mile Beach',
-    date: 'Today',
-    time: '11:45 AM',
-    earnings: 28.50,
-    distance: 8.2,
-    duration: 18,
-    rating: 5,
-    status: 'completed',
-  },
-  {
-    id: '3',
-    riderName: 'Emma Wilson',
-    riderPhoto: '👩',
-    pickup: 'Ritz-Carlton',
-    destination: 'George Town',
-    date: 'Yesterday',
-    time: '6:15 PM',
-    earnings: 32.00,
-    distance: 9.8,
-    duration: 22,
-    rating: 4,
-    status: 'completed',
-  },
-  {
-    id: '4',
-    riderName: 'James Miller',
-    riderPhoto: '👨‍🦱',
-    pickup: 'Kimpton Seafire',
-    destination: 'Bodden Town',
-    date: 'Yesterday',
-    time: '3:20 PM',
-    earnings: 0,
-    distance: 0,
-    duration: 0,
-    rating: 0,
-    status: 'cancelled',
-  },
-  {
-    id: '5',
-    riderName: 'Lisa Anderson',
-    riderPhoto: '👱‍♀️',
-    pickup: 'Caribbean Club',
-    destination: 'Camana Bay',
-    date: 'Nov 3',
-    time: '8:45 AM',
-    earnings: 5.00,
-    distance: 0,
-    duration: 0,
-    rating: 0,
-    status: 'no-show',
-  },
-];
-
 export default function TripsScreen() {
+  const { user } = useAuthStore();
   const [selectedTab, setSelectedTab] = useState<'all' | 'completed' | 'cancelled'>('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [trips, setTrips] = useState(mockTrips);
+  const [loading, setLoading] = useState(true);
+  const [trips, setTrips] = useState<Trip[]>([]);
 
-  const onRefresh = () => {
+  // Load trip history from Firebase
+  useEffect(() => {
+    if (user?.id) {
+      loadTrips();
+    }
+  }, [user?.id]);
+
+  const loadTrips = async () => {
+    try {
+      setLoading(true);
+      if (!user?.id) return;
+
+      const tripHistory = await loadDriverTripHistory(user.id, 50);
+
+      // Map Firebase trips to UI format
+      const formattedTrips: Trip[] = tripHistory.map((trip: any) => {
+        const completedAt = trip.completedAt || trip.cancelledAt;
+        const isToday = completedAt && isDateToday(completedAt);
+        const isYesterday = completedAt && isDateYesterday(completedAt);
+
+        return {
+          id: trip.id,
+          riderName: trip.riderInfo?.name || 'Rider',
+          riderPhoto: trip.riderInfo?.photoUrl || '👤',
+          pickup: trip.pickup?.address || 'Unknown',
+          destination: trip.destination?.address || 'Unknown',
+          date: isToday ? 'Today' : isYesterday ? 'Yesterday' : formatDate(completedAt),
+          time: formatTime(completedAt),
+          earnings: trip.driverEarnings || trip.finalCost || 0,
+          distance: trip.actualDistance || trip.distance || 0,
+          duration: trip.actualDuration || trip.duration || 0,
+          rating: trip.driverRating || 0,
+          status: trip.status === 'COMPLETED' ? 'completed' : trip.status === 'CANCELLED' ? 'cancelled' : 'no-show',
+        };
+      });
+
+      setTrips(formattedTrips);
+    } catch (error) {
+      console.error('❌ Error loading trip history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isDateToday = (date: Date) => {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
+  };
+
+  const isDateYesterday = (date: Date) => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return date.toDateString() === yesterday.toDateString();
+  };
+
+  const formatDate = (date: Date) => {
+    if (!date) return 'N/A';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const formatTime = (date: Date) => {
+    if (!date) return 'N/A';
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
+    await loadTrips();
+    setRefreshing(false);
   };
 
   const filteredTrips = trips.filter((trip) => {
@@ -267,28 +261,35 @@ export default function TripsScreen() {
       </View>
 
       {/* Trip List */}
-      <FlatList
-        data={filteredTrips}
-        renderItem={renderTrip}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.primary}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="car-outline" size={64} color={Colors.textSecondary} />
-            <Text style={styles.emptyTitle}>No trips yet</Text>
-            <Text style={styles.emptyText}>
-              Your completed trips will appear here
-            </Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading trip history...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredTrips}
+          renderItem={renderTrip}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="car-outline" size={64} color={Colors.textSecondary} />
+              <Text style={styles.emptyTitle}>No trips yet</Text>
+              <Text style={styles.emptyText}>
+                Your completed trips will appear here
+              </Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -488,5 +489,16 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+  },
+  loadingText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
   },
 });

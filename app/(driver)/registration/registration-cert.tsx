@@ -18,7 +18,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function RegistrationCert() {
   const router = useRouter();
-  const { addDocument, setRegistrationStep } = useDriverStore();
+  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
   
   const [registrationImage, setRegistrationImage] = useState<string | null>(null);
 
@@ -54,12 +54,13 @@ export default function RegistrationCert() {
       return;
     }
 
-    addDocument({
-      id: 'registration-' + Date.now(),
-      type: 'registration',
-      status: 'pending',
-      frontImageUrl: registrationImage,
-      uploadedAt: new Date(),
+    // Save to store in the correct format
+    updateRegistrationData({
+      documents: {
+        registration: {
+          image: registrationImage,
+        },
+      },
     });
 
     setRegistrationStep(8);

@@ -11,32 +11,117 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useTripStore } from '@/src/stores/trip-store';
+import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
 
 export default function NavigateToPickup() {
   const router = useRouter();
-  const { activeRide, updateLocation } = useDriverStore();
-  const [eta, setEta] = useState(5);
-  const [distance, setDistance] = useState(2.3);
+  const { activeRide, updateLocation, arrivedAtPickup } = useDriverStore();
+  const { updateDriverLocation } = useTripStore();
+  const [eta, setEta] = useState<number | null>(null);
+  const [distance, setDistance] = useState<number | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   useEffect(() => {
-    // Simulate location updates
-    const interval = setInterval(() => {
-      setEta((prev) => Math.max(0, prev - 0.1));
-      setDistance((prev) => Math.max(0, prev - 0.05));
-      
-      // Mock location update
-      updateLocation({
-        lat: 19.3133,
-        lng: -81.2546,
-        heading: 45,
-        speed: 30,
-      });
-    }, 1000);
+    if (!activeRide) return;
 
-    return () => clearInterval(interval);
-  }, []);
+    // Start real-time location tracking
+    let locationSubscription: Location.LocationSubscription | null = null;
+
+    const startTracking = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Location permission is required for navigation.');
+          return;
+        }
+
+        // Update driver status to "arriving"
+        await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVING');
+
+        // Start watching position
+        locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 5000, // Update every 5 seconds
+            distanceInterval: 10, // Or every 10 meters
+          },
+          (location) => {
+            const { latitude, longitude, heading, speed } = location.coords;
+
+            setCurrentLocation({ latitude, longitude });
+
+            // Update driver location in store
+            updateLocation({
+              lat: latitude,
+              lng: longitude,
+              heading: heading || 0,
+              speed: speed || 0,
+            });
+
+            // Update driver location in Firebase
+            if (activeRide.id) {
+              updateDriverLocation(activeRide.id, {
+                latitude,
+                longitude,
+                timestamp: new Date(),
+                accuracy: location.coords.accuracy,
+                speed: speed || 0,
+                heading: heading || 0,
+              });
+            }
+
+            // Calculate distance and ETA
+            const distanceToPickup = calculateDistance(
+              latitude,
+              longitude,
+              activeRide.pickup.lat,
+              activeRide.pickup.lng
+            );
+
+            setDistance(distanceToPickup);
+
+            // Simple ETA calculation (distance / average speed)
+            // Assuming 30 km/h average speed
+            const averageSpeed = 30; // km/h
+            const etaMinutes = (distanceToPickup / averageSpeed) * 60;
+            setEta(etaMinutes);
+          }
+        );
+      } catch (error) {
+        console.error('Failed to start location tracking:', error);
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (locationSubscription) {
+        locationSubscription.remove();
+      }
+    };
+  }, [activeRide?.id]);
+
+  // Calculate distance using Haversine formula (in km)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
   if (!activeRide) {
     return (
@@ -58,16 +143,33 @@ export default function NavigateToPickup() {
     Linking.openURL(url);
   };
 
-  const handleCallRider = () => {
-    Linking.openURL(`tel:${(activeRide as any).riderPhone || '+13455551234'}`);
+  const handleCallRider = async () => {
+    // TODO: Fetch rider phone from Firebase users collection
+    // For now, show alert
+    Alert.alert('Call Rider', 'Contact feature will be available soon.');
   };
 
-  const handleMessageRider = () => {
-    Linking.openURL(`sms:${(activeRide as any).riderPhone || '+13455551234'}`);
+  const handleMessageRider = async () => {
+    // TODO: Use in-app messaging or fetch rider phone
+    Alert.alert('Message Rider', 'In-app messaging will be available soon.');
   };
 
-  const handleArrived = () => {
-    router.push('/(driver)/active-ride/arrived-at-pickup');
+  const handleArrived = async () => {
+    if (!activeRide) return;
+
+    try {
+      // Update ride status in Firebase
+      await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVED');
+
+      // Update local state
+      arrivedAtPickup();
+
+      // Navigate to arrived screen
+      router.push('/(driver)/active-ride/arrived-at-pickup');
+    } catch (error) {
+      console.error('Failed to update arrival status:', error);
+      Alert.alert('Error', 'Failed to update status. Please try again.');
+    }
   };
 
   const handleCancel = () => {
@@ -123,12 +225,12 @@ export default function NavigateToPickup() {
       {/* ETA Card */}
       <View style={styles.etaCard}>
         <View style={styles.etaLeft}>
-          <Text style={styles.etaTime}>{Math.ceil(eta)} min</Text>
+          <Text style={styles.etaTime}>{eta ? Math.ceil(eta) : '--'} min</Text>
           <Text style={styles.etaLabel}>ETA</Text>
         </View>
         <View style={styles.etaDivider} />
         <View style={styles.etaRight}>
-          <Text style={styles.etaDistance}>{distance.toFixed(1)} km</Text>
+          <Text style={styles.etaDistance}>{distance ? distance.toFixed(1) : '--'} km</Text>
           <Text style={styles.etaLabel}>away</Text>
         </View>
       </View>

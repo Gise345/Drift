@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,71 +7,99 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
+  Image,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+import type { Document as DriverDocument } from '@/src/stores/driver-store';
 
-type DocumentStatus = 'verified' | 'pending' | 'expired' | 'rejected';
-
-interface Document {
+interface DisplayDocument {
   id: string;
   type: string;
   name: string;
-  status: DocumentStatus;
-  uploadDate: string;
+  status: 'approved' | 'pending' | 'expired' | 'rejected';
+  uploadDate: Date;
   expiryDate?: string;
   icon: string;
   required: boolean;
+  frontImageUrl?: string;
+  backImageUrl?: string;
+  rejectionReason?: string;
 }
 
 export default function DocumentsScreen() {
-  const [documents] = useState<Document[]>([
-    {
-      id: '1',
-      type: 'license',
-      name: "Driver's License",
-      status: 'verified',
-      uploadDate: '2024-01-15',
-      expiryDate: '2026-12-31',
-      icon: 'card',
-      required: true,
-    },
-    {
-      id: '2',
-      type: 'insurance',
-      name: 'Vehicle Insurance',
-      status: 'verified',
-      uploadDate: '2024-01-15',
-      expiryDate: '2025-06-30',
-      icon: 'shield-checkmark',
-      required: true,
-    },
-    {
-      id: '3',
-      type: 'registration',
-      name: 'Vehicle Registration',
-      status: 'pending',
-      uploadDate: '2024-11-01',
-      expiryDate: '2025-12-31',
-      icon: 'document-text',
-      required: true,
-    },
-    {
-      id: '4',
-      type: 'inspection',
-      name: 'Safety Inspection',
-      status: 'expired',
-      uploadDate: '2023-10-15',
-      expiryDate: '2024-10-15',
-      icon: 'checkmark-circle',
-      required: true,
-    },
-  ]);
+  const { user } = useAuthStore();
+  const { documents: storeDocuments, loadDriverProfile } = useDriverStore();
+  const [loading, setLoading] = useState(true);
+  const [documents, setDocuments] = useState<DisplayDocument[]>([]);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const getStatusColor = (status: DocumentStatus) => {
+  useEffect(() => {
+    const loadDocuments = async () => {
+      if (user?.id) {
+        await loadDriverProfile(user.id);
+        setLoading(false);
+      }
+    };
+    loadDocuments();
+  }, [user?.id]);
+
+  useEffect(() => {
+    // Map store documents to display format
+    const mappedDocs: DisplayDocument[] = storeDocuments.map((doc) => ({
+      id: doc.id,
+      type: doc.type,
+      name: getDocumentName(doc.type),
+      status: doc.status as any,
+      uploadDate: doc.uploadedAt,
+      expiryDate: doc.expiryDate,
+      icon: getDocumentIcon(doc.type),
+      required: true,
+      frontImageUrl: doc.frontImageUrl,
+      backImageUrl: doc.backImageUrl,
+      rejectionReason: doc.rejectionReason,
+    }));
+    setDocuments(mappedDocs);
+  }, [storeDocuments]);
+
+  const getDocumentName = (type: string) => {
+    switch (type) {
+      case 'license':
+        return "Driver's License";
+      case 'insurance':
+        return 'Vehicle Insurance';
+      case 'registration':
+        return 'Vehicle Registration';
+      case 'inspection':
+        return 'Safety Inspection';
+      default:
+        return type;
+    }
+  };
+
+  const getDocumentIcon = (type: string) => {
+    switch (type) {
+      case 'license':
+        return 'card';
+      case 'insurance':
+        return 'shield-checkmark';
+      case 'registration':
+        return 'document-text';
+      case 'inspection':
+        return 'checkmark-circle';
+      default:
+        return 'document';
+    }
+  };
+
+  const getStatusColor = (status: DisplayDocument['status']) => {
     switch (status) {
-      case 'verified':
+      case 'approved':
         return Colors.success;
       case 'pending':
         return Colors.warning;
@@ -83,10 +111,10 @@ export default function DocumentsScreen() {
     }
   };
 
-  const getStatusText = (status: DocumentStatus) => {
+  const getStatusText = (status: DisplayDocument['status']) => {
     switch (status) {
-      case 'verified':
-        return 'Verified';
+      case 'approved':
+        return 'Approved';
       case 'pending':
         return 'Pending Review';
       case 'expired':
@@ -98,7 +126,7 @@ export default function DocumentsScreen() {
     }
   };
 
-  const getActionText = (status: DocumentStatus) => {
+  const getActionText = (status: DisplayDocument['status']) => {
     switch (status) {
       case 'expired':
       case 'rejected':
@@ -110,22 +138,35 @@ export default function DocumentsScreen() {
     }
   };
 
-  const handleDocumentAction = (doc: Document) => {
-    if (doc.status === 'expired' || doc.status === 'rejected') {
-      router.push({
-        pathname: '/(driver)/profile/upload-document',
-        params: { documentType: doc.type }
-      });
+  const handleDocumentAction = (doc: DisplayDocument) => {
+    // Show the document image
+    if (doc.frontImageUrl) {
+      setSelectedImage(doc.frontImageUrl);
     } else {
-      router.push({
-        pathname: '/(driver)/profile/document-detail',
-        params: { documentId: doc.id }
-      });
+      Alert.alert('No Image', 'This document has no uploaded image.');
     }
   };
 
   const expiredDocs = documents.filter(doc => doc.status === 'expired' || doc.status === 'rejected');
   const pendingDocs = documents.filter(doc => doc.status === 'pending');
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>My Documents</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading documents...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -238,6 +279,30 @@ export default function DocumentsScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Image Modal */}
+      <Modal
+        visible={!!selectedImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedImage(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => setSelectedImage(null)}
+          >
+            <Ionicons name="close" size={32} color={Colors.white} />
+          </TouchableOpacity>
+          {selectedImage && (
+            <Image
+              source={{ uri: selectedImage }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -402,5 +467,33 @@ const styles = StyleSheet.create({
   helpText: {
     ...Typography.caption,
     color: Colors.textSecondary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xl,
+  },
+  loadingText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    padding: Spacing.sm,
+  },
+  modalImage: {
+    width: '90%',
+    height: '80%',
   },
 });

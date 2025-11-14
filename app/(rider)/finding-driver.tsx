@@ -11,6 +11,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { useTripStore } from '@/src/stores/trip-store';
+import { cancelTrip } from '@/src/services/ride-request.service';
 
 const Colors = {
   primary: '#D4E700',
@@ -36,8 +38,9 @@ const Colors = {
 export default function FindingDriverScreen() {
   const router = useRouter();
   const { vehicleType, estimatedCost, destination, clearBookingFlow } = useCarpoolStore();
-  
-  const [searchStatus, setSearchStatus] = useState<string>('Searching for drivers...');
+  const { currentTrip, subscribeToTrip } = useTripStore();
+
+  const [searchStatus, setSearchStatus] = useState<string>('Searching for available drivers...');
   const [pulseAnim] = useState(new Animated.Value(1));
 
   useEffect(() => {
@@ -56,40 +59,81 @@ export default function FindingDriverScreen() {
         }),
       ])
     ).start();
-
-    // Simulate finding driver
-    simulateFindingDriver();
   }, []);
 
-  const simulateFindingDriver = async () => {
-    // Step 1: Searching
+  // Listen for trip status changes in real-time
+  useEffect(() => {
+    if (!currentTrip?.id) {
+      console.log('⚠️ No current trip to monitor');
+      return;
+    }
+
+    console.log('👀 Starting to monitor trip:', currentTrip.id);
     setSearchStatus('Searching for available drivers...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Step 2: Found drivers
-    setSearchStatus('Found 3 drivers nearby!');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Subscribe to trip updates from Firebase
+    const unsubscribe = subscribeToTrip(currentTrip.id);
 
-    // Step 3: Matching
-    setSearchStatus('Matching you with the best driver...');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [currentTrip?.id]);
 
-    // Navigate to driver arriving screen
-    router.replace('/(rider)/driver-arriving');
-  };
+  // Handle trip status changes
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    console.log('📍 Trip status changed:', currentTrip.status);
+
+    switch (currentTrip.status) {
+      case 'REQUESTED':
+        setSearchStatus('Looking for nearby drivers...');
+        break;
+
+      case 'ACCEPTED':
+        setSearchStatus('Driver found! Preparing trip details...');
+        // Wait a moment then navigate
+        setTimeout(() => {
+          router.replace('/(rider)/driver-arriving');
+        }, 1500);
+        break;
+
+      case 'CANCELLED':
+        Alert.alert('Trip Cancelled', 'The trip has been cancelled.');
+        clearBookingFlow();
+        router.back();
+        break;
+
+      default:
+        break;
+    }
+  }, [currentTrip?.status]);
 
   const handleCancel = () => {
     Alert.alert(
       'Cancel Request',
-      'Are you sure you want to cancel this carpool request?',
+      'Are you sure you want to cancel this ride request?',
       [
         { text: 'No', style: 'cancel' },
         {
           text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => {
-            clearBookingFlow();
-            router.back();
+          onPress: async () => {
+            try {
+              if (currentTrip?.id) {
+                await cancelTrip(currentTrip.id, 'RIDER', 'Rider cancelled request');
+                console.log('✅ Trip cancelled in Firebase');
+              }
+              clearBookingFlow();
+              router.back();
+            } catch (error) {
+              console.error('❌ Failed to cancel trip:', error);
+              // Still go back even if cancel fails
+              clearBookingFlow();
+              router.back();
+            }
           },
         },
       ]

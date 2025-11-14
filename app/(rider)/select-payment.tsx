@@ -11,6 +11,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { useTripStore } from '@/src/stores/trip-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+
+// DEV MODE: Set to true to bypass payment for testing
+const DEV_BYPASS_PAYMENT = true;
 
 const Colors = {
   primary: '#D4E700',
@@ -44,27 +49,43 @@ interface PaymentMethod {
 
 export default function SelectPaymentScreen() {
   const router = useRouter();
-  const { setSelectedPaymentMethod, estimatedCost } = useCarpoolStore();
-  
-  const [selectedPayment, setSelectedPayment] = useState<string>('');
+  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType } = useCarpoolStore();
+  const { createTrip, setCurrentTrip } = useTripStore();
+  const { user } = useAuthStore();
+
+  const [selectedPayment, setSelectedPayment] = useState<string>('card');
   const [loading, setLoading] = useState(false);
 
-  // Mock payment methods (replace with real data from API/AsyncStorage)
+  // Production payment methods - Only real payment options
   const paymentMethods: PaymentMethod[] = [
     {
-      id: 'card1',
+      id: 'card',
       type: 'card',
-      name: 'Visa',
-      details: '•••• 4242',
+      name: 'Credit/Debit Card',
+      details: 'Visa, Mastercard, Amex',
       icon: '💳',
       isDefault: true,
     },
     {
-      id: 'cash',
-      type: 'cash',
-      name: 'Cash',
-      details: 'Pay driver directly',
-      icon: '💵',
+      id: 'paypal',
+      type: 'wallet',
+      name: 'PayPal',
+      details: 'Secure payment with PayPal',
+      icon: '💰',
+    },
+    {
+      id: 'apple-pay',
+      type: 'wallet',
+      name: 'Apple Pay',
+      details: 'Quick and secure',
+      icon: '',
+    },
+    {
+      id: 'google-pay',
+      type: 'wallet',
+      name: 'Google Pay',
+      details: 'Fast checkout',
+      icon: 'G',
     },
   ];
 
@@ -77,24 +98,64 @@ export default function SelectPaymentScreen() {
   };
 
   const handleConfirmPayment = async () => {
-    if (!selectedPayment) {
+    // DEV MODE: Skip payment validation if bypass is enabled
+    if (!DEV_BYPASS_PAYMENT && !selectedPayment) {
       Alert.alert('Select Payment', 'Please select a payment method');
+      return;
+    }
+
+    if (!user || !pickupLocation || !destination || !estimatedCost) {
+      Alert.alert('Error', 'Missing required trip information');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Save payment method
-      setSelectedPaymentMethod(selectedPayment);
+      // Save payment method (use 'dev-bypass' if no payment selected in dev mode)
+      const paymentMethodToUse = selectedPayment || 'dev-bypass';
+      setSelectedPaymentMethod(paymentMethodToUse);
 
-      // Simulate finding drivers
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // DEV MODE: Show bypass notification
+      if (DEV_BYPASS_PAYMENT && !selectedPayment) {
+        console.log('🔧 DEV MODE: Bypassing payment selection');
+      }
+
+      // Create trip in Firebase with status "REQUESTED"
+      const tripId = await createTrip({
+        riderId: user.id,
+        status: 'REQUESTED',
+        pickup: {
+          address: pickupLocation.address || '',
+          coordinates: {
+            latitude: pickupLocation.latitude,
+            longitude: pickupLocation.longitude,
+          },
+          placeName: pickupLocation.placeName,
+        },
+        destination: {
+          address: destination.address || '',
+          coordinates: {
+            latitude: destination.latitude,
+            longitude: destination.longitude,
+          },
+          placeName: destination.placeName,
+        },
+        vehicleType: vehicleType || 'standard',
+        distance: pickupLocation.distance || 0,
+        duration: pickupLocation.duration || 0,
+        estimatedCost: estimatedCost.max || 0,
+        paymentMethod: paymentMethodToUse,
+        requestedAt: new Date(),
+      });
+
+      console.log('✅ Trip created in Firebase:', tripId);
 
       // Navigate to finding driver screen
       router.push('/(rider)/finding-driver');
     } catch (error) {
-      Alert.alert('Error', 'Failed to process. Please try again.');
+      console.error('❌ Failed to create trip:', error);
+      Alert.alert('Error', 'Failed to request ride. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -193,6 +254,15 @@ export default function SelectPaymentScreen() {
               {' '}Payments are optional contributions for shared expenses. Drift facilitates coordination only.
             </Text>
           </View>
+
+          {/* DEV MODE Indicator */}
+          {DEV_BYPASS_PAYMENT && (
+            <View style={styles.devModeNotice}>
+              <Text style={styles.devModeText}>
+                🔧 DEV MODE: Payment validation is bypassed for testing
+              </Text>
+            </View>
+          )}
         </ScrollView>
 
         {/* Confirm Button */}
@@ -200,10 +270,10 @@ export default function SelectPaymentScreen() {
           <TouchableOpacity
             style={[
               styles.confirmButton,
-              (!selectedPayment || loading) && styles.confirmButtonDisabled,
+              (!DEV_BYPASS_PAYMENT && !selectedPayment || loading) && styles.confirmButtonDisabled,
             ]}
             onPress={handleConfirmPayment}
-            disabled={!selectedPayment || loading}
+            disabled={!DEV_BYPASS_PAYMENT && !selectedPayment || loading}
           >
             {loading ? (
               <ActivityIndicator color={Colors.white} />
@@ -404,6 +474,21 @@ const styles = StyleSheet.create({
   legalBold: {
     fontWeight: '700',
     color: Colors.purple,
+  },
+  devModeNotice: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  devModeText: {
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 18,
+    fontWeight: '600',
   },
   bottomContainer: {
     position: 'absolute',

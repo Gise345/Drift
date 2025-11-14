@@ -20,7 +20,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function Insurance() {
   const router = useRouter();
-  const { addDocument, setRegistrationStep } = useDriverStore();
+  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
   
   const [insuranceImage, setInsuranceImage] = useState<string | null>(null);
   const [expiryDate, setExpiryDate] = useState(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
@@ -63,13 +63,13 @@ export default function Insurance() {
       return;
     }
 
-    addDocument({
-      id: 'insurance-' + Date.now(),
-      type: 'insurance',
-      status: 'pending',
-      frontImageUrl: insuranceImage,
-      expiryDate: expiryDate.toISOString(),
-      uploadedAt: new Date(),
+    // Save to store in the correct format
+    updateRegistrationData({
+      documents: {
+        insurance: {
+          image: insuranceImage,
+        },
+      },
     });
 
     setRegistrationStep(7);
@@ -166,7 +166,7 @@ export default function Insurance() {
         <View style={styles.importantNote}>
           <Ionicons name="alert-circle" size={20} color={Colors.warning} />
           <Text style={styles.importantText}>
-            <Text style={styles.bold}>Important:</Text> Make sure your insurance covers carpool activities. 
+            <Text style={styles.bold}>Important:</Text> Make sure your insurance covers 3rd party. 
             You are responsible for maintaining adequate insurance coverage at all times.
           </Text>
         </View>

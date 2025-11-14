@@ -18,7 +18,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function Inspection() {
   const router = useRouter();
-  const { addDocument, setRegistrationStep } = useDriverStore();
+  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
   
   const [inspectionImage, setInspectionImage] = useState<string | null>(null);
   const [skipInspection, setSkipInspection] = useState(false);
@@ -60,13 +60,14 @@ export default function Inspection() {
       return;
     }
 
+    // Save to store in the correct format (inspection is optional)
     if (inspectionImage) {
-      addDocument({
-        id: 'inspection-' + Date.now(),
-        type: 'inspection',
-        status: 'pending',
-        frontImageUrl: inspectionImage,
-        uploadedAt: new Date(),
+      updateRegistrationData({
+        documents: {
+          inspection: {
+            image: inspectionImage,
+          },
+        },
       });
     }
 

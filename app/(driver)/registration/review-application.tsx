@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +24,23 @@ export default function ReviewApplication() {
   const personalInfo = registrationData.personalInfo;
   const vehicle = registrationData.vehicle;
   const bankDetails = registrationData.bankDetails;
+  const documents = registrationData.documents;
+
+  // Debug log to see what documents we have on mount and when they change
+  useEffect(() => {
+    console.log('📋 Review screen mounted - Full registration data:', JSON.stringify({
+      hasPersonalInfo: !!personalInfo,
+      hasVehicle: !!vehicle,
+      hasBankDetails: !!bankDetails,
+      hasDocuments: !!documents,
+      documents: {
+        license: documents?.license,
+        insurance: documents?.insurance,
+        registration: documents?.registration,
+        inspection: documents?.inspection,
+      },
+    }, null, 2));
+  }, [documents]);
 
   const handleEdit = (section: string) => {
     // Navigate back to specific section
@@ -52,8 +71,28 @@ export default function ReviewApplication() {
               await submitRegistration();
               setRegistrationStep(12);
               router.push('/(driver)/registration/pending-approval');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to submit application. Please try again.');
+            } catch (error: any) {
+              console.error('❌ Error submitting registration:', error);
+
+              // Show specific error message
+              const errorMessage = error?.message || 'Failed to submit application. Please try again.';
+
+              // If it's a document error, offer to navigate to documents screen
+              if (errorMessage.includes('license') || errorMessage.includes('document') || errorMessage.includes('insurance') || errorMessage.includes('registration')) {
+                Alert.alert(
+                  'Missing Required Documents',
+                  errorMessage,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Upload Documents',
+                      onPress: () => router.push('/(driver)/registration/drivers-license')
+                    }
+                  ]
+                );
+              } else {
+                Alert.alert('Error', errorMessage);
+              }
             } finally {
               setIsSubmitting(false);
             }
@@ -85,6 +124,19 @@ export default function ReviewApplication() {
         <Text style={styles.subtitle}>
           Please review all information before submitting
         </Text>
+
+        {/* Warning for missing documents */}
+        {(!documents?.license || !documents?.insurance || !documents?.registration) && (
+          <View style={styles.warningCard}>
+            <Ionicons name="warning" size={24} color={Colors.warning} />
+            <View style={styles.warningContent}>
+              <Text style={styles.warningTitle}>Missing Required Documents</Text>
+              <Text style={styles.warningText}>
+                Please upload all required documents before submitting. Tap "Edit" in the Documents section below.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Personal Information */}
         <View style={styles.section}>
@@ -150,22 +202,43 @@ export default function ReviewApplication() {
 
         {/* Documents */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Documents Uploaded</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Documents Uploaded</Text>
+            <TouchableOpacity onPress={() => router.push('/(driver)/registration/drivers-license')}>
+              <Text style={styles.editButton}>Edit</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.documentsCard}>
             <View style={styles.documentRow}>
-              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Ionicons
+                name={documents?.license ? "checkmark-circle" : "alert-circle"}
+                size={20}
+                color={documents?.license ? Colors.success : Colors.error}
+              />
               <Text style={styles.documentText}>Driver's License</Text>
             </View>
             <View style={styles.documentRow}>
-              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Ionicons
+                name={documents?.insurance ? "checkmark-circle" : "alert-circle"}
+                size={20}
+                color={documents?.insurance ? Colors.success : Colors.error}
+              />
               <Text style={styles.documentText}>Vehicle Insurance</Text>
             </View>
             <View style={styles.documentRow}>
-              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Ionicons
+                name={documents?.registration ? "checkmark-circle" : "alert-circle"}
+                size={20}
+                color={documents?.registration ? Colors.success : Colors.error}
+              />
               <Text style={styles.documentText}>Vehicle Registration</Text>
             </View>
             <View style={styles.documentRow}>
-              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Ionicons
+                name={registrationData.backgroundCheck?.consented ? "checkmark-circle" : "alert-circle"}
+                size={20}
+                color={registrationData.backgroundCheck?.consented ? Colors.success : Colors.error}
+              />
               <Text style={styles.documentText}>Background Check Consent</Text>
             </View>
           </View>
@@ -221,6 +294,31 @@ export default function ReviewApplication() {
           By submitting, you agree to Drift's Terms of Service and Privacy Policy
         </Text>
       </ScrollView>
+
+      {/* Uploading Modal */}
+      <Modal
+        visible={isSubmitting}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.modalTitle}>Uploading Your Application</Text>
+            <Text style={styles.modalMessage}>
+              Please wait while we upload your documents and information to Firebase.
+              This may take 1-2 minutes.
+            </Text>
+            <View style={styles.modalWarning}>
+              <Ionicons name="information-circle" size={20} color={Colors.warning} />
+              <Text style={styles.modalWarningText}>
+                Please stay on this page until the upload is complete.
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -369,5 +467,76 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.lg,
     lineHeight: 18,
+  },
+  warningCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.warning + '15',
+    borderRadius: 12,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+    gap: Spacing.md,
+  },
+  warningContent: {
+    flex: 1,
+  },
+  warningTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.warning,
+    marginBottom: Spacing.xs,
+  },
+  warningText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[700],
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xl,
+  },
+  modalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: Spacing['2xl'],
+    alignItems: 'center',
+    maxWidth: 400,
+    width: '100%',
+  },
+  modalTitle: {
+    fontSize: Typography.fontSize.xl,
+    fontWeight: '700',
+    color: Colors.black,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.gray[600],
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: Spacing.lg,
+  },
+  modalWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warning + '15',
+    borderRadius: 12,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+  modalWarningText: {
+    flex: 1,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.warning,
+    fontWeight: '600',
+    lineHeight: 20,
   },
 });

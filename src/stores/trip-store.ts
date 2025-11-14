@@ -38,7 +38,7 @@ export interface Trip {
   riderId: string;
   driverId?: string;
   status: 'REQUESTED' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-  
+
   // Route info
   pickup: {
     address: string;
@@ -56,35 +56,52 @@ export interface Trip {
     placeName?: string;
     completed: boolean;
   }>;
-  
+
   // Trip details
   vehicleType: string;
   distance: number;
   duration: number;
   estimatedCost: number;
   finalCost?: number;
-  
+
+  // Driver info (populated when driver accepts)
+  driverInfo?: {
+    id: string;
+    name: string;
+    phone: string;
+    rating: number;
+    totalTrips: number;
+    photo?: string;
+    vehicle: {
+      make: string;
+      model: string;
+      year: number;
+      color: string;
+      plate: string;
+    };
+  };
+
   // Tracking
   driverLocation?: TripLocation;
   riderLocation?: TripLocation;
   route?: Array<{ latitude: number; longitude: number }>;
-  
+
   // Timestamps
   requestedAt: Date;
   acceptedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
-  
+
   // Payment
   paymentMethod: string;
   paymentStatus?: 'PENDING' | 'COMPLETED' | 'FAILED';
-  
+
   // Ratings
   riderRating?: number;
   riderFeedback?: string;
   driverRating?: number;
   driverFeedback?: string;
-  
+
   // Sharing
   sharedWith?: Array<{
     name: string;
@@ -92,7 +109,7 @@ export interface Trip {
     email?: string;
     shareToken: string;
   }>;
-  
+
   // Metadata
   createdAt: Date;
   updatedAt: Date;

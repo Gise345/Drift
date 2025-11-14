@@ -35,8 +35,9 @@ export default function VehicleInfo() {
   const [year, setYear] = useState('2024');
   const [color, setColor] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
+  const [vin, setVin] = useState('');
   const [seats, setSeats] = useState('4');
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const currentYear = new Date().getFullYear();
@@ -50,6 +51,11 @@ export default function VehicleInfo() {
     if (!year) newErrors.year = 'Vehicle year is required';
     if (!color) newErrors.color = 'Vehicle color is required';
     if (!licensePlate.trim()) newErrors.licensePlate = 'License plate is required';
+    if (!vin.trim()) {
+      newErrors.vin = 'VIN is required';
+    } else if (vin.trim().length !== 17) {
+      newErrors.vin = 'VIN must be exactly 17 characters';
+    }
     if (!seats) newErrors.seats = 'Number of seats is required';
 
     setErrors(newErrors);
@@ -62,6 +68,7 @@ export default function VehicleInfo() {
           year: parseInt(year),
           color,
           licensePlate: licensePlate.trim().toUpperCase(),
+          vin: vin.trim().toUpperCase(),
           seats: parseInt(seats),
           photos: {},
         },
@@ -167,6 +174,18 @@ export default function VehicleInfo() {
           onChangeText={setLicensePlate}
           autoCapitalize="characters"
           error={errors.licensePlate}
+        />
+
+        {/* VIN */}
+        <DriftInput
+          label="Vehicle Identification Number (VIN) *"
+          placeholder="1HGBH41JXMN109186"
+          value={vin}
+          onChangeText={setVin}
+          autoCapitalize="characters"
+          maxLength={17}
+          error={errors.vin}
+          helperText="17-character VIN found on vehicle registration"
         />
 
         {/* Seats */}

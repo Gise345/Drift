@@ -27,9 +27,8 @@ export default function LegalConsent() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToPeerToPeer, setAgreedToPeerToPeer] = useState(false);
   const [agreedToInsurance, setAgreedToInsurance] = useState(false);
-  const [agreedToTaxes, setAgreedToTaxes] = useState(false);
 
-  const canContinue = agreedToTerms && agreedToPeerToPeer && agreedToInsurance && agreedToTaxes;
+  const canContinue = agreedToTerms && agreedToPeerToPeer && agreedToInsurance;
 
   const handleContinue = () => {
     const currentPersonalInfo = useDriverStore.getState().registrationData.personalInfo;
@@ -157,7 +156,7 @@ export default function LegalConsent() {
             <View style={styles.checkboxContent}>
               <Text style={styles.checkboxLabel}>
                 I confirm I have valid vehicle insurance and understand I am responsible
-                for maintaining appropriate coverage for carpool activities.
+                for maintaining appropriate coverage for 3rd party.
               </Text>
             </View>
           </TouchableOpacity>
@@ -189,7 +188,7 @@ export default function LegalConsent() {
           <View style={styles.keyPoint}>
             <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
             <Text style={styles.keyPointText}>
-              No guaranteed earnings - you share rides voluntarily
+              Digital marketplace connecting independent users for carpooling
             </Text>
           </View>
 
@@ -203,7 +202,7 @@ export default function LegalConsent() {
           <View style={styles.keyPoint}>
             <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
             <Text style={styles.keyPointText}>
-              Platform fee: CI$25/week subscription (not commission)
+              18% platform service fee is applied to cover bank fees and operational costs to keep the app running
             </Text>
           </View>
 

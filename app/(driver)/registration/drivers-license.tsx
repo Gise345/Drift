@@ -29,7 +29,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function DriversLicense() {
   const router = useRouter();
-  const { addDocument, setRegistrationStep } = useDriverStore();
+  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
   
   const [frontImage, setFrontImage] = useState<string | null>(null);
   const [backImage, setBackImage] = useState<string | null>(null);
@@ -80,14 +80,14 @@ export default function DriversLicense() {
       return;
     }
 
-    // Save to store
-    addDocument({
-      id: 'license-' + Date.now(),
-      type: 'license',
-      status: 'pending',
-      frontImageUrl: frontImage,
-      backImageUrl: backImage,
-      uploadedAt: new Date(),
+    // Save to store in the correct format
+    updateRegistrationData({
+      documents: {
+        license: {
+          front: frontImage,
+          back: backImage,
+        },
+      },
     });
 
     setRegistrationStep(6);
