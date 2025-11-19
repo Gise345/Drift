@@ -103,12 +103,12 @@ export default function EarningsDashboard() {
             <Text style={styles.summaryValue}>CI${currentEarnings.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Platform Fee (CI$25/week)</Text>
-            <Text style={styles.summaryFee}>-CI$25.00</Text>
+            <Text style={styles.summaryLabel}>Platform Fee (18% for banking & maintenance)</Text>
+            <Text style={styles.summaryFee}>-CI${(currentEarnings * 0.18).toFixed(2)}</Text>
           </View>
           <View style={[styles.summaryRow, styles.summaryTotal]}>
             <Text style={styles.totalLabel}>Net Earnings</Text>
-            <Text style={styles.totalValue}>CI${(currentEarnings - 25).toFixed(2)}</Text>
+            <Text style={styles.totalValue}>CI${(currentEarnings * 0.82).toFixed(2)}</Text>
           </View>
         </View>
 

@@ -22,118 +22,149 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import {
+  NotificationService,
+  Notification as FirebaseNotification,
+  NotificationType,
+} from '@/src/services/notification.service';
 
-type NotificationType = 'ride' | 'earnings' | 'system' | 'document' | 'promo';
-
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
+interface Notification extends FirebaseNotification {
   icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
-  action?: string;
+  time: string;
 }
 
 export default function DriverInboxScreen() {
   const router = useRouter();
   const { driver } = useDriverStore();
 
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'ride',
-      title: 'New Ride Request',
-      message: 'John D. requested a ride to Seven Mile Beach',
-      time: '5 min ago',
-      read: false,
-      icon: 'car-sport',
-      iconColor: Colors.primary,
-      action: '/(driver)/requests/123',
-    },
-    {
-      id: '2',
-      type: 'earnings',
-      title: 'Weekly Earnings Summary',
-      message: 'You earned $450.50 this week with 32 trips',
-      time: '1 hour ago',
-      read: false,
-      icon: 'wallet',
-      iconColor: Colors.success,
-      action: '/(driver)/tabs/earnings',
-    },
-    {
-      id: '3',
-      type: 'document',
-      title: 'Document Expiring Soon',
-      message: 'Your vehicle insurance expires in 15 days',
-      time: '3 hours ago',
-      read: true,
-      icon: 'alert-circle',
-      iconColor: Colors.warning,
-      action: '/(driver)/profile/documents',
-    },
-    {
-      id: '4',
-      type: 'system',
-      title: 'Rating Update',
-      message: 'Great job! Your rating increased to 4.9 ⭐',
-      time: '1 day ago',
-      read: true,
-      icon: 'star',
-      iconColor: Colors.warning,
-    },
-    {
-      id: '5',
-      type: 'promo',
-      title: 'Weekend Bonus!',
-      message: 'Complete 20 trips this weekend and earn $50 bonus',
-      time: '2 days ago',
-      read: true,
-      icon: 'gift',
-      iconColor: Colors.info,
-    },
-  ]);
-
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    // TODO: Load notifications from Firebase
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1000);
-  };
-
-  const handleNotificationPress = (notification: Notification) => {
-    // Mark as read
-    setNotifications(prev =>
-      prev.map(n =>
-        n.id === notification.id ? { ...n, read: true } : n
-      )
-    );
-
-    // Navigate if action exists
-    if (notification.action) {
-      router.push(notification.action as any);
+  // Helper function to get icon and color for notification type
+  const getNotificationIconAndColor = (type: NotificationType): { icon: keyof typeof Ionicons.glyphMap; iconColor: string } => {
+    switch (type) {
+      case 'ride':
+        return { icon: 'car-sport', iconColor: Colors.primary };
+      case 'earnings':
+        return { icon: 'wallet', iconColor: Colors.success };
+      case 'document':
+        return { icon: 'alert-circle', iconColor: Colors.warning };
+      case 'system':
+        return { icon: 'star', iconColor: Colors.info };
+      case 'promo':
+        return { icon: 'gift', iconColor: Colors.info };
+      default:
+        return { icon: 'notifications', iconColor: Colors.gray[600] };
     }
   };
 
-  const handleMarkAllRead = () => {
-    setNotifications(prev =>
-      prev.map(n => ({ ...n, read: true }))
-    );
+  // Helper function to format time
+  const formatTime = (date: Date): string => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (minutes < 60) {
+      return `${minutes} min ago`;
+    } else if (hours < 24) {
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else {
+      return `${days} day${days > 1 ? 's' : ''} ago`;
+    }
+  };
+
+  // Load notifications from Firebase
+  useEffect(() => {
+    loadNotifications();
+  }, [driver?.id]);
+
+  const loadNotifications = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const firebaseNotifications = await NotificationService.getNotifications(driver.id);
+
+      // Map Firebase notifications to app format
+      const mappedNotifications: Notification[] = firebaseNotifications.map(notif => {
+        const { icon, iconColor } = getNotificationIconAndColor(notif.type);
+        return {
+          ...notif,
+          icon,
+          iconColor,
+          time: formatTime(notif.createdAt),
+        };
+      });
+
+      setNotifications(mappedNotifications);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadNotifications();
+    setRefreshing(false);
+  };
+
+  const handleNotificationPress = async (notification: Notification) => {
+    if (!driver?.id) return;
+
+    try {
+      // Mark as read in Firebase
+      if (!notification.read) {
+        await NotificationService.markAsRead(notification.id);
+      }
+
+      // Update local state
+      setNotifications(prev =>
+        prev.map(n =>
+          n.id === notification.id ? { ...n, read: true } : n
+        )
+      );
+
+      // Navigate if action exists
+      if (notification.action) {
+        router.push(notification.action as any);
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    if (!driver?.id) return;
+
+    try {
+      await NotificationService.markAllAsRead(driver.id);
+
+      // Update local state
+      setNotifications(prev =>
+        prev.map(n => ({ ...n, read: true }))
+      );
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+      Alert.alert('Error', 'Failed to mark all as read');
+    }
   };
 
   const handleClearAll = () => {
+    if (!driver?.id) return;
+
     Alert.alert(
       'Clear All Notifications',
       'Are you sure you want to clear all notifications?',
@@ -142,7 +173,15 @@ export default function DriverInboxScreen() {
         {
           text: 'Clear',
           style: 'destructive',
-          onPress: () => setNotifications([]),
+          onPress: async () => {
+            try {
+              await NotificationService.deleteAllNotifications(driver.id);
+              setNotifications([]);
+            } catch (error) {
+              console.error('Error clearing notifications:', error);
+              Alert.alert('Error', 'Failed to clear notifications');
+            }
+          },
         },
       ]
     );
@@ -153,6 +192,19 @@ export default function DriverInboxScreen() {
   );
 
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading notifications...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>

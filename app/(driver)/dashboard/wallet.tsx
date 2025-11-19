@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,70 +8,61 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
-
-type Transaction = {
-  id: string;
-  type: 'ride' | 'tip' | 'bonus' | 'cashout' | 'fee';
-  amount: number;
-  description: string;
-  date: Date;
-  status: 'completed' | 'pending' | 'failed';
-};
+import {
+  TransactionService,
+  Transaction,
+  WalletBalance,
+} from '@/src/services/transaction.service';
 
 export default function Wallet() {
   const router = useRouter();
-  const { balance, earnings } = useDriverStore();
+  const { driver, balance: storeBalance, earnings } = useDriverStore();
+
   const [showCashoutModal, setShowCashoutModal] = useState(false);
   const [cashoutAmount, setCashoutAmount] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
-  // Mock transactions - replace with real data from store
-  const transactions: Transaction[] = [
-    {
-      id: '1',
-      type: 'ride',
-      amount: 15.50,
-      description: 'Trip to Seven Mile Beach',
-      date: new Date(),
-      status: 'completed',
-    },
-    {
-      id: '2',
-      type: 'tip',
-      amount: 3.00,
-      description: 'Tip from Sarah M.',
-      date: new Date(),
-      status: 'completed',
-    },
-    {
-      id: '3',
-      type: 'fee',
-      amount: -25.00,
-      description: 'Weekly platform fee',
-      date: new Date(Date.now() - 86400000),
-      status: 'completed',
-    },
-    {
-      id: '4',
-      type: 'bonus',
-      amount: 10.00,
-      description: 'Peak hour bonus',
-      date: new Date(Date.now() - 86400000),
-      status: 'completed',
-    },
-    {
-      id: '5',
-      type: 'cashout',
-      amount: -150.00,
-      description: 'Cash out to bank account',
-      date: new Date(Date.now() - 172800000),
-      status: 'completed',
-    },
-  ];
+  const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  // Load wallet data from Firebase
+  useEffect(() => {
+    loadWalletData();
+  }, [driver?.id]);
+
+  const loadWalletData = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const [balance, txns] = await Promise.all([
+        TransactionService.getWalletBalance(driver.id),
+        TransactionService.getRecentTransactions(driver.id),
+      ]);
+
+      setWalletBalance(balance);
+      setTransactions(txns);
+    } catch (error) {
+      console.error('Error loading wallet data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadWalletData();
+    setRefreshing(false);
+  };
 
   const getTransactionIcon = (type: string) => {
     switch (type) {
@@ -104,11 +95,53 @@ export default function Wallet() {
     }
   };
 
-  const handleCashout = () => {
-    // Implement cashout logic
-    setShowCashoutModal(false);
-    setCashoutAmount('');
+  const handleCashout = async () => {
+    if (!driver?.id || !cashoutAmount) return;
+
+    const amount = parseFloat(cashoutAmount);
+    if (isNaN(amount) || amount < 25) {
+      alert('Please enter a valid amount (minimum CI$25)');
+      return;
+    }
+
+    if (!walletBalance || walletBalance.available < amount) {
+      alert('Insufficient balance');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      await TransactionService.requestCashout(driver.id, amount, 'bank_account');
+
+      // Reload wallet data
+      await loadWalletData();
+
+      setShowCashoutModal(false);
+      setCashoutAmount('');
+      alert('Cashout requested successfully!');
+    } catch (error: any) {
+      console.error('Error requesting cashout:', error);
+      alert(error.message || 'Failed to request cashout');
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading wallet...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const currentBalance = walletBalance?.available || 0;
+  const pendingBalance = walletBalance?.pending || 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -123,26 +156,31 @@ export default function Wallet() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Balance Card */}
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Available Balance</Text>
           <View style={styles.balanceAmount}>
             <Text style={styles.currencySymbol}>CI$</Text>
-            <Text style={styles.balanceValue}>{balance.toFixed(2)}</Text>
+            <Text style={styles.balanceValue}>{currentBalance.toFixed(2)}</Text>
           </View>
           <Text style={styles.pendingText}>
-            Pending: CI${(earnings.today * 0.1).toFixed(2)}
+            Pending: CI${pendingBalance.toFixed(2)}
           </Text>
           <TouchableOpacity
             style={styles.cashoutButton}
             onPress={() => setShowCashoutModal(true)}
-            disabled={balance < 25}
+            disabled={currentBalance < 25}
           >
             <Ionicons name="arrow-down-circle" size={20} color={Colors.white} />
             <Text style={styles.cashoutButtonText}>Cash Out</Text>
           </TouchableOpacity>
-          {balance < 25 && (
+          {currentBalance < 25 && (
             <Text style={styles.minimumText}>Minimum CI$25 required to cash out</Text>
           )}
         </View>
@@ -302,12 +340,16 @@ export default function Wallet() {
               <TouchableOpacity
                 style={[
                   styles.confirmButton,
-                  (!cashoutAmount || parseFloat(cashoutAmount) < 25) && styles.confirmButtonDisabled,
+                  (processing || !cashoutAmount || parseFloat(cashoutAmount) < 25) && styles.confirmButtonDisabled,
                 ]}
                 onPress={handleCashout}
-                disabled={!cashoutAmount || parseFloat(cashoutAmount) < 25}
+                disabled={processing || !cashoutAmount || parseFloat(cashoutAmount) < 25}
               >
-                <Text style={styles.confirmButtonText}>Confirm Cash Out</Text>
+                {processing ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Confirm Cash Out</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

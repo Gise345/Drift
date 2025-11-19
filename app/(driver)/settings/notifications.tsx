@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   SafeAreaView,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { NotificationService, NotificationPreferences } from '@/src/services/notification.service';
 
 /**
  * NOTIFICATION PREFERENCES SCREEN
@@ -34,6 +37,10 @@ interface NotificationSetting {
 }
 
 export default function NotificationPreferencesScreen() {
+  const { driver } = useDriverStore();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [settings, setSettings] = useState<NotificationSetting[]>([
     {
       id: 'master',
@@ -97,6 +104,54 @@ export default function NotificationPreferencesScreen() {
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [inAppEnabled, setInAppEnabled] = useState(true);
 
+  // Load preferences from Firebase
+  useEffect(() => {
+    loadPreferences();
+  }, [driver?.id]);
+
+  const loadPreferences = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const prefs = await NotificationService.getPreferences(driver.id);
+
+      if (prefs) {
+        // Update settings based on loaded preferences
+        setSettings(prev => prev.map(setting => {
+          switch (setting.id) {
+            case 'master':
+              return { ...setting, enabled: prefs.pushEnabled };
+            case 'ride_requests':
+              return { ...setting, enabled: prefs.rideRequests };
+            case 'ride_updates':
+              return { ...setting, enabled: prefs.rideUpdates };
+            case 'earnings':
+              return { ...setting, enabled: prefs.earnings };
+            case 'promotions':
+              return { ...setting, enabled: prefs.promotions };
+            case 'tips':
+              return { ...setting, enabled: prefs.tips };
+            case 'system':
+              return { ...setting, enabled: prefs.system };
+            case 'reminders':
+              return { ...setting, enabled: prefs.reminders };
+            default:
+              return setting;
+          }
+        }));
+
+        setSoundEnabled(prefs.sound);
+        setVibrationEnabled(prefs.vibration);
+        setInAppEnabled(prefs.inApp);
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleSetting = (id: string) => {
     if (id === 'master') {
       const newValue = !settings.find(s => s.id === 'master')?.enabled;
@@ -122,11 +177,65 @@ export default function NotificationPreferencesScreen() {
     }
   };
 
-  const saveSettings = () => {
-    // TODO: Save to Firebase/AsyncStorage
-    Alert.alert('Success', 'Notification preferences saved!');
-    router.back();
+  const saveSettings = async () => {
+    if (!driver?.id) {
+      Alert.alert('Error', 'Driver not found');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      // Build preferences object from current settings
+      const masterSetting = settings.find(s => s.id === 'master');
+      const rideRequestsSetting = settings.find(s => s.id === 'ride_requests');
+      const rideUpdatesSetting = settings.find(s => s.id === 'ride_updates');
+      const earningsSetting = settings.find(s => s.id === 'earnings');
+      const promotionsSetting = settings.find(s => s.id === 'promotions');
+      const tipsSetting = settings.find(s => s.id === 'tips');
+      const systemSetting = settings.find(s => s.id === 'system');
+      const remindersSetting = settings.find(s => s.id === 'reminders');
+
+      const preferences: NotificationPreferences = {
+        driverId: driver.id,
+        pushEnabled: masterSetting?.enabled ?? true,
+        rideRequests: rideRequestsSetting?.enabled ?? true,
+        rideUpdates: rideUpdatesSetting?.enabled ?? true,
+        earnings: earningsSetting?.enabled ?? true,
+        promotions: promotionsSetting?.enabled ?? true,
+        tips: tipsSetting?.enabled ?? true,
+        system: systemSetting?.enabled ?? true,
+        reminders: remindersSetting?.enabled ?? true,
+        sound: soundEnabled,
+        vibration: vibrationEnabled,
+        inApp: inAppEnabled,
+        updatedAt: new Date(),
+      };
+
+      await NotificationService.savePreferences(preferences);
+
+      Alert.alert('Success', 'Notification preferences saved!');
+      router.back();
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      Alert.alert('Error', 'Failed to save preferences. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary[500]} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading preferences...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -325,8 +434,16 @@ export default function NotificationPreferencesScreen() {
 
       {/* Save Button */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
-          <Text style={styles.saveButtonText}>Save Preferences</Text>
+        <TouchableOpacity
+          style={[styles.saveButton, saving && { opacity: 0.6 }]}
+          onPress={saveSettings}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.saveButtonText}>Save Preferences</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

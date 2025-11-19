@@ -1,19 +1,71 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Shadows } from '@/src/constants/theme';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { EarningsService } from '@/src/services/earnings.service';
 
 export default function WeeklySummaryScreen() {
-  const summary = {
-    week: 'Nov 4-10, 2024',
-    totalEarnings: 1250.00,
-    totalTrips: 42,
-    hoursOnline: 28,
-    avgRating: 4.9,
-    topDay: 'Friday',
-    topDayEarnings: 385.00,
+  const { driver, stats } = useDriverStore();
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState({
+    week: '',
+    totalEarnings: 0,
+    totalTrips: 0,
+    hoursOnline: 0,
+    avgRating: 0,
+    topDay: '',
+    topDayEarnings: 0,
+  });
+
+  useEffect(() => {
+    loadWeeklySummary();
+  }, [driver?.id]);
+
+  const loadWeeklySummary = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const weeklyData = await EarningsService.getWeeklyEarnings(driver.id);
+
+      // Format week dates
+      const startOfWeek = new Date();
+      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+      const weekFormat = `${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+      setSummary({
+        week: weekFormat,
+        totalEarnings: weeklyData.amount,
+        totalTrips: weeklyData.trips,
+        hoursOnline: weeklyData.hours,
+        avgRating: stats?.rating || 0,
+        topDay: 'Friday', // TODO: Calculate from daily data
+        topDayEarnings: weeklyData.amount * 0.25, // Estimate
+      });
+    } catch (error) {
+      console.error('Error loading weekly summary:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading summary...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>

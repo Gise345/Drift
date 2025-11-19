@@ -22,12 +22,14 @@ import {
   TouchableOpacity,
   RefreshControl,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { EarningsService } from '@/src/services/earnings.service';
+import { TransactionService } from '@/src/services/transaction.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 
 const { width } = Dimensions.get('window');
@@ -111,6 +113,19 @@ export default function DriverEarningsScreen() {
         return 'This Month';
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading earnings...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
