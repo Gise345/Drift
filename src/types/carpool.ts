@@ -8,6 +8,12 @@ export interface Location {
   longitude: number;
 }
 
+// Import pricing types from carpool-store
+import type { PricingResult, ZoneInfo, PricingBreakdown } from '../stores/carpool-store';
+
+// Re-export for convenience
+export type { PricingResult, ZoneInfo, PricingBreakdown };
+
 export interface CarpoolRequest {
   id: string;
   riderId: string;
@@ -20,6 +26,10 @@ export interface CarpoolRequest {
   expiresAt: Date;
   matchedDriverId?: string;
   estimatedCost?: number;
+  
+  // ✅ NEW: Zone-based pricing fields
+  pricing?: PricingResult;
+  lockedContribution?: number;
 }
 
 export interface CarpoolTrip {
@@ -36,6 +46,10 @@ export interface CarpoolTrip {
   completedAt?: Date;
   sharedCost?: number;
   rating?: number;
+  
+  // ✅ NEW: Zone-based pricing fields
+  pricing?: PricingResult;
+  lockedContribution?: number;
 }
 
 export interface SavedRoute {

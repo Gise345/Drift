@@ -16,6 +16,47 @@ interface EstimatedCost {
   currency: string;
 }
 
+// ============================================================================
+// PRICING TYPES - Zone-Based Pricing System
+// ============================================================================
+
+export interface PricingBreakdown {
+  baseZoneFee?: number;
+  distanceCost?: number;
+  timeCost?: number;
+  flatRate?: number;
+  timeMultiplier?: number;
+  timeMultiplierName?: string;
+}
+
+export interface PricingResult {
+  pickupZoneId: string;
+  pickupZoneName: string;
+  destinationZoneId: string;
+  destinationZoneName: string;
+  isWithinZone: boolean;
+  isAirportTrip: boolean;
+  breakdown: PricingBreakdown;
+  suggestedContribution: number;
+  minContribution: number;
+  maxContribution: number;
+  displayText: string;
+  calculatedAt: Date;
+}
+
+export interface ZoneInfo {
+  pickupZone: {
+    id: string;
+    name: string;
+    displayName: string;
+  } | null;
+  destinationZone: {
+    id: string;
+    name: string;
+    displayName: string;
+  } | null;
+}
+
 interface CarpoolState {
   // Current requests and trips
   activeRequest: CarpoolRequest | null;
@@ -30,6 +71,13 @@ interface CarpoolState {
   estimatedCost: EstimatedCost | null;
   selectedPaymentMethod: string | null;
 
+  // ============================================================================
+  // PRICING STATE - Zone-Based Pricing
+  // ============================================================================
+  pricing: PricingResult | null; // Full pricing calculation result
+  zoneInfo: ZoneInfo | null; // Zone information for pickup and destination
+  lockedContribution: number | null; // Amount locked when request is created (CANNOT CHANGE)
+
   // History
   recentActivity: RecentActivityItem[];
   savedRoutes: SavedRoute[];
@@ -40,6 +88,7 @@ interface CarpoolState {
 
   // Loading states
   isLoading: boolean;
+  isPricingCalculating: boolean;
 
   // Actions - Booking Flow
   setPickupLocation: (location: Location | null) => void;
@@ -52,6 +101,15 @@ interface CarpoolState {
   setEstimatedCost: (cost: EstimatedCost | null) => void;
   setSelectedPaymentMethod: (method: string | null) => void;
   clearBookingFlow: () => void;
+
+  // ============================================================================
+  // PRICING ACTIONS - Zone-Based Pricing
+  // ============================================================================
+  setPricing: (pricing: PricingResult | null) => void;
+  setZoneInfo: (zoneInfo: ZoneInfo | null) => void;
+  lockContribution: (amount: number) => void;
+  clearPricing: () => void;
+  setPricingCalculating: (calculating: boolean) => void;
 
   // Actions - Requests & Trips
   setActiveRequest: (request: CarpoolRequest | null) => void;
@@ -84,17 +142,25 @@ const initialState = {
   vehicleType: null,
   estimatedCost: null,
   selectedPaymentMethod: null,
+  
+  // Pricing initial state
+  pricing: null,
+  zoneInfo: null,
+  lockedContribution: null,
+  
   recentActivity: [],
   savedRoutes: [],
   totalTrips: 0,
   activeTripsCount: 0,
   isLoading: false,
+  isPricingCalculating: false,
 };
 
 /**
  * Zustand store for managing carpool-related state
  * Handles active requests, trips, booking flow, activity history, and saved routes
  * NOW WITH MULTI-STOP SUPPORT (up to 2 additional stops)
+ * NOW WITH ZONE-BASED PRICING SYSTEM
  */
 export const useCarpoolStore = create<CarpoolState>((set) => ({
   ...initialState,
@@ -133,7 +199,31 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
     vehicleType: null,
     estimatedCost: null,
     selectedPaymentMethod: null,
+    pricing: null,
+    zoneInfo: null,
+    lockedContribution: null,
   }),
+
+  // ============================================================================
+  // PRICING ACTIONS - Zone-Based Pricing
+  // ============================================================================
+  
+  setPricing: (pricing) => set({ pricing }),
+  
+  setZoneInfo: (zoneInfo) => set({ zoneInfo }),
+  
+  lockContribution: (amount) => {
+    console.log('🔒 Locking contribution amount:', amount);
+    set({ lockedContribution: amount });
+  },
+  
+  clearPricing: () => set({ 
+    pricing: null, 
+    zoneInfo: null, 
+    lockedContribution: null 
+  }),
+  
+  setPricingCalculating: (calculating) => set({ isPricingCalculating: calculating }),
 
   // Request & Trip Actions
   setActiveRequest: (request) => set({ activeRequest: request }),

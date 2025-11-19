@@ -12,6 +12,21 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import type { PricingResult } from '@/src/stores/carpool-store';
+
+// Extend the request interface to include pricing
+interface RideRequestWithPricing {
+  id: string;
+  riderName: string;
+  riderRating: number;
+  pickup: { address: string };
+  destination: { address: string };
+  estimatedEarnings: number;
+  estimatedDuration: number;
+  expiresAt: Date;
+  pricing?: PricingResult;
+  lockedContribution?: number;
+}
 
 export default function IncomingRequests() {
   const router = useRouter();
@@ -45,6 +60,10 @@ export default function IncomingRequests() {
   };
 
   const handleAccept = async (requestId: string) => {
+    const request = incomingRequests.find(r => r.id === requestId) as any;
+    if (request?.lockedContribution) {
+      console.log('💰 Driver accepting ride with locked contribution:', request.lockedContribution);
+    }
     await acceptRequest(requestId);
     router.push('/(driver)/active-ride/navigate-to-pickup');
   };
@@ -109,9 +128,14 @@ export default function IncomingRequests() {
               </Text>
             </View>
 
-            {sortedRequests.map((request) => {
+            {sortedRequests.map((request: any) => {
               const timeRemaining = timers[request.id] || 0;
               const isExpiringSoon = timeRemaining <= 5;
+              
+              // Get the locked contribution or pricing
+              const contributionAmount = request.lockedContribution || 
+                                        request.pricing?.suggestedContribution || 
+                                        request.estimatedEarnings;
 
               return (
                 <View
@@ -146,15 +170,19 @@ export default function IncomingRequests() {
                         <View style={styles.ratingRow}>
                           <Ionicons name="star" size={14} color={Colors.primary} />
                           <Text style={styles.riderRating}>{request.riderRating}</Text>
-                          <Text style={styles.tripCount}>• {(request as any).riderTrips || 0} trips</Text>
+                          <Text style={styles.tripCount}>• {request.riderTrips || 0} trips</Text>
                         </View>
                       </View>
                     </View>
+                    
+                    {/* ✅ UPDATED: Show Locked Contribution */}
                     <View style={styles.earningsBox}>
                       <Text style={styles.earningsAmount}>
-                        CI${request.estimatedEarnings.toFixed(2)}
+                        CI${contributionAmount?.toFixed(2)}
                       </Text>
-                      <Text style={styles.earningsLabel}>Est. earnings</Text>
+                      <Text style={styles.earningsLabel}>
+                        {request.lockedContribution ? 'Locked amount' : 'Est. earnings'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
 
@@ -181,6 +209,55 @@ export default function IncomingRequests() {
                     </View>
                   </View>
 
+                  {/* ✅ NEW: Zone Route Display */}
+                  {request.pricing?.displayText && (
+                    <View style={styles.zoneContainer}>
+                      <Text style={styles.zoneText}>{request.pricing.displayText}</Text>
+                      
+                      {/* Zone Type Badge */}
+                      <View style={styles.zoneBadge}>
+                        {request.pricing.isWithinZone ? (
+                          <Text style={styles.zoneBadgeText}>Within Zone</Text>
+                        ) : request.pricing.isAirportTrip ? (
+                          <Text style={styles.zoneBadgeText}>✈️ Airport</Text>
+                        ) : (
+                          <Text style={styles.zoneBadgeText}>Cross Zone</Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ✅ NEW: Pricing Breakdown (for cross-zone trips) */}
+                  {request.pricing && !request.pricing.isWithinZone && !request.pricing.isAirportTrip && (
+                    <View style={styles.breakdownCard}>
+                      <Text style={styles.breakdownTitle}>Contribution Breakdown:</Text>
+                      {request.pricing.breakdown.baseZoneFee !== undefined && (
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Base:</Text>
+                          <Text style={styles.breakdownValue}>
+                            CI${request.pricing.breakdown.baseZoneFee.toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
+                      {request.pricing.breakdown.distanceCost !== undefined && (
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Distance:</Text>
+                          <Text style={styles.breakdownValue}>
+                            CI${request.pricing.breakdown.distanceCost.toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
+                      {request.pricing.breakdown.timeCost !== undefined && (
+                        <View style={styles.breakdownRow}>
+                          <Text style={styles.breakdownLabel}>Time:</Text>
+                          <Text style={styles.breakdownValue}>
+                            CI${request.pricing.breakdown.timeCost.toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   {/* Trip Info */}
                   <View style={styles.tripInfo}>
                     <View style={styles.tripInfoItem}>
@@ -195,7 +272,7 @@ export default function IncomingRequests() {
                     </View>
                     <View style={styles.tripInfoItem}>
                       <Ionicons name="people" size={16} color={Colors.gray[600]} />
-                      <Text style={styles.tripInfoText}>{(request as any).passengers || 1} passengers</Text>
+                      <Text style={styles.tripInfoText}>{request.passengers || 1} passengers</Text>
                     </View>
                   </View>
 
@@ -217,6 +294,15 @@ export default function IncomingRequests() {
                     </Text>
                   </View>
 
+                  {/* ✅ NEW: Legal Notice for Locked Amount */}
+                  {request.lockedContribution && (
+                    <View style={styles.legalNotice}>
+                      <Text style={styles.legalText}>
+                        This contribution amount is locked and cannot be changed
+                      </Text>
+                    </View>
+                  )}
+
                   {/* Actions */}
                   <View style={styles.actions}>
                     <TouchableOpacity
@@ -231,7 +317,9 @@ export default function IncomingRequests() {
                       onPress={() => handleAccept(request.id)}
                     >
                       <Ionicons name="checkmark" size={20} color={Colors.white} />
-                      <Text style={styles.acceptText}>Accept</Text>
+                      <Text style={styles.acceptText}>
+                        Accept - CI${contributionAmount?.toFixed(2)}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -253,8 +341,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray[200],
   },
@@ -264,89 +352,83 @@ const styles = StyleSheet.create({
   headerCenter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   headerTitle: {
-    fontSize: Typography.fontSize.lg,
+    ...Typography.heading3,
     fontWeight: '600',
-    color: Colors.black,
   },
   countBadge: {
     backgroundColor: Colors.primary,
-    borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    minWidth: 20,
+    borderRadius: 12,
+    minWidth: 24,
     alignItems: 'center',
   },
   countText: {
-    fontSize: Typography.fontSize.xs,
+    ...Typography.caption,
     fontWeight: '700',
-    color: Colors.white,
+    color: Colors.black,
   },
   scrollContent: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    padding: Spacing.md,
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: Spacing['3xl'],
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: Spacing.lg,
   },
   emptyTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '600',
-    color: Colors.black,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
+    ...Typography.heading2,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
   },
   emptyMessage: {
-    fontSize: Typography.fontSize.sm,
+    ...Typography.body,
     color: Colors.gray[600],
     textAlign: 'center',
-    paddingHorizontal: Spacing['2xl'],
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   goOnlineButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing['2xl'],
+    borderRadius: 25,
   },
   goOnlineText: {
-    fontSize: Typography.fontSize.base,
+    ...Typography.body,
     fontWeight: '600',
-    color: Colors.white,
+    color: Colors.black,
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
-    backgroundColor: Colors.primary + '10',
-    borderRadius: 12,
+    backgroundColor: Colors.primary + '20',
     padding: Spacing.md,
-    marginTop: Spacing.lg,
+    borderRadius: 12,
     marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   infoText: {
     flex: 1,
-    fontSize: Typography.fontSize.sm,
+    ...Typography.caption,
     color: Colors.gray[700],
-    lineHeight: 18,
   },
   requestCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   requestCardExpiring: {
+    borderWidth: 2,
     borderColor: Colors.error,
   },
   timerBar: {
@@ -355,25 +437,27 @@ const styles = StyleSheet.create({
   },
   timerFill: {
     height: '100%',
+    backgroundColor: Colors.primary,
   },
   requestHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    padding: Spacing.lg,
+    padding: Spacing.md,
   },
   riderInfo: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     flex: 1,
   },
   riderDetails: {
-    marginLeft: Spacing.md,
-    justifyContent: 'center',
+    flex: 1,
   },
   riderName: {
-    fontSize: Typography.fontSize.base,
+    ...Typography.body,
     fontWeight: '600',
-    color: Colors.black,
-    marginBottom: Spacing.xs,
+    marginBottom: 2,
   },
   ratingRow: {
     flexDirection: 'row',
@@ -381,76 +465,130 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   riderRating: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
+    ...Typography.caption,
+    fontWeight: '600',
   },
   tripCount: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[500],
+    ...Typography.caption,
+    color: Colors.gray[600],
   },
   earningsBox: {
     alignItems: 'flex-end',
-    justifyContent: 'center',
   },
   earningsAmount: {
-    fontSize: Typography.fontSize.xl,
+    ...Typography.heading3,
     fontWeight: '700',
     color: Colors.success,
-    marginBottom: 2,
   },
   earningsLabel: {
-    fontSize: Typography.fontSize.xs,
+    ...Typography.caption,
     color: Colors.gray[600],
   },
   routeSection: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
   },
   routeLine: {
-    width: 20,
     alignItems: 'center',
-    marginRight: Spacing.md,
+    paddingTop: 4,
   },
   pickupDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: Colors.success,
   },
   routeDashes: {
-    flex: 1,
     width: 2,
+    height: 30,
     backgroundColor: Colors.gray[300],
     marginVertical: 4,
   },
   destinationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: Colors.error,
   },
   routeDetails: {
     flex: 1,
-    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   locationText: {
-    flex: 1,
-    fontSize: Typography.fontSize.sm,
+    ...Typography.body,
     color: Colors.gray[700],
+    flex: 1,
+  },
+  // Zone-based pricing styles
+  zoneContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.gray[50],
+  },
+  zoneText: {
+    ...Typography.caption,
+    fontWeight: '600',
+    color: Colors.purple || '#5d1289ff',
+    flex: 1,
+  },
+  zoneBadge: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.gray[300],
+  },
+  zoneBadgeText: {
+    ...Typography.caption,
+    fontWeight: '600',
+    color: Colors.gray[700],
+    fontSize: 10,
+  },
+  breakdownCard: {
+    marginHorizontal: Spacing.md,
+    marginVertical: Spacing.sm,
+    padding: Spacing.sm,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 8,
+  },
+  breakdownTitle: {
+    ...Typography.caption,
+    fontWeight: '600',
+    color: Colors.gray[700],
+    marginBottom: 6,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  breakdownLabel: {
+    ...Typography.caption,
+    color: Colors.gray[600],
+  },
+  breakdownValue: {
+    ...Typography.caption,
+    fontWeight: '600',
+    color: Colors.gray[800],
   },
   tripInfo: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[200],
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[100],
   },
   tripInfoItem: {
     flexDirection: 'row',
@@ -458,58 +596,69 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   tripInfoText: {
-    fontSize: Typography.fontSize.xs,
+    ...Typography.caption,
     color: Colors.gray[600],
   },
   timerSection: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.gray[50],
+    gap: Spacing.xs,
   },
   timerText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
+    ...Typography.caption,
+    color: Colors.primary,
   },
   timerValue: {
     fontWeight: '700',
   },
+  legalNotice: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    backgroundColor: Colors.gray[50],
+  },
+  legalText: {
+    fontSize: 10,
+    color: Colors.gray[600],
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
   actions: {
     flexDirection: 'row',
-    gap: Spacing.md,
-    padding: Spacing.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
   },
   declineButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
     backgroundColor: Colors.white,
     borderWidth: 2,
     borderColor: Colors.error,
-    borderRadius: 12,
     paddingVertical: Spacing.md,
+    borderRadius: 25,
+    gap: Spacing.xs,
   },
   declineText: {
-    fontSize: Typography.fontSize.base,
+    ...Typography.body,
     fontWeight: '600',
     color: Colors.error,
   },
   acceptButton: {
-    flex: 1,
+    flex: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
+    backgroundColor: Colors.black,
     paddingVertical: Spacing.md,
+    borderRadius: 25,
+    gap: Spacing.xs,
   },
   acceptText: {
-    fontSize: Typography.fontSize.base,
+    ...Typography.body,
     fontWeight: '600',
     color: Colors.white,
   },

@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Region, LatLng } from 'react-native-maps';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
 
 /**
  * SELECT DESTINATION SCREEN - ULTIMATE FIX v2
@@ -50,7 +51,6 @@ const SelectDestinationScreen = () => {
   const [distanceMiles, setDistanceMiles] = useState(0);
   const [durationMinutes, setDurationMinutes] = useState(0);
   const [region, setRegion] = useState<Region | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showPolyline, setShowPolyline] = useState(false); // Control polyline visibility
   
   const mapRef = useRef<MapView>(null);
@@ -234,7 +234,6 @@ const SelectDestinationScreen = () => {
 
     const currentRequestId = ++requestIdRef.current;
     setLoading(true);
-    setError(null);
 
     try {
       const origin = `${pickupLocation.latitude},${pickupLocation.longitude}`;
@@ -332,15 +331,29 @@ const SelectDestinationScreen = () => {
       } else {
         console.error('❌ Directions API error:', data.status);
         console.error('Error message:', data.error_message);
-        setError(data.error_message || 'Could not calculate route');
         calculateFallbackRoute();
         setLoading(false);
       }
     } catch (error) {
       console.error('❌ Route fetch error:', error);
-      setError(error instanceof Error ? error.message : 'Unknown error');
       calculateFallbackRoute();
       setLoading(false);
+
+        // ✅ ZONE DETECTION: Detect zones for pricing
+        const pickupZone = detectZone(pickupLocation.latitude, pickupLocation.longitude);
+        const destZone = detectZone(destination.latitude, destination.longitude);
+        
+        if (pickupZone && destZone) {
+          console.log('📍 Zones detected:', {
+            pickup: pickupZone.displayName,
+            destination: destZone.displayName,
+          });
+        } else {
+          Alert.alert(
+            'Service Area', 
+            'Pickup or destination is outside our service area (Grand Cayman). Please select locations within Grand Cayman.'
+          );
+        }
     }
   };
 

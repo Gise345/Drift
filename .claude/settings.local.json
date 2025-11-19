@@ -17,7 +17,19 @@
       "Bash(./gradlew:*)",
       "Bash(gradlew.bat signingReport:*)",
       "Bash(./get-sha1.bat)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(git add:*)",
+      "Bash(NUL)",
+      "Bash(.gitignore)",
+      "Bash(if exist nulnul del nulnul)",
+      "Bash(del \".\\nul\" 2)",
+      "Bash(cmd /c \"del \\\\?\\%CD%\\nul\" 2)",
+      "Bash(npx expo start:*)",
+      "Bash(timeout /t 3)",
+      "Bash(nul)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(ping:*)"
     ],
     "deny": [],
     "ask": []

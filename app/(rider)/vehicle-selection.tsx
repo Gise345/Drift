@@ -12,6 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { calculateTripPricing } from '@/src/utils/pricing/drift-pricing-engine';
+import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
+import type { PricingResult } from '@/src/stores/carpool-store';
 
 const Colors = {
   primary: '#D4E700',
@@ -49,16 +52,105 @@ interface VehicleOption {
 
 export default function VehicleSelectionScreen() {
   const router = useRouter();
-  const { route, setVehicleType, setEstimatedCost, destination } = useCarpoolStore();
+  const { 
+    route, 
+    pickupLocation,
+    destination,
+    setVehicleType, 
+    setEstimatedCost,
+    setPricing,
+    setZoneInfo,
+    lockContribution,
+    pricing,
+    isPricingCalculating,
+    setPricingCalculating,
+  } = useCarpoolStore();
   
   const [selectedVehicle, setSelectedVehicle] = useState<string>('standard');
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
 
+  // Calculate zone-based pricing when route is available
+  useEffect(() => {
+    if (route && pickupLocation && destination) {
+      calculateZoneBasedPricing();
+    }
+  }, [route, pickupLocation, destination]);
+
   // Load vehicle options based on route
   useEffect(() => {
     loadVehicleOptions();
   }, [route]);
+
+  const calculateZoneBasedPricing = async () => {
+    try {
+      setPricingCalculating(true);
+
+      console.log('🔍 Detecting zones for:');
+      console.log('  Pickup:', pickupLocation!.latitude, pickupLocation!.longitude);
+      console.log('  Destination:', destination!.latitude, destination!.longitude);
+
+      // Detect zones
+      const pickupZone = detectZone(
+        pickupLocation!.latitude,
+        pickupLocation!.longitude
+      );
+      const destZone = detectZone(
+        destination!.latitude,
+        destination!.longitude
+      );
+
+      console.log('📍 Zone detection results:');
+      console.log('  Pickup zone:', pickupZone?.displayName || 'NULL - NOT IN ANY ZONE');
+      console.log('  Destination zone:', destZone?.displayName || 'NULL - NOT IN ANY ZONE');
+
+      if (!pickupZone || !destZone) {
+        console.error('❌ Zone detection failed!');
+        console.error('  Pickup coords:', pickupLocation!.latitude, pickupLocation!.longitude);
+        console.error('  Destination coords:', destination!.latitude, destination!.longitude);
+        Alert.alert(
+          'Service Area',
+          `Pickup or destination is outside our service area (Grand Cayman).\n\nPickup: ${pickupZone ? 'OK' : 'OUTSIDE'}\nDestination: ${destZone ? 'OK' : 'OUTSIDE'}`
+        );
+        setPricingCalculating(false);
+        return;
+      }
+
+      // Calculate pricing
+      const pricingResult = calculateTripPricing({
+        pickupLat: pickupLocation!.latitude,
+        pickupLng: pickupLocation!.longitude,
+        destinationLat: destination!.latitude,
+        destinationLng: destination!.longitude,
+        distanceMiles: (route!.distance / 1000) * 0.621371, // meters to miles
+        durationMinutes: Math.ceil(route!.duration / 60), // seconds to minutes
+        requestTime: new Date(),
+      });
+
+      // Store in Zustand
+      setPricing(pricingResult);
+      setZoneInfo({
+        pickupZone: {
+          id: pickupZone.id,
+          name: pickupZone.name,
+          displayName: pickupZone.displayName,
+        },
+        destinationZone: {
+          id: destZone.id,
+          name: destZone.name,
+          displayName: destZone.displayName,
+        },
+      });
+
+      console.log('✅ Pricing calculated:', pricingResult);
+      
+    } catch (error) {
+      console.error('❌ Pricing error:', error);
+      Alert.alert('Error', 'Unable to calculate cost contribution');
+    } finally {
+      setPricingCalculating(false);
+    }
+  };
 
   const loadVehicleOptions = () => {
     // Calculate base cost from route distance (mock calculation)
@@ -119,6 +211,11 @@ export default function VehicleSelectionScreen() {
   };
 
   const handleConfirmVehicle = async () => {
+    if (!pricing) {
+      Alert.alert('Error', 'Cost contribution not yet calculated');
+      return;
+    }
+
     const vehicle = vehicles.find(v => v.id === selectedVehicle);
     if (!vehicle) return;
 
@@ -132,6 +229,11 @@ export default function VehicleSelectionScreen() {
         max: vehicle.costRange.max,
         currency: 'KYD',
       });
+      
+      // 🔒 LOCK THE CONTRIBUTION AMOUNT
+      lockContribution(pricing.suggestedContribution);
+      
+      console.log('🔒 Contribution locked:', pricing.suggestedContribution);
 
       // Simulate API call to find available drivers
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -199,7 +301,7 @@ export default function VehicleSelectionScreen() {
               <View style={styles.routePoint}>
                 <View style={styles.routeDot} />
                 <Text style={styles.routeText} numberOfLines={1}>
-                  {route?.origin?.address || 'Current Location'}
+                  {route?.origin?.address || pickupLocation?.address || 'Current Location'}
                 </Text>
               </View>
               
@@ -213,6 +315,71 @@ export default function VehicleSelectionScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* Zone-Based Pricing Display */}
+            {isPricingCalculating ? (
+              <View style={styles.pricingLoading}>
+                <ActivityIndicator size="small" color={Colors.purple} />
+                <Text style={styles.pricingLoadingText}>Calculating contribution...</Text>
+              </View>
+            ) : pricing ? (
+              <View style={styles.pricingContainer}>
+                <View style={styles.pricingSeparator} />
+                
+                {/* Zone Route */}
+                <Text style={styles.zoneRouteText}>{pricing.displayText}</Text>
+                
+                {/* Pricing Type Badge */}
+                <View style={styles.pricingTypeBadge}>
+                  {pricing.isWithinZone ? (
+                    <Text style={styles.pricingTypeText}>Within-zone flat rate</Text>
+                  ) : pricing.isAirportTrip ? (
+                    <Text style={styles.pricingTypeText}>✈️ Airport fixed rate</Text>
+                  ) : (
+                    <Text style={styles.pricingTypeText}>Cross-zone contribution</Text>
+                  )}
+                </View>
+
+                {/* Contribution Amount */}
+                <View style={styles.contributionRow}>
+                  <Text style={styles.contributionLabel}>Suggested Contribution:</Text>
+                  <Text style={styles.contributionAmount}>
+                    CI${pricing.suggestedContribution.toFixed(2)}
+                  </Text>
+                </View>
+
+                <Text style={styles.rangeText}>
+                  Range: CI${pricing.minContribution.toFixed(2)} - CI${pricing.maxContribution.toFixed(2)}
+                </Text>
+
+                {/* Breakdown for cross-zone trips */}
+                {!pricing.isWithinZone && !pricing.isAirportTrip && (
+                  <View style={styles.breakdownContainer}>
+                    <Text style={styles.breakdownTitle}>Cost Breakdown:</Text>
+                    {pricing.breakdown.baseZoneFee !== undefined && (
+                      <Text style={styles.breakdownText}>
+                        • Base zone exit: CI${pricing.breakdown.baseZoneFee.toFixed(2)}
+                      </Text>
+                    )}
+                    {pricing.breakdown.distanceCost !== undefined && (
+                      <Text style={styles.breakdownText}>
+                        • Distance: CI${pricing.breakdown.distanceCost.toFixed(2)}
+                      </Text>
+                    )}
+                    {pricing.breakdown.timeCost !== undefined && (
+                      <Text style={styles.breakdownText}>
+                        • Time: CI${pricing.breakdown.timeCost.toFixed(2)}
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Legal disclaimer */}
+                <Text style={styles.pricingDisclaimer}>
+                  This is a cost-sharing contribution, not a fare. Amount is locked at request time.
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Vehicle Options */}
@@ -288,23 +455,27 @@ export default function VehicleSelectionScreen() {
 
         {/* Confirm Button */}
         <View style={styles.bottomContainer}>
-          {selectedVehicleData && (
+          {selectedVehicleData && pricing && (
             <View style={styles.selectedInfo}>
               <Text style={styles.selectedName}>{selectedVehicleData.name}</Text>
-              <Text style={styles.selectedPrice}>{selectedVehicleData.costEstimate}</Text>
+              <Text style={styles.selectedPrice}>
+                CI${pricing.suggestedContribution.toFixed(2)}
+              </Text>
             </View>
           )}
           
           <TouchableOpacity
-            style={[styles.confirmButton, loading && styles.confirmButtonDisabled]}
+            style={[styles.confirmButton, (!pricing || loading) && styles.confirmButtonDisabled]}
             onPress={handleConfirmVehicle}
-            disabled={loading || !selectedVehicle}
+            disabled={!pricing || loading}
           >
             {loading ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
               <>
-                <Text style={styles.confirmButtonText}>Continue</Text>
+                <Text style={styles.confirmButtonText}>
+                  Continue - CI${pricing?.suggestedContribution.toFixed(2) || '0.00'}
+                </Text>
                 <Text style={styles.confirmButtonArrow}>→</Text>
               </>
             )}
@@ -409,6 +580,92 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: Colors.gray[700],
+  },
+  // Zone-based pricing styles
+  pricingLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+  },
+  pricingLoadingText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: Colors.gray[600],
+  },
+  pricingContainer: {
+    marginTop: 12,
+  },
+  pricingSeparator: {
+    height: 1,
+    backgroundColor: Colors.gray[200],
+    marginBottom: 12,
+  },
+  zoneRouteText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.purple,
+    marginBottom: 8,
+  },
+  pricingTypeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.gray[100],
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 12,
+  },
+  pricingTypeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.gray[700],
+  },
+  contributionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  contributionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.gray[700],
+  },
+  contributionAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.black,
+  },
+  rangeText: {
+    fontSize: 12,
+    color: Colors.gray[500],
+    marginBottom: 12,
+  },
+  breakdownContainer: {
+    backgroundColor: Colors.white,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  breakdownTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.gray[700],
+    marginBottom: 6,
+  },
+  breakdownText: {
+    fontSize: 11,
+    color: Colors.gray[600],
+    marginBottom: 2,
+  },
+  pricingDisclaimer: {
+    fontSize: 10,
+    color: Colors.gray[500],
+    fontStyle: 'italic',
+    lineHeight: 14,
   },
   vehiclesSection: {
     paddingHorizontal: 16,

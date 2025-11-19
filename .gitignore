@@ -46,3 +46,6 @@ yarn-error.*
 # Firebase & Google Services
  google-services.json
  GoogleService-Info.plist
+
+# Windows reserved device names
+nul

@@ -84,7 +84,7 @@ export const Typography = {
     semibold: 'Lato-SemiBold',
     bold: 'Lato-Bold',
   },
-  
+
   fontSize: {
     xs: 12,
     sm: 14,
@@ -96,17 +96,66 @@ export const Typography = {
     '4xl': 36,
     '5xl': 48,
   },
-  
+
   lineHeight: {
     tight: 1.2,
     normal: 1.5,
     relaxed: 1.75,
   },
-  
+
   letterSpacing: {
     tight: -0.5,
     normal: 0,
     wide: 0.5,
+  },
+
+  // Text Style Presets
+  heading1: {
+    fontSize: 30,
+    fontFamily: 'Lato-Bold',
+    lineHeight: 36,
+  },
+
+  heading2: {
+    fontSize: 24,
+    fontFamily: 'Lato-Bold',
+    lineHeight: 30,
+  },
+
+  heading3: {
+    fontSize: 20,
+    fontFamily: 'Lato-SemiBold',
+    lineHeight: 26,
+  },
+
+  heading4: {
+    fontSize: 18,
+    fontFamily: 'Lato-SemiBold',
+    lineHeight: 24,
+  },
+
+  body: {
+    fontSize: 16,
+    fontFamily: 'Lato-Regular',
+    lineHeight: 24,
+  },
+
+  bodyMedium: {
+    fontSize: 16,
+    fontFamily: 'Lato-Medium',
+    lineHeight: 24,
+  },
+
+  caption: {
+    fontSize: 14,
+    fontFamily: 'Lato-Regular',
+    lineHeight: 20,
+  },
+
+  small: {
+    fontSize: 12,
+    fontFamily: 'Lato-Regular',
+    lineHeight: 16,
   },
 };
 

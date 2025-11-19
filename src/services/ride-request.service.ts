@@ -1,11 +1,11 @@
 /**
  * Ride Request Service
  * Handles real-time ride request matching between riders and drivers
- * Production-ready Firebase implementation
+ * Production-ready Firebase implementation with Zone-Based Pricing Support
  */
 
 import { firebaseDb } from '../config/firebase';
-import {
+import firestore, {
   collection,
   doc,
   query,
@@ -13,17 +13,18 @@ import {
   onSnapshot,
   updateDoc,
   serverTimestamp,
-  GeoPoint,
   getDoc,
-  getDocs,
   orderBy,
   limit,
 } from '@react-native-firebase/firestore';
 import { Trip } from '../stores/trip-store';
+import type { PricingResult } from '../stores/carpool-store';
 
 export interface RideRequest extends Trip {
   distanceFromDriver?: number; // in meters
   estimatedPickupTime?: number; // in minutes
+  pricing?: PricingResult; // ✅ NEW: Zone-based pricing information
+  lockedContribution?: number; // ✅ NEW: The locked contribution amount from rider
 }
 
 /**
@@ -63,6 +64,9 @@ export function listenForRideRequests(
           acceptedAt: data.acceptedAt?.toDate(),
           startedAt: data.startedAt?.toDate(),
           completedAt: data.completedAt?.toDate(),
+          // ✅ NEW: Include pricing data
+          pricing: data.pricing,
+          lockedContribution: data.lockedContribution,
         } as RideRequest;
 
         // Calculate distance from driver to pickup location
@@ -116,13 +120,20 @@ export async function acceptRideRequest(
 
     // First, check if ride is still available
     const tripDoc = await getDoc(tripRef);
-    if (!tripDoc.exists()) {
+    if (!tripDoc.exists) {
       throw new Error('Ride request not found');
     }
 
     const tripData = tripDoc.data();
     if (tripData?.status !== 'REQUESTED') {
       throw new Error('Ride has already been accepted by another driver');
+    }
+
+    // ✅ NEW: Log the locked contribution amount
+    if (tripData?.lockedContribution) {
+      console.log('💰 Driver accepting ride with locked contribution:', tripData.lockedContribution);
+    } else if (tripData?.pricing?.suggestedContribution) {
+      console.log('💰 Driver accepting ride with pricing contribution:', tripData.pricing.suggestedContribution);
     }
 
     // Parse vehicle model to extract make, model, and year
@@ -175,7 +186,7 @@ export async function declineRideRequest(
 
     // Add driver to declined list (so they don't see this request again)
     await updateDoc(tripRef, {
-      declinedBy: firebaseDb.FieldValue.arrayUnion(driverId),
+      declinedBy: firestore.FieldValue.arrayUnion(driverId),
       updatedAt: serverTimestamp(),
     });
 
