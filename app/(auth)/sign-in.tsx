@@ -86,7 +86,7 @@ export default function SignInScreen() {
 
       // Navigate based on user role
       if (user.roles.includes('DRIVER')) {
-        router.replace('/(driver)/(tabs)/index');
+        router.replace('/(driver)/tabs');
       } else {
         router.replace('/(tabs)');
       }
@@ -112,7 +112,7 @@ export default function SignInScreen() {
 
         // Navigate based on user role
         if (result.user.roles.includes('DRIVER')) {
-          router.replace('/(driver)/(tabs)');
+          router.replace('/(driver)/tabs');
         } else {
           router.replace('/(tabs)');
         }

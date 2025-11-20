@@ -144,14 +144,14 @@ export default function EarningsDashboard() {
         {/* Breakdown */}
         <View style={styles.breakdownSection}>
           <Text style={styles.sectionTitle}>Earnings Breakdown</Text>
-          
+
           <View style={styles.breakdownCard}>
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>
                 <Ionicons name="cash-outline" size={20} color={Colors.success} />
                 <Text style={styles.breakdownLabel}>Ride Earnings</Text>
               </View>
-              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.85).toFixed(2)}</Text>
+              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.90).toFixed(2)}</Text>
             </View>
 
             <View style={styles.breakdownRow}>
@@ -160,14 +160,6 @@ export default function EarningsDashboard() {
                 <Text style={styles.breakdownLabel}>Tips</Text>
               </View>
               <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.10).toFixed(2)}</Text>
-            </View>
-
-            <View style={styles.breakdownRow}>
-              <View style={styles.breakdownLeft}>
-                <Ionicons name="gift-outline" size={20} color={Colors.warning} />
-                <Text style={styles.breakdownLabel}>Bonuses</Text>
-              </View>
-              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.05).toFixed(2)}</Text>
             </View>
           </View>
         </View>

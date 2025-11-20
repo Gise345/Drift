@@ -28,10 +28,19 @@ export default function Index() {
 
   // Route based on auth state
   if (user) {
-    // User is logged in → Show role selection
-    return <Redirect href="/select-role" />;
+    // User is logged in - check their role and navigate accordingly
+    // Note: Users should have selected their mode during sign-up
+    // If they have both roles, default to rider mode (they can switch in profile)
+    if (user.roles?.includes('DRIVER')) {
+      return <Redirect href="/(driver)/tabs" />;
+    } else if (user.roles?.includes('RIDER')) {
+      return <Redirect href="/(tabs)" />;
+    } else {
+      // No role assigned (shouldn't happen) - send to role selection
+      return <Redirect href="/select-role" />;
+    }
   } else {
-    // User not logged in → Go to auth
+    // User not logged in → Go to welcome page (no guest access)
     return <Redirect href="/(auth)/welcome" />;
   }
 }

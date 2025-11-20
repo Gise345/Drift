@@ -33,14 +33,12 @@ export default function DriverArrivingScreen() {
   const driver = currentTrip.driverInfo || null;
 
   useEffect(() => {
-    // Start background location tracking
+    // Start background location tracking (gracefully degrades to foreground-only)
     if (currentTrip?.id) {
       startLocationTracking(currentTrip.id).catch((error) => {
-        console.error('Failed to start location tracking:', error);
-        Alert.alert(
-          'Location Tracking',
-          'Failed to start background location tracking. Your location will be shared while the app is open.'
-        );
+        console.error('⚠️ Could not start background location tracking:', error);
+        // Note: We don't show an alert anymore because the hook will handle
+        // foreground tracking automatically. Background tracking is optional.
       });
 
       // Subscribe to real-time trip updates

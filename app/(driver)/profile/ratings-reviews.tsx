@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,78 +6,94 @@ import {
   ScrollView,
   TouchableOpacity,
   SafeAreaView,
-  FlatList,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
-
-interface Review {
-  id: string;
-  riderName: string;
-  riderPhoto: string;
-  rating: number;
-  comment: string;
-  date: string;
-  tripId: string;
-}
+import { useDriverStore } from '@/src/stores/driver-store';
+import {
+  getDriverRatingStats,
+  getDriverReviews,
+  DriverRatingStats,
+  Review,
+} from '@/src/services/rating.service';
 
 export default function RatingsReviewsScreen() {
+  const { driver } = useDriverStore();
   const [selectedFilter, setSelectedFilter] = useState<'all' | number>('all');
-  
-  const driverRating = {
-    average: 4.9,
-    total: 487,
-    distribution: {
-      5: 420,
-      4: 52,
-      3: 10,
-      2: 3,
-      1: 2,
-    },
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [driverRating, setDriverRating] = useState<DriverRatingStats>({
+    average: 5.0,
+    total: 0,
+    distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+  });
+  const [reviews, setReviews] = useState<Review[]>([]);
+
+  useEffect(() => {
+    loadRatingsAndReviews();
+  }, [driver?.id, selectedFilter]);
+
+  const loadRatingsAndReviews = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const [stats, reviewsList] = await Promise.all([
+        getDriverRatingStats(driver.id),
+        getDriverReviews(driver.id, selectedFilter === 'all' ? undefined : selectedFilter),
+      ]);
+
+      setDriverRating(stats);
+      setReviews(reviewsList);
+    } catch (error) {
+      console.error('Error loading ratings and reviews:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const reviews: Review[] = [
-    {
-      id: '1',
-      riderName: 'Sarah Johnson',
-      riderPhoto: '👩‍💼',
-      rating: 5,
-      comment: 'Excellent driver! Very professional and friendly. Smooth ride and on time.',
-      date: '2024-11-04',
-      tripId: 'T123',
-    },
-    {
-      id: '2',
-      riderName: 'Michael Chen',
-      riderPhoto: '👨‍💻',
-      rating: 5,
-      comment: 'Great conversation and safe driving. Would recommend!',
-      date: '2024-11-03',
-      tripId: 'T122',
-    },
-    {
-      id: '3',
-      riderName: 'Emma Wilson',
-      riderPhoto: '👩',
-      rating: 4,
-      comment: 'Good driver, arrived on time. Clean vehicle.',
-      date: '2024-11-02',
-      tripId: 'T121',
-    },
-  ];
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadRatingsAndReviews();
+    setRefreshing(false);
+  };
 
-  const filteredReviews = selectedFilter === 'all' 
-    ? reviews 
-    : reviews.filter(r => r.rating === selectedFilter);
+  const filteredReviews = reviews;
 
   const getPercentage = (count: number) => {
     return Math.round((count / driverRating.total) * 100);
   };
 
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>My Ratings</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.textSecondary }}>
+            Loading ratings...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -182,7 +198,7 @@ export default function RatingsReviewsScreen() {
                   <View>
                     <Text style={styles.riderName}>{review.riderName}</Text>
                     <Text style={styles.reviewDate}>
-                      {new Date(review.date).toLocaleDateString()}
+                      {review.createdAt.toLocaleDateString()}
                     </Text>
                   </View>
                 </View>

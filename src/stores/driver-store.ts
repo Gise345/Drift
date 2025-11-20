@@ -397,16 +397,48 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     }
   },
 
-  goOnline: () => {
-    set({ isOnline: true });
-    get().startListeningForRequests();
-    console.log('🟢 Driver went online - listening for ride requests');
+  goOnline: async () => {
+    const state = get();
+    const driverId = state.driver?.id;
+
+    if (!driverId) {
+      console.error('❌ Cannot go online: no driver ID');
+      return;
+    }
+
+    try {
+      // Update Firebase online status
+      const { updateDriverOnlineStatus } = require('../services/driver-profile.service');
+      await updateDriverOnlineStatus(driverId, true);
+
+      set({ isOnline: true });
+      get().startListeningForRequests();
+      console.log('🟢 Driver went online - listening for ride requests');
+    } catch (error) {
+      console.error('❌ Error going online:', error);
+    }
   },
 
-  goOffline: () => {
-    set({ isOnline: false, lastOnlineAt: new Date() });
-    get().stopListeningForRequests();
-    console.log('🔴 Driver went offline - stopped listening for requests');
+  goOffline: async () => {
+    const state = get();
+    const driverId = state.driver?.id;
+
+    if (!driverId) {
+      console.error('❌ Cannot go offline: no driver ID');
+      return;
+    }
+
+    try {
+      // Update Firebase online status
+      const { updateDriverOnlineStatus } = require('../services/driver-profile.service');
+      await updateDriverOnlineStatus(driverId, false);
+
+      set({ isOnline: false, lastOnlineAt: new Date() });
+      get().stopListeningForRequests();
+      console.log('🔴 Driver went offline - stopped listening for requests');
+    } catch (error) {
+      console.error('❌ Error going offline:', error);
+    }
   },
 
   startListeningForRequests: () => {
@@ -502,10 +534,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         rating: driver.rating,
       });
 
-      // Update local state
+      // Update local state - set status to 'navigating_to_pickup' to indicate driver is en route
       const activeRide: ActiveRide = {
         ...request,
-        status: 'accepted',
+        status: 'navigating_to_pickup',
         acceptedAt: new Date(),
       };
 
@@ -619,7 +651,23 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   },
   
   // Location actions
-  updateLocation: (location) => set({ currentLocation: location }),
+  updateLocation: async (location) => {
+    const state = get();
+    const driverId = state.driver?.id;
+
+    // Update local state
+    set({ currentLocation: location });
+
+    // Update Firebase if driver is online and has ID
+    if (driverId && state.isOnline) {
+      try {
+        const { updateDriverLocation } = require('../services/driver-profile.service');
+        await updateDriverLocation(driverId, location);
+      } catch (error) {
+        console.error('❌ Error updating location in Firebase:', error);
+      }
+    }
+  },
   
   // Earnings actions
   refreshEarnings: async () => {

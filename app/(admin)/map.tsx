@@ -51,16 +51,27 @@ export default function LiveMapScreen() {
 
   useEffect(() => {
     // Set up real-time listener for active drivers
+    console.log('🗺️ Admin Map: Setting up driver listener...');
+
     const unsubscribe = firestore()
       .collection('drivers')
       .where('isOnline', '==', true)
       .onSnapshot(
         async (snapshot) => {
           try {
+            console.log(`🗺️ Admin Map: Received ${snapshot.docs.length} online drivers`);
+
             const driversList: ActiveDriver[] = [];
 
             for (const doc of snapshot.docs) {
               const data = doc.data();
+
+              console.log(`🗺️ Driver ${doc.id}:`, {
+                name: `${data.firstName} ${data.lastName}`,
+                isOnline: data.isOnline,
+                hasLocation: !!(data.currentLocation?.lat && data.currentLocation?.lng),
+                location: data.currentLocation,
+              });
 
               // Only include drivers with valid location data
               if (data.currentLocation?.lat && data.currentLocation?.lng) {
@@ -104,6 +115,7 @@ export default function LiveMapScreen() {
               }
             }
 
+            console.log(`🗺️ Admin Map: Final driver list has ${driversList.length} drivers`);
             setDrivers(driversList);
             setLoading(false);
 
@@ -152,6 +164,54 @@ export default function LiveMapScreen() {
     setSelectedDriver(null);
   };
 
+  const handleDebugDrivers = async () => {
+    console.log('\n🔍 ===== DEBUG: CHECKING ALL DRIVERS =====');
+
+    try {
+      // Check all drivers
+      const allDrivers = await firestore().collection('drivers').get();
+      console.log(`📊 Total drivers in database: ${allDrivers.docs.length}`);
+
+      allDrivers.docs.forEach(doc => {
+        const data = doc.data();
+        console.log(`\nDriver: ${data.firstName} ${data.lastName}`);
+        console.log(`  ID: ${doc.id}`);
+        console.log(`  isOnline: ${data.isOnline}`);
+        console.log(`  registrationStatus: ${data.registrationStatus}`);
+        console.log(`  currentLocation:`, data.currentLocation);
+      });
+
+      // Check specifically for online drivers
+      const onlineDrivers = await firestore()
+        .collection('drivers')
+        .where('isOnline', '==', true)
+        .get();
+
+      console.log(`\n🟢 Online drivers: ${onlineDrivers.docs.length}`);
+
+      if (onlineDrivers.docs.length === 0) {
+        Alert.alert(
+          'Debug Info',
+          `Total drivers: ${allDrivers.docs.length}\nOnline drivers: 0\n\nCheck console for details.`
+        );
+      } else {
+        const onlineDriverNames = onlineDrivers.docs.map(doc => {
+          const data = doc.data();
+          const hasLocation = !!(data.currentLocation?.lat && data.currentLocation?.lng);
+          return `${data.firstName} ${data.lastName} (Location: ${hasLocation ? 'Yes' : 'No'})`;
+        }).join('\n');
+
+        Alert.alert(
+          'Debug Info',
+          `Total drivers: ${allDrivers.docs.length}\nOnline drivers: ${onlineDrivers.docs.length}\n\n${onlineDriverNames}\n\nCheck console for details.`
+        );
+      }
+    } catch (error) {
+      console.error('❌ Debug error:', error);
+      Alert.alert('Error', 'Failed to debug drivers');
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -178,9 +238,14 @@ export default function LiveMapScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Map</Text>
-        <View style={styles.statsChip}>
-          <Ionicons name="car-sport" size={16} color={Colors.white} />
-          <Text style={styles.statsText}>{drivers.length}</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleDebugDrivers} style={styles.debugButton}>
+            <Ionicons name="bug" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <View style={styles.statsChip}>
+            <Ionicons name="car-sport" size={16} color={Colors.white} />
+            <Text style={styles.statsText}>{drivers.length}</Text>
+          </View>
         </View>
       </View>
 
@@ -343,6 +408,14 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xl,
     fontFamily: Typography.fontFamily.bold,
     color: Colors.text,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  debugButton: {
+    padding: Spacing.xs,
   },
   statsChip: {
     flexDirection: 'row',

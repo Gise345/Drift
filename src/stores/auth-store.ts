@@ -28,6 +28,7 @@ interface User {
   name: string;
   phone?: string;
   photoURL?: string;
+  profilePhoto?: string; // Alternative field name used by some screens
   roles: string[];
   hasAcceptedTerms: boolean;
   emailVerified?: boolean;
@@ -182,6 +183,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             const user: User = {
               id: userDoc.id,
               ...userData,
+              // Map both photoURL and profilePhoto fields for consistency
+              photoURL: userData.photoURL || userData.profilePhoto || '',
               createdAt: userData.createdAt?.toDate?.() || new Date(),
               lastLoginAt: userData.lastLoginAt?.toDate?.() || new Date(),
             } as User;

@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '@/src/stores/auth-store';
+import firestore from '@react-native-firebase/firestore';
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [settings, setSettings] = useState({
     rideUpdates: true,
     promotions: false,
@@ -14,9 +17,64 @@ export default function NotificationsScreen() {
     tripReminders: true,
     emailNotifications: true,
   });
+  const [loading, setLoading] = useState(true);
 
-  const toggleSetting = (key: keyof typeof settings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+  // Load notification settings from Firebase
+  useEffect(() => {
+    loadSettings();
+  }, [user?.id]);
+
+  const loadSettings = async () => {
+    if (!user?.id) return;
+
+    try {
+      const doc = await firestore()
+        .collection('users')
+        .doc(user.id)
+        .collection('settings')
+        .doc('notifications')
+        .get();
+
+      if (doc.exists) {
+        const data = doc.data();
+        setSettings({
+          rideUpdates: data?.rideUpdates ?? true,
+          promotions: data?.promotions ?? false,
+          driverMessages: data?.driverMessages ?? true,
+          paymentAlerts: data?.paymentAlerts ?? true,
+          tripReminders: data?.tripReminders ?? true,
+          emailNotifications: data?.emailNotifications ?? true,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading notification settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleSetting = async (key: keyof typeof settings) => {
+    if (!user?.id) return;
+
+    const newValue = !settings[key];
+    setSettings(prev => ({ ...prev, [key]: newValue }));
+
+    try {
+      // Save to Firebase
+      await firestore()
+        .collection('users')
+        .doc(user.id)
+        .collection('settings')
+        .doc('notifications')
+        .set(
+          { [key]: newValue, updatedAt: firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+    } catch (error) {
+      console.error('Error saving notification setting:', error);
+      // Revert on error
+      setSettings(prev => ({ ...prev, [key]: !newValue }));
+    }
   };
 
   return (

@@ -49,7 +49,7 @@ interface PaymentMethod {
 
 export default function SelectPaymentScreen() {
   const router = useRouter();
-  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType } = useCarpoolStore();
+  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType, pricing, lockedContribution } = useCarpoolStore();
   const { createTrip, setCurrentTrip } = useTripStore();
   const { user } = useAuthStore();
 
@@ -98,14 +98,29 @@ export default function SelectPaymentScreen() {
   };
 
   const handleConfirmPayment = async () => {
+    console.log('💳 Payment Confirmation Started');
+    console.log('  DEV_BYPASS_PAYMENT:', DEV_BYPASS_PAYMENT);
+    console.log('  selectedPayment:', selectedPayment);
+    console.log('  user:', user?.id);
+    console.log('  pickupLocation:', pickupLocation?.address);
+    console.log('  destination:', destination?.address);
+    console.log('  estimatedCost:', estimatedCost);
+
     // DEV MODE: Skip payment validation if bypass is enabled
     if (!DEV_BYPASS_PAYMENT && !selectedPayment) {
+      console.log('❌ No payment selected');
       Alert.alert('Select Payment', 'Please select a payment method');
       return;
     }
 
-    if (!user || !pickupLocation || !destination || !estimatedCost) {
-      Alert.alert('Error', 'Missing required trip information');
+    if (!user || !pickupLocation || !destination || !pricing || !lockedContribution) {
+      console.log('❌ Missing required trip information');
+      console.log('  user:', !!user);
+      console.log('  pickupLocation:', !!pickupLocation);
+      console.log('  destination:', !!destination);
+      console.log('  pricing:', !!pricing);
+      console.log('  lockedContribution:', lockedContribution);
+      Alert.alert('Error', 'Missing required trip information. Please go back and recalculate pricing.');
       return;
     }
 
@@ -116,22 +131,26 @@ export default function SelectPaymentScreen() {
       const paymentMethodToUse = selectedPayment || 'dev-bypass';
       setSelectedPaymentMethod(paymentMethodToUse);
 
+      console.log('💳 Payment method:', paymentMethodToUse);
+
       // DEV MODE: Show bypass notification
       if (DEV_BYPASS_PAYMENT && !selectedPayment) {
         console.log('🔧 DEV MODE: Bypassing payment selection');
       }
 
       // Create trip in Firebase with status "REQUESTED"
-      const tripId = await createTrip({
+      console.log('📝 Creating trip in Firebase...');
+
+      const tripData = {
         riderId: user.id,
-        status: 'REQUESTED',
+        status: 'REQUESTED' as const,
         pickup: {
           address: pickupLocation.address || '',
           coordinates: {
             latitude: pickupLocation.latitude,
             longitude: pickupLocation.longitude,
           },
-          placeName: pickupLocation.placeName,
+          ...(pickupLocation.placeName && { placeName: pickupLocation.placeName }),
         },
         destination: {
           address: destination.address || '',
@@ -139,23 +158,34 @@ export default function SelectPaymentScreen() {
             latitude: destination.latitude,
             longitude: destination.longitude,
           },
-          placeName: destination.placeName,
+          ...((destination as any).placeName && { placeName: (destination as any).placeName }),
         },
         vehicleType: vehicleType || 'standard',
         distance: pickupLocation.distance || 0,
         duration: pickupLocation.duration || 0,
-        estimatedCost: estimatedCost.max || 0,
+        estimatedCost: lockedContribution, // Use locked contribution amount
+        lockedContribution: lockedContribution, // Store locked contribution
+        pricing: pricing, // Store full pricing data for reference
         paymentMethod: paymentMethodToUse,
         requestedAt: new Date(),
-      });
+      };
+
+      console.log('📝 Trip data:', JSON.stringify(tripData, null, 2));
+
+      const tripId = await createTrip(tripData);
 
       console.log('✅ Trip created in Firebase:', tripId);
 
       // Navigate to finding driver screen
+      console.log('🚗 Navigating to finding-driver screen...');
       router.push('/(rider)/finding-driver');
     } catch (error) {
       console.error('❌ Failed to create trip:', error);
-      Alert.alert('Error', 'Failed to request ride. Please try again.');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      Alert.alert(
+        'Error',
+        `Failed to request ride. Please try again.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     } finally {
       setLoading(false);
     }
@@ -184,15 +214,18 @@ export default function SelectPaymentScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Estimated Cost */}
-          {estimatedCost && (
+          {/* Zone-Based Pricing Display */}
+          {pricing && lockedContribution && (
             <View style={styles.costCard}>
-              <Text style={styles.costLabel}>Estimated Cost Share</Text>
+              <Text style={styles.costLabel}>Locked Contribution Amount</Text>
               <Text style={styles.costAmount}>
-                ${estimatedCost.min}-{estimatedCost.max} {estimatedCost.currency}
+                CI${lockedContribution.toFixed(2)}
               </Text>
               <Text style={styles.costNote}>
-                Final amount may vary based on actual route
+                {pricing.displayText} • {pricing.isWithinZone ? 'Within-zone flat rate' : pricing.isAirportTrip ? 'Airport fixed rate' : 'Cross-zone trip'}
+              </Text>
+              <Text style={styles.costNote}>
+                Amount locked at request time and cannot change
               </Text>
             </View>
           )}
@@ -333,7 +366,7 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   costCard: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.purple,
     margin: 16,
     padding: 20,
     borderRadius: 16,
@@ -342,19 +375,20 @@ const styles = StyleSheet.create({
   costLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.gray[700],
+    color: Colors.white,
     marginBottom: 8,
   },
   costAmount: {
     fontSize: 32,
     fontWeight: '700',
-    color: Colors.black,
+    color: Colors.primary,
     marginBottom: 8,
   },
   costNote: {
     fontSize: 12,
-    color: Colors.gray[600],
+    color: Colors.white,
     textAlign: 'center',
+    opacity: 0.9,
   },
   section: {
     marginTop: 8,

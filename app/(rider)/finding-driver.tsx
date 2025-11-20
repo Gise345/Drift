@@ -93,6 +93,7 @@ export default function FindingDriverScreen() {
         break;
 
       case 'ACCEPTED':
+      case 'DRIVER_ARRIVING':
         setSearchStatus('Driver found! Preparing trip details...');
         // Wait a moment then navigate
         setTimeout(() => {

@@ -57,9 +57,12 @@ export default function DriverEarningsScreen() {
     hours: 0,
     avgPerTrip: 0,
   });
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [recentTrips, setRecentTrips] = useState<any[]>([]);
 
   useEffect(() => {
     loadEarnings();
+    loadWalletAndTrips();
   }, [activePeriod]);
 
   const loadEarnings = async () => {
@@ -97,9 +100,44 @@ export default function DriverEarningsScreen() {
     }
   };
 
+  const loadWalletAndTrips = async () => {
+    if (!driver?.id) return;
+
+    try {
+      // Load wallet balance
+      const balance = await TransactionService.getWalletBalance(driver.id);
+      setWalletBalance(balance.available);
+
+      // Load recent trips from Firestore
+      const firestore = require('@react-native-firebase/firestore').default;
+      const tripsSnapshot = await firestore()
+        .collection('trips')
+        .where('driverId', '==', driver.id)
+        .where('status', '==', 'completed')
+        .orderBy('completedAt', 'desc')
+        .limit(3)
+        .get();
+
+      const trips = tripsSnapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          pickup: data.pickup?.address || 'Unknown',
+          destination: data.destination?.address || 'Unknown',
+          fare: data.fare || 0,
+          completedAt: data.completedAt?.toDate() || new Date(),
+        };
+      });
+
+      setRecentTrips(trips);
+    } catch (error) {
+      console.error('Error loading wallet and trips:', error);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadEarnings();
+    await Promise.all([loadEarnings(), loadWalletAndTrips()]);
     setRefreshing(false);
   };
 
@@ -111,6 +149,22 @@ export default function DriverEarningsScreen() {
         return 'This Week';
       case 'month':
         return 'This Month';
+    }
+  };
+
+  const getTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 60) {
+      return `${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
+    } else if (diffHours < 24) {
+      return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+    } else {
+      return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
     }
   };
 
@@ -208,13 +262,13 @@ export default function DriverEarningsScreen() {
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.actionCard}
-            onPress={() => router.push('/(driver)/wallet/balance')}
+            onPress={() => router.push('/(driver)/dashboard/wallet')}
           >
             <View style={styles.actionIcon}>
               <Ionicons name="wallet-outline" size={24} color={Colors.primary} />
             </View>
             <Text style={styles.actionTitle}>Wallet</Text>
-            <Text style={styles.actionSubtitle}>$0.00</Text>
+            <Text style={styles.actionSubtitle}>CI${walletBalance.toFixed(2)}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -271,13 +325,13 @@ export default function DriverEarningsScreen() {
 
           <View style={styles.metricsCard}>
             <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>4.9</Text>
+              <Text style={styles.metricValue}>{driver?.rating?.toFixed(1) || '5.0'}</Text>
               <Text style={styles.metricLabel}>Rating</Text>
               <View style={styles.metricStars}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Ionicons
                     key={star}
-                    name="star"
+                    name={star <= Math.floor(driver?.rating || 5) ? 'star' : 'star-outline'}
                     size={12}
                     color={Colors.warning}
                   />
@@ -286,13 +340,17 @@ export default function DriverEarningsScreen() {
             </View>
 
             <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>95%</Text>
-              <Text style={styles.metricLabel}>Accept Rate</Text>
+              <Text style={styles.metricValue}>
+                {driver?.totalTrips ? driver.totalTrips : '0'}
+              </Text>
+              <Text style={styles.metricLabel}>Total Trips</Text>
             </View>
 
             <View style={styles.metricItem}>
-              <Text style={styles.metricValue}>98%</Text>
-              <Text style={styles.metricLabel}>Complete Rate</Text>
+              <Text style={styles.metricValue}>
+                CI${stats.avgPerTrip.toFixed(2)}
+              </Text>
+              <Text style={styles.metricLabel}>Avg/Trip</Text>
             </View>
           </View>
         </View>
@@ -301,24 +359,41 @@ export default function DriverEarningsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Trips</Text>
-            <TouchableOpacity onPress={() => router.push('/(driver)/trips/completed')}>
+            <TouchableOpacity onPress={() => router.push('/(driver)/dashboard/trips')}>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.tripsCard}>
-            {[1, 2, 3].map((trip) => (
-              <View key={trip} style={styles.tripItem}>
-                <View style={styles.tripIcon}>
-                  <Ionicons name="location" size={20} color={Colors.primary} />
-                </View>
-                <View style={styles.tripInfo}>
-                  <Text style={styles.tripRoute}>George Town → Seven Mile Beach</Text>
-                  <Text style={styles.tripTime}>2 hours ago</Text>
-                </View>
-                <Text style={styles.tripEarning}>$12.50</Text>
+            {recentTrips.length > 0 ? (
+              recentTrips.map((trip) => {
+                const timeAgo = getTimeAgo(trip.completedAt);
+                return (
+                  <TouchableOpacity
+                    key={trip.id}
+                    style={styles.tripItem}
+                    onPress={() => router.push(`/(driver)/history/trip-detail?id=${trip.id}`)}
+                  >
+                    <View style={styles.tripIcon}>
+                      <Ionicons name="location" size={20} color={Colors.primary} />
+                    </View>
+                    <View style={styles.tripInfo}>
+                      <Text style={styles.tripRoute} numberOfLines={1}>
+                        {trip.pickup} → {trip.destination}
+                      </Text>
+                      <Text style={styles.tripTime}>{timeAgo}</Text>
+                    </View>
+                    <Text style={styles.tripEarning}>CI${trip.fare.toFixed(2)}</Text>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={{ padding: Spacing.xl, alignItems: 'center' }}>
+                <Text style={{ color: Colors.gray[600], fontSize: Typography.fontSize.sm }}>
+                  No recent trips
+                </Text>
               </View>
-            ))}
+            )}
           </View>
         </View>
       </ScrollView>

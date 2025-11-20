@@ -1,21 +1,69 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { getReviewById, Review } from '@/src/services/rating.service';
 
 export default function ReviewDetailScreen() {
   const { reviewId } = useLocalSearchParams();
+  const [loading, setLoading] = useState(true);
+  const [review, setReview] = useState<Review | null>(null);
 
-  const review = {
-    id: reviewId,
-    riderName: 'Sarah Johnson',
-    riderPhoto: '👩‍💼',
-    rating: 5,
-    comment: 'Excellent driver! Very professional and friendly. The car was clean and the ride was smooth. Would definitely recommend!',
-    date: '2024-11-04',
-    tripId: 'T123',
+  useEffect(() => {
+    loadReview();
+  }, [reviewId]);
+
+  const loadReview = async () => {
+    if (!reviewId || typeof reviewId !== 'string') return;
+
+    try {
+      setLoading(true);
+      const reviewData = await getReviewById(reviewId);
+      setReview(reviewData);
+    } catch (error) {
+      console.error('Error loading review:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Review Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading review...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!review) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Review Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: Colors.gray[600] }}>Review not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -28,10 +76,10 @@ export default function ReviewDetailScreen() {
 
         <View style={styles.content}>
           <View style={styles.riderCard}>
-            <Text style={styles.riderPhoto}>{review.riderPhoto}</Text>
+            <Text style={styles.riderPhoto}>{review.riderPhoto || '👤'}</Text>
             <View style={styles.riderInfo}>
               <Text style={styles.riderName}>{review.riderName}</Text>
-              <Text style={styles.reviewDate}>{new Date(review.date).toLocaleDateString()}</Text>
+              <Text style={styles.reviewDate}>{review.createdAt.toLocaleDateString()}</Text>
             </View>
           </View>
 
@@ -44,10 +92,25 @@ export default function ReviewDetailScreen() {
             <Text style={styles.ratingText}>{review.rating} out of 5</Text>
           </View>
 
-          <View style={styles.commentCard}>
-            <Text style={styles.commentTitle}>Comment</Text>
-            <Text style={styles.commentText}>"{review.comment}"</Text>
-          </View>
+          {review.comment && (
+            <View style={styles.commentCard}>
+              <Text style={styles.commentTitle}>Comment</Text>
+              <Text style={styles.commentText}>"{review.comment}"</Text>
+            </View>
+          )}
+
+          {review.tags && review.tags.length > 0 && (
+            <View style={styles.commentCard}>
+              <Text style={styles.commentTitle}>Tags</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                {review.tags.map((tag, index) => (
+                  <View key={index} style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.primary + '20', borderRadius: 16 }}>
+                    <Text style={{ fontSize: 12, color: Colors.gray[700] }}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           <TouchableOpacity 
             style={styles.viewTripButton}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,76 +6,64 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
-
-type Feedback = {
-  id: string;
-  riderName: string;
-  rating: number;
-  comment?: string;
-  date: Date;
-  tripId: string;
-};
+import { useDriverStore } from '@/src/stores/driver-store';
+import {
+  getDriverRatingStats,
+  getDriverReviews,
+  DriverRatingStats,
+  Review,
+} from '@/src/services/rating.service';
 
 export default function Feedback() {
   const router = useRouter();
+  const { driver } = useDriverStore();
 
-  const feedbackList: Feedback[] = [
-    {
-      id: '1',
-      riderName: 'Sarah Miller',
-      rating: 5,
-      comment: 'Great driver! Very professional and friendly. The car was clean and comfortable.',
-      date: new Date(Date.now() - 86400000),
-      tripId: 'TRIP-001',
-    },
-    {
-      id: '2',
-      riderName: 'John Davis',
-      rating: 5,
-      comment: 'Arrived on time and took the fastest route. Would definitely ride again!',
-      date: new Date(Date.now() - 86400000 * 2),
-      tripId: 'TRIP-002',
-    },
-    {
-      id: '3',
-      riderName: 'Emma Wilson',
-      rating: 4,
-      comment: 'Good driver, but music was a bit loud.',
-      date: new Date(Date.now() - 86400000 * 3),
-      tripId: 'TRIP-003',
-    },
-    {
-      id: '4',
-      riderName: 'Michael Brown',
-      rating: 5,
-      date: new Date(Date.now() - 86400000 * 5),
-      tripId: 'TRIP-004',
-    },
-    {
-      id: '5',
-      riderName: 'Lisa Anderson',
-      rating: 5,
-      comment: 'Excellent service! Very courteous and helpful.',
-      date: new Date(Date.now() - 86400000 * 7),
-      tripId: 'TRIP-005',
-    },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [feedbackList, setFeedbackList] = useState<Review[]>([]);
+  const [ratingStats, setRatingStats] = useState<DriverRatingStats>({
+    average: 5.0,
+    total: 0,
+    distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+  });
 
-  const averageRating = (
-    feedbackList.reduce((sum, f) => sum + f.rating, 0) / feedbackList.length
-  ).toFixed(1);
+  useEffect(() => {
+    loadFeedback();
+  }, [driver?.id]);
 
-  const ratingDistribution = {
-    5: feedbackList.filter((f) => f.rating === 5).length,
-    4: feedbackList.filter((f) => f.rating === 4).length,
-    3: feedbackList.filter((f) => f.rating === 3).length,
-    2: feedbackList.filter((f) => f.rating === 2).length,
-    1: feedbackList.filter((f) => f.rating === 1).length,
+  const loadFeedback = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const [stats, reviews] = await Promise.all([
+        getDriverRatingStats(driver.id),
+        getDriverReviews(driver.id, undefined, 20),
+      ]);
+
+      setRatingStats(stats);
+      setFeedbackList(reviews);
+    } catch (error) {
+      console.error('Error loading feedback:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadFeedback();
+    setRefreshing(false);
+  };
+
+  const averageRating = ratingStats.average.toFixed(1);
+  const ratingDistribution = ratingStats.distribution;
 
   const renderStars = (rating: number) => {
     return (
@@ -92,6 +80,26 @@ export default function Feedback() {
     );
   };
 
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Rider Feedback</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading feedback...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -103,7 +111,12 @@ export default function Feedback() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Rating Summary */}
         <View style={styles.summaryCard}>
           <View style={styles.averageSection}>
@@ -111,7 +124,7 @@ export default function Feedback() {
             <View style={styles.averageStars}>
               {renderStars(parseFloat(averageRating))}
             </View>
-            <Text style={styles.totalReviews}>{feedbackList.length} reviews</Text>
+            <Text style={styles.totalReviews}>{ratingStats.total} reviews</Text>
           </View>
 
           <View style={styles.distributionSection}>
@@ -124,7 +137,9 @@ export default function Feedback() {
                     style={[
                       styles.distributionFill,
                       {
-                        width: `${(ratingDistribution[stars as keyof typeof ratingDistribution] / feedbackList.length) * 100}%`,
+                        width: ratingStats.total > 0
+                          ? `${(ratingDistribution[stars as keyof typeof ratingDistribution] / ratingStats.total) * 100}%`
+                          : '0%',
                       },
                     ]}
                   />
@@ -179,7 +194,7 @@ export default function Feedback() {
                   <View style={styles.riderDetails}>
                     <Text style={styles.riderName}>{feedback.riderName}</Text>
                     <Text style={styles.feedbackDate}>
-                      {feedback.date.toLocaleDateString('en-US', {
+                      {feedback.createdAt.toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
@@ -201,7 +216,7 @@ export default function Feedback() {
               )}
 
               <View style={styles.feedbackFooter}>
-                <Text style={styles.tripId}>Trip #{feedback.tripId}</Text>
+                <Text style={styles.tripId}>Trip ID: {feedback.tripId}</Text>
                 <Ionicons name="chevron-forward" size={16} color={Colors.gray[400]} />
               </View>
             </TouchableOpacity>

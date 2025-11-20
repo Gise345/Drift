@@ -996,9 +996,9 @@ const HomeScreen = () => {
 
             {/* Search Results */}
             <ScrollView style={styles.modalResults}>
-              {predictions.map((prediction) => (
+              {predictions.map((prediction, index) => (
                 <TouchableOpacity
-                  key={prediction.place_id}
+                  key={`${prediction.place_id}-${index}`}
                   style={styles.modalResultItem}
                   onPress={() => handleSelectPlace(prediction)}
                 >

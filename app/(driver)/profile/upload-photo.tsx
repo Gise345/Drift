@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert, Image, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Typography, Spacing, Shadows } from '@/src/constants/theme';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { firebaseDb } from '@/src/config/firebase';
+import { doc, updateDoc, serverTimestamp } from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
 
 export default function UploadPhotoScreen() {
+  const { user, setUser } = useAuthStore();
+  const { driver, setDriver } = useDriverStore();
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -47,15 +55,69 @@ export default function UploadPhotoScreen() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!imageUri) {
       Alert.alert('No Photo', 'Please select or take a photo');
       return;
     }
-    // TODO: Upload to Firebase Storage
-    Alert.alert('Success', 'Profile photo updated!', [
-      { text: 'OK', onPress: () => router.back() }
-    ]);
+
+    if (!user?.id) {
+      Alert.alert('Error', 'User not found. Please log in again.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+
+      // Create a unique filename
+      const filename = `driver_profile_${user.id}_${Date.now()}.jpg`;
+      const storageRef = storage().ref(`profile-photos/${filename}`);
+
+      // Upload file
+      await storageRef.putFile(imageUri);
+
+      // Get download URL
+      const downloadURL = await storageRef.getDownloadURL();
+
+      // Update user document in Firestore
+      const userRef = doc(firebaseDb, 'users', user.id);
+      await updateDoc(userRef, {
+        photoURL: downloadURL,
+        profilePhoto: downloadURL,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Update driver document if exists
+      if (driver?.id) {
+        const driverRef = doc(firebaseDb, 'drivers', user.id);
+        await updateDoc(driverRef, {
+          photoUrl: downloadURL,
+          updatedAt: serverTimestamp(),
+        });
+
+        // Update local driver store
+        setDriver({
+          ...driver,
+          photoUrl: downloadURL,
+        });
+      }
+
+      // Update local auth store
+      setUser({
+        ...user,
+        photoURL: downloadURL,
+        profilePhoto: downloadURL,
+      });
+
+      Alert.alert('Success', 'Profile photo updated successfully!', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      Alert.alert('Error', 'Failed to upload photo. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -80,20 +142,36 @@ export default function UploadPhotoScreen() {
         </View>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionButton} onPress={pickImage}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={pickImage}
+            disabled={uploading}
+          >
             <Ionicons name="images" size={24} color={Colors.primary} />
             <Text style={styles.actionText}>Choose from Library</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={takePhoto}
+            disabled={uploading}
+          >
             <Ionicons name="camera" size={24} color={Colors.primary} />
             <Text style={styles.actionText}>Take Photo</Text>
           </TouchableOpacity>
         </View>
 
         {imageUri && (
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveText}>Save Photo</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, uploading && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <ActivityIndicator color={Colors.black} />
+            ) : (
+              <Text style={styles.saveText}>Save Photo</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -159,6 +237,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.lg,
     ...Shadows.md,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveText: {
     fontSize: Typography.fontSize.base,

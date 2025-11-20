@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,65 @@ export default function ProfileScreen() {
   const { user, setMode } = useAuthStore();
   const { driver } = useDriverStore();
   const [switching, setSwitching] = useState(false);
+  const [stats, setStats] = useState({
+    rating: 0,
+    totalTrips: 0,
+    memberSince: new Date(),
+  });
+
+  // Load user stats from Firestore
+  useEffect(() => {
+    const loadUserStats = async () => {
+      if (!user?.id) return;
+
+      try {
+        // Load user document for additional stats
+        const userDoc = await firestore()
+          .collection('users')
+          .doc(user.id)
+          .get();
+
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+
+          // Calculate years since joining
+          const createdAt = userData?.createdAt?.toDate() || user.createdAt || new Date();
+          const yearsSinceJoining = new Date().getFullYear() - createdAt.getFullYear();
+
+          setStats({
+            rating: userData?.rating || user.rating || 0,
+            totalTrips: userData?.totalTrips || user.totalTrips || 0,
+            memberSince: createdAt,
+          });
+        } else {
+          // Fallback to user object from auth store
+          const createdAt = user.createdAt || new Date();
+          setStats({
+            rating: user.rating || 0,
+            totalTrips: user.totalTrips || 0,
+            memberSince: createdAt,
+          });
+        }
+      } catch (error) {
+        console.error('Error loading user stats:', error);
+        // Use data from auth store as fallback
+        const createdAt = user.createdAt || new Date();
+        setStats({
+          rating: user.rating || 0,
+          totalTrips: user.totalTrips || 0,
+          memberSince: createdAt,
+        });
+      }
+    };
+
+    loadUserStats();
+  }, [user?.id]);
+
+  // Calculate years as a member
+  const yearsSinceJoining = Math.max(
+    1,
+    new Date().getFullYear() - stats.memberSince.getFullYear()
+  );
 
   const handleSwitchToDriver = async () => {
     if (!user) return;
@@ -152,12 +211,16 @@ export default function ProfileScreen() {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.profileImageContainer}>
-            <Image
-              source={{
-                uri: user?.profilePhoto || 'https://i.pravatar.cc/150?img=68',
-              }}
-              style={styles.profileImage}
-            />
+            {(user?.profilePhoto || user?.photoURL) ? (
+              <Image
+                source={{ uri: user.profilePhoto || user.photoURL }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <View style={styles.profileImagePlaceholder}>
+                <Ionicons name="person" size={50} color="#9CA3AF" />
+              </View>
+            )}
             <TouchableOpacity
               style={styles.editPhotoButton}
               onPress={() => router.push('/(rider)/edit-profile')}
@@ -172,18 +235,20 @@ export default function ProfileScreen() {
           {/* Stats */}
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>4.9</Text>
+              <Text style={styles.statValue}>
+                {stats.rating > 0 ? stats.rating.toFixed(1) : '--'}
+              </Text>
               <Text style={styles.statLabel}>Rating</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>24</Text>
+              <Text style={styles.statValue}>{stats.totalTrips}</Text>
               <Text style={styles.statLabel}>Trips</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>3</Text>
-              <Text style={styles.statLabel}>Years</Text>
+              <Text style={styles.statValue}>{yearsSinceJoining}</Text>
+              <Text style={styles.statLabel}>{yearsSinceJoining === 1 ? 'Year' : 'Years'}</Text>
             </View>
           </View>
         </View>
@@ -293,6 +358,14 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 50,
     backgroundColor: '#E5E7EB',
+  },
+  profileImagePlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editPhotoButton: {
     position: 'absolute',

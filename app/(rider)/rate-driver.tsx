@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,33 +10,18 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-
-const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
-  black: '#000000',
-  white: '#FFFFFF',
-  gray: {
-    50: '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
-    400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
-  },
-  success: '#10B981',
-  error: '#EF4444',
-  warning: '#F59E0B',
-};
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Colors } from '@/src/constants/theme';
+import { useTripStore } from '@/src/stores/trip-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { submitDriverRating } from '@/src/services/rating.service';
 
 export default function RateDriverScreen() {
   const router = useRouter();
-  
+  const { tripId } = useLocalSearchParams();
+  const { user } = useAuthStore();
+  const { currentTrip } = useTripStore();
+
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -53,10 +38,14 @@ export default function RateDriverScreen() {
     'Helpful',
   ];
 
+  // Get driver info from current trip or passed tripId
   const driver = {
-    name: 'John Smith',
-    photo: '👤',
+    id: currentTrip?.driverId || '',
+    name: currentTrip?.driverName || 'Driver',
+    photo: currentTrip?.driverPhoto || '👤',
   };
+
+  const actualTripId = (typeof tripId === 'string' ? tripId : currentTrip?.id) || '';
 
   const handleStarPress = (star: number) => {
     setRating(star);
@@ -76,11 +65,24 @@ export default function RateDriverScreen() {
       return;
     }
 
+    if (!actualTripId || !driver.id || !user?.id) {
+      Alert.alert('Error', 'Missing trip or driver information');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Submit rating to Firebase
+      await submitDriverRating(
+        actualTripId,
+        driver.id,
+        user.id,
+        user.name || 'Rider',
+        rating,
+        feedback.trim() || undefined,
+        selectedTags.length > 0 ? selectedTags : undefined
+      );
 
       Alert.alert('Thank You!', 'Your feedback has been submitted', [
         {
@@ -89,6 +91,7 @@ export default function RateDriverScreen() {
         },
       ]);
     } catch (error) {
+      console.error('Error submitting rating:', error);
       Alert.alert('Error', 'Failed to submit rating. Please try again.');
     } finally {
       setLoading(false);

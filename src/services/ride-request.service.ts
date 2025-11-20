@@ -157,11 +157,12 @@ export async function acceptRideRequest(
       },
     };
 
-    // Accept the ride
+    // Accept the ride and set status to DRIVER_ARRIVING
+    // This immediately transitions the rider to the "driver arriving" screen
     await updateDoc(tripRef, {
       driverId,
       driverInfo: formattedDriverInfo,
-      status: 'ACCEPTED',
+      status: 'DRIVER_ARRIVING',
       acceptedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });

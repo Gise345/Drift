@@ -109,7 +109,7 @@ export default function DriverMenuScreen() {
           style: 'destructive',
           onPress: async () => {
             await logout();
-            router.replace('/(auth)/sign-in');
+            router.replace('/(auth)/welcome');
           },
         },
       ]
@@ -330,9 +330,9 @@ export default function DriverMenuScreen() {
           onPress={() => router.push('/(driver)/profile/view')}
         >
           <View style={styles.profileAvatar}>
-            {driver?.photoUrl ? (
+            {(driver?.photoUrl || user?.photoURL || user?.profilePhoto) ? (
               <Image
-                source={{ uri: driver.photoUrl }}
+                source={{ uri: driver?.photoUrl || user?.photoURL || user?.profilePhoto }}
                 style={styles.avatarImage}
               />
             ) : (

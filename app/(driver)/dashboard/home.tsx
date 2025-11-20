@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 
@@ -23,10 +24,13 @@ export default function DriverHome() {
     stats,
     incomingRequests,
     activeRide,
+    updateLocation,
   } = useDriverStore();
 
   const [onlineTime, setOnlineTime] = useState(0);
+  const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
 
+  // Track online time
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isOnline) {
@@ -36,6 +40,71 @@ export default function DriverHome() {
     }
     return () => clearInterval(interval);
   }, [isOnline]);
+
+  // Track location when online
+  useEffect(() => {
+    let subscription: Location.LocationSubscription | null = null;
+
+    const startLocationTracking = async () => {
+      if (!isOnline || !driver?.id) {
+        return;
+      }
+
+      try {
+        // Request location permissions
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.error('❌ Location permission denied');
+          return;
+        }
+
+        // Request background permissions for continuous tracking
+        await Location.requestBackgroundPermissionsAsync();
+
+        console.log('📍 Starting location tracking for driver...');
+
+        // Watch position
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 5000, // Update every 5 seconds
+            distanceInterval: 20, // Update every 20 meters
+          },
+          (location) => {
+            const locationData = {
+              lat: location.coords.latitude,
+              lng: location.coords.longitude,
+              heading: location.coords.heading || 0,
+              speed: location.coords.speed || 0,
+            };
+
+            console.log('📍 Location updated:', {
+              lat: locationData.lat.toFixed(6),
+              lng: locationData.lng.toFixed(6),
+            });
+
+            updateLocation(locationData);
+          }
+        );
+
+        setLocationSubscription(subscription);
+      } catch (error) {
+        console.error('❌ Error starting location tracking:', error);
+      }
+    };
+
+    if (isOnline && driver?.id) {
+      startLocationTracking();
+    }
+
+    // Cleanup
+    return () => {
+      if (subscription) {
+        subscription.remove();
+        console.log('🛑 Stopped location tracking');
+      }
+    };
+  }, [isOnline, driver?.id]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

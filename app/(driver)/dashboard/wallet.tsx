@@ -291,7 +291,7 @@ export default function Wallet() {
 
             <View style={styles.modalBody}>
               <Text style={styles.availableBalance}>
-                Available: CI${balance.toFixed(2)}
+                Available: CI${currentBalance.toFixed(2)}
               </Text>
 
               <View style={styles.inputContainer}>
@@ -324,7 +324,7 @@ export default function Wallet() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.quickAmountButton}
-                  onPress={() => setCashoutAmount(balance.toString())}
+                  onPress={() => setCashoutAmount(currentBalance.toString())}
                 >
                   <Text style={styles.quickAmountText}>All</Text>
                 </TouchableOpacity>

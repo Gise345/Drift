@@ -139,20 +139,23 @@ export default function EditProfileScreen() {
       };
 
       // Only update profile photo if it changed
-      if (profilePhoto !== user.profilePhoto) {
+      // Save to both photoURL and profilePhoto for consistency
+      if (profilePhoto !== user.profilePhoto && profilePhoto !== user.photoURL) {
         updates.profilePhoto = profilePhoto;
+        updates.photoURL = profilePhoto;
       }
 
       // Use setDoc with merge to create document if it doesn't exist
       await setDoc(userRef, updates, { merge: true });
 
-      // Update local auth store
+      // Update local auth store with both photoURL and profilePhoto
       setUser({
         ...user,
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
         profilePhoto: profilePhoto,
+        photoURL: profilePhoto, // Keep both fields in sync
       });
 
       Alert.alert('Success', 'Profile updated successfully!', [
@@ -166,13 +169,13 @@ export default function EditProfileScreen() {
     }
   };
 
-  const displayPhoto = profilePhoto || user?.profilePhoto || 'https://i.pravatar.cc/150?img=68';
+  const displayPhoto = profilePhoto || user?.profilePhoto;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => router.back()}
           disabled={loading}
         >
@@ -188,23 +191,29 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView 
-          style={styles.content} 
+        <ScrollView
+          style={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
           <View style={styles.photoSection}>
             <View style={styles.photoContainer}>
-              <Image
-                source={{ uri: displayPhoto }}
-                style={styles.photo}
-              />
+              {displayPhoto ? (
+                <Image
+                  source={{ uri: displayPhoto }}
+                  style={styles.photo}
+                />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <Ionicons name="person" size={60} color="#9CA3AF" />
+                </View>
+              )}
               {uploadingPhoto && (
                 <View style={styles.photoOverlay}>
                   <ActivityIndicator size="large" color="#FFF" />
@@ -319,11 +328,19 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 16,
   },
-  photo: { 
-    width: 120, 
-    height: 120, 
-    borderRadius: 60, 
+  photo: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: '#E5E7EB',
+  },
+  photoPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photoOverlay: {
     position: 'absolute',

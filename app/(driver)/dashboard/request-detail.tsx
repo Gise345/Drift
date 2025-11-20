@@ -57,8 +57,16 @@ export default function RequestDetail() {
   }
 
   const handleAccept = async () => {
-    await acceptRequest(request.id);
-    router.replace('/(driver)/active-ride/navigate-to-pickup');
+    try {
+      console.log('✅ Accepted ride request:', request.id);
+      await acceptRequest(request.id);
+      console.log('✅ Navigating to pickup...');
+      // Use push instead of replace so driver can go back if needed
+      router.push('/(driver)/active-ride/navigate-to-pickup');
+    } catch (error) {
+      console.error('❌ Failed to accept ride:', error);
+      Alert.alert('Error', 'Failed to accept ride. Please try again.');
+    }
   };
 
   const handleDecline = async () => {

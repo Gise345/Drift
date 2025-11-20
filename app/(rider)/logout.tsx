@@ -10,7 +10,7 @@ export default function LogoutModal() {
 
   const handleLogout = async () => {
     await logout();
-    router.replace('/(auth)/sign-in');
+    router.replace('/(auth)/welcome');
   };
 
   return (

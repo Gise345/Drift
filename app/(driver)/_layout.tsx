@@ -1,17 +1,30 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 /**
  * DRIVER LAYOUT - UPDATED WITH NEW TABS INTERFACE
- * 
+ *
  * Complete navigation structure for the Drift driver app
- * 
+ *
  * CRITICAL CHANGE: Main interface now uses tabs instead of dashboard/home
  * - tabs/ contains: Home (Map), Earnings, Inbox, Menu
  * - All other screens accessible via navigation
- * 
+ *
+ * REQUIRES AUTHENTICATION - Redirects to welcome if not logged in
+ *
  * EXPO SDK 52 Compatible
  */
 export default function DriverLayout() {
+  const { user } = useAuthStore();
+  const router = useRouter();
+
+  // Auth guard - redirect if not logged in
+  useEffect(() => {
+    if (!user) {
+      router.replace('/(auth)/welcome');
+    }
+  }, [user]);
   return (
     <Stack
       screenOptions={{

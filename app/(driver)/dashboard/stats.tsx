@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import {
+  getDriverPerformanceStats,
+  PerformanceStats,
+} from '@/src/services/rating.service';
 
 const { width } = Dimensions.get('window');
 
@@ -19,36 +25,50 @@ type TimeFrame = 'today' | 'week' | 'month' | 'all';
 
 export default function Stats() {
   const router = useRouter();
-  const { stats } = useDriverStore();
+  const { driver } = useDriverStore();
   const [selectedPeriod, setSelectedPeriod] = useState<TimeFrame>('week');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [performanceData, setPerformanceData] = useState<PerformanceStats>({
+    acceptanceRate: 0,
+    completionRate: 0,
+    cancelRate: 0,
+    averageRating: 5.0,
+    totalTrips: 0,
+    totalEarnings: 0,
+    onlineHours: 0,
+    peakHours: [],
+    topRoutes: [],
+    weeklyData: [],
+  });
 
-  // Mock data - replace with real data from store
-  const performanceData = {
-    acceptanceRate: 92,
-    completionRate: 98,
-    cancelRate: 2,
-    averageRating: 4.8,
-    totalTrips: 145,
-    totalEarnings: 2450.75,
-    onlineHours: 38,
-    peakHours: ['6-9 AM', '5-8 PM'],
-    topRoutes: [
-      { from: 'George Town', to: 'Seven Mile Beach', count: 28 },
-      { from: 'West Bay', to: 'George Town', count: 22 },
-      { from: 'Camana Bay', to: 'Airport', count: 18 },
-    ],
-    weeklyData: [
-      { day: 'Mon', trips: 18, earnings: 285 },
-      { day: 'Tue', trips: 22, earnings: 340 },
-      { day: 'Wed', trips: 20, earnings: 310 },
-      { day: 'Thu', trips: 25, earnings: 395 },
-      { day: 'Fri', trips: 28, earnings: 445 },
-      { day: 'Sat', trips: 32, earnings: 520 },
-      { day: 'Sun', trips: 0, earnings: 0 },
-    ],
+  useEffect(() => {
+    loadPerformanceData();
+  }, [driver?.id, selectedPeriod]);
+
+  const loadPerformanceData = async () => {
+    if (!driver?.id) return;
+
+    try {
+      setLoading(true);
+      const stats = await getDriverPerformanceStats(driver.id, selectedPeriod);
+      setPerformanceData(stats);
+    } catch (error) {
+      console.error('Error loading performance data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const maxTrips = Math.max(...performanceData.weeklyData.map((d) => d.trips));
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadPerformanceData();
+    setRefreshing(false);
+  };
+
+  const maxTrips = performanceData.weeklyData.length > 0
+    ? Math.max(...performanceData.weeklyData.map((d) => d.trips), 1)
+    : 1;
 
   const getRatingColor = (rating: number) => {
     if (rating >= 4.5) return Colors.success;
@@ -68,6 +88,26 @@ export default function Stats() {
 
   const performance = getPerformanceLevel();
 
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Performance</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading performance data...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -79,7 +119,12 @@ export default function Stats() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Performance Badge */}
         <View style={[styles.performanceCard, { backgroundColor: performance.color + '15' }]}>
           <View style={styles.performanceBadge}>

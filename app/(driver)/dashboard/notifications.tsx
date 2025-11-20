@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,72 +7,102 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { NotificationService } from '@/src/services/notification.service';
+import firestore from '@react-native-firebase/firestore';
 
-type NotificationType = 'ride' | 'earnings' | 'system' | 'promotion' | 'alert';
+type NotificationType = 'ride' | 'earnings' | 'system' | 'promo' | 'document';
 
 type Notification = {
   id: string;
   type: NotificationType;
   title: string;
   message: string;
-  time: Date;
+  createdAt: Date;
   read: boolean;
 };
 
 export default function Notifications() {
   const router = useRouter();
+  const { driver } = useDriverStore();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [rideNotifications, setRideNotifications] = useState(true);
   const [earningsNotifications, setEarningsNotifications] = useState(true);
   const [promotionNotifications, setPromotionNotifications] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Mock notifications - replace with real data from store
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'ride',
-      title: 'New Ride Request',
-      message: 'Pickup at George Town Harbour in 5 minutes',
-      time: new Date(Date.now() - 300000),
-      read: false,
-    },
-    {
-      id: '2',
-      type: 'earnings',
-      title: 'Daily Earnings Summary',
-      message: 'You earned CI$85.50 today with 8 trips completed',
-      time: new Date(Date.now() - 3600000),
-      read: false,
-    },
-    {
-      id: '3',
-      type: 'promotion',
-      title: 'Weekend Bonus Active!',
-      message: 'Earn 1.5x on all rides this Saturday and Sunday',
-      time: new Date(Date.now() - 7200000),
-      read: true,
-    },
-    {
-      id: '4',
-      type: 'system',
-      title: 'Document Expiring Soon',
-      message: 'Your vehicle insurance expires in 30 days. Please update.',
-      time: new Date(Date.now() - 86400000),
-      read: true,
-    },
-    {
-      id: '5',
-      type: 'alert',
-      title: 'Weekly Platform Fee Due',
-      message: 'Your CI$25 weekly fee will be deducted tomorrow',
-      time: new Date(Date.now() - 172800000),
-      read: true,
-    },
-  ]);
+  useEffect(() => {
+    loadNotifications();
+    loadSettings();
+  }, [driver?.id]);
+
+  const loadNotifications = async () => {
+    if (!driver?.id) return;
+
+    try {
+      const firebaseNotifications = await NotificationService.getNotifications(driver.id);
+      setNotifications(firebaseNotifications as any);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSettings = async () => {
+    if (!driver?.id) return;
+
+    try {
+      const doc = await firestore()
+        .collection('drivers')
+        .doc(driver.id)
+        .collection('settings')
+        .doc('notifications')
+        .get();
+
+      if (doc.exists) {
+        const data = doc.data();
+        setNotificationsEnabled(data?.enabled ?? true);
+        setRideNotifications(data?.ride ?? true);
+        setEarningsNotifications(data?.earnings ?? true);
+        setPromotionNotifications(data?.promo ?? true);
+      }
+    } catch (error) {
+      console.error('Error loading notification settings:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadNotifications();
+    setRefreshing(false);
+  };
+
+  const saveSetting = async (key: string, value: boolean) => {
+    if (!driver?.id) return;
+
+    try {
+      await firestore()
+        .collection('drivers')
+        .doc(driver.id)
+        .collection('settings')
+        .doc('notifications')
+        .set(
+          { [key]: value, updatedAt: firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+    } catch (error) {
+      console.error('Error saving notification setting:', error);
+    }
+  };
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
@@ -82,10 +112,12 @@ export default function Notifications() {
         return 'wallet';
       case 'system':
         return 'information-circle';
-      case 'promotion':
+      case 'promo':
         return 'gift';
-      case 'alert':
+      case 'document':
         return 'alert-circle';
+      default:
+        return 'notifications';
     }
   };
 
@@ -97,29 +129,59 @@ export default function Notifications() {
         return Colors.success;
       case 'system':
         return Colors.gray[600];
-      case 'promotion':
+      case 'promo':
         return Colors.warning;
-      case 'alert':
+      case 'document':
         return Colors.error;
+      default:
+        return Colors.gray[600];
     }
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
-    );
+  const markAsRead = async (id: string) => {
+    if (!driver?.id) return;
+
+    try {
+      await NotificationService.markAsRead(id);
+      setNotifications((prev) =>
+        prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
+      );
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
+  const markAllAsRead = async () => {
+    if (!driver?.id) return;
+
+    try {
+      await NotificationService.markAllAsRead(driver.id);
+      setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
+    } catch (error) {
+      console.error('Error marking all as read:', error);
+    }
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((notif) => notif.id !== id));
+  const deleteNotification = async (id: string) => {
+    if (!driver?.id) return;
+
+    try {
+      await NotificationService.deleteNotification(id);
+      setNotifications((prev) => prev.filter((notif) => notif.id !== id));
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+    }
   };
 
-  const clearAll = () => {
-    setNotifications([]);
+  const clearAll = async () => {
+    if (!driver?.id) return;
+
+    try {
+      await NotificationService.deleteAllNotifications(driver.id);
+      setNotifications([]);
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
+    }
   };
 
   const getTimeAgo = (date: Date) => {
@@ -131,6 +193,19 @@ export default function Notifications() {
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: Spacing.md, color: Colors.gray[600] }}>
+            Loading notifications...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -152,7 +227,12 @@ export default function Notifications() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* Quick Actions */}
         {notifications.length > 0 && (
           <View style={styles.actionsRow}>
@@ -178,7 +258,10 @@ export default function Notifications() {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={(value) => {
+                setNotificationsEnabled(value);
+                saveSetting('enabled', value);
+              }}
               trackColor={{ false: Colors.gray[300], true: Colors.success }}
               thumbColor={Colors.white}
             />
@@ -191,7 +274,10 @@ export default function Notifications() {
                 <Text style={styles.settingSubLabel}>Ride Requests</Text>
                 <Switch
                   value={rideNotifications}
-                  onValueChange={setRideNotifications}
+                  onValueChange={(value) => {
+                    setRideNotifications(value);
+                    saveSetting('ride', value);
+                  }}
                   trackColor={{ false: Colors.gray[300], true: Colors.success }}
                   thumbColor={Colors.white}
                 />
@@ -202,7 +288,10 @@ export default function Notifications() {
                 <Text style={styles.settingSubLabel}>Earnings Updates</Text>
                 <Switch
                   value={earningsNotifications}
-                  onValueChange={setEarningsNotifications}
+                  onValueChange={(value) => {
+                    setEarningsNotifications(value);
+                    saveSetting('earnings', value);
+                  }}
                   trackColor={{ false: Colors.gray[300], true: Colors.success }}
                   thumbColor={Colors.white}
                 />
@@ -213,7 +302,10 @@ export default function Notifications() {
                 <Text style={styles.settingSubLabel}>Promotions</Text>
                 <Switch
                   value={promotionNotifications}
-                  onValueChange={setPromotionNotifications}
+                  onValueChange={(value) => {
+                    setPromotionNotifications(value);
+                    saveSetting('promo', value);
+                  }}
                   trackColor={{ false: Colors.gray[300], true: Colors.success }}
                   thumbColor={Colors.white}
                 />
@@ -261,7 +353,7 @@ export default function Notifications() {
                     {!notification.read && <View style={styles.unreadDot} />}
                   </View>
                   <Text style={styles.notificationMessage}>{notification.message}</Text>
-                  <Text style={styles.notificationTime}>{getTimeAgo(notification.time)}</Text>
+                  <Text style={styles.notificationTime}>{getTimeAgo(notification.createdAt)}</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.deleteButton}

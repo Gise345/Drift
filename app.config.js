@@ -33,7 +33,9 @@ module.exports = {
       permissions: [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ],
       googleServicesFile: "./google-services.json",
       config: {
@@ -59,7 +61,10 @@ module.exports = {
       [
         "expo-location",
         {
-          locationAlwaysAndWhenInUsePermission: "Drift needs your location to show nearby carpools and provide navigation."
+          locationAlwaysAndWhenInUsePermission: "Drift needs your location to show nearby carpools and provide navigation.",
+          locationWhenInUsePermission: "Drift needs your location to show nearby carpools and provide navigation.",
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true
         }
       ],
       "expo-secure-store",

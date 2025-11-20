@@ -293,14 +293,25 @@ export const useTripStore = create<TripStore>((set, get) => ({
       // Request location permissions
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       if (foregroundStatus !== 'granted') {
-        throw new Error('Foreground location permission not granted');
+        console.warn('⚠️ Foreground location permission not granted');
+        // Don't throw - just continue without background tracking
+        return;
       }
-      
+
       const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
       if (backgroundStatus !== 'granted') {
-        throw new Error('Background location permission not granted');
+        console.warn('⚠️ Background location permission not granted - tracking only in foreground');
+        // Don't throw - foreground tracking will still work
+        // The hook will handle foreground tracking
+        return;
       }
-      
+
+      // Only start background location tracking if both permissions are granted
+      if (TaskManager?.isTaskDefined && !(await TaskManager.isTaskDefined(LOCATION_TRACKING))) {
+        console.log('⚠️ Location tracking task not defined, skipping background tracking');
+        return;
+      }
+
       // Start background location tracking
       await Location.startLocationUpdatesAsync(LOCATION_TRACKING, {
         accuracy: Location.Accuracy.High,
@@ -314,11 +325,13 @@ export const useTripStore = create<TripStore>((set, get) => ({
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
       });
-      
+
       set({ trackingEnabled: true });
+      console.log('✅ Background location tracking started');
     } catch (error) {
-      console.error('Failed to start location tracking:', error);
-      throw error;
+      console.error('❌ Failed to start background location tracking:', error);
+      // Don't throw - let foreground tracking continue via the hook
+      console.log('⚠️ Falling back to foreground-only tracking');
     }
   },
   

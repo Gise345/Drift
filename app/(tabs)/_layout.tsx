@@ -1,6 +1,8 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 /**
  * TABS LAYOUT
@@ -9,9 +11,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
  * 1. Home - Main map and booking
  * 2. Activity - Trip history (my-trips screen)
  * 3. Profile - User profile
+ *
+ * REQUIRES AUTHENTICATION - Redirects to welcome if not logged in
  */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
+  const router = useRouter();
+
+  // Auth guard - redirect if not logged in
+  useEffect(() => {
+    if (!user) {
+      router.replace('/(auth)/welcome');
+    }
+  }, [user]);
 
   return (
     <Tabs
