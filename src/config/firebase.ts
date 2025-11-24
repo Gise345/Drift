@@ -17,7 +17,7 @@
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import storage, { FirebaseStorageTypes } from '@react-native-firebase/storage';
-
+import functions from '@react-native-firebase/functions';
 // ============================================================================
 // Firebase Instances - v22 Modular API
 // ============================================================================
@@ -28,6 +28,7 @@ export const firebaseAuth = auth();
 // Firestore instance - call firestore() directly, don't use getFirestore()
 export const firebaseDb = firestore();
 export const db = firebaseDb; // Alias for consistency
+export const firebaseFunctions = functions();
 
 // Storage instance
 export const firebaseStorage = storage();
@@ -69,4 +70,5 @@ export default {
   auth: firebaseAuth,
   db: firebaseDb,
   storage: firebaseStorage,
+  functions: firebaseFunctions, 
 };

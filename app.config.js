@@ -18,11 +18,24 @@ module.exports = {
       googleServicesFile: "./GoogleService-Info.plist",
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
-        NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
+        // ✅ ADDED: PayPal deep link URL types
+        CFBundleURLTypes: [
+          {
+            CFBundleURLSchemes: ["drift"]
+          }
+        ],
+        // ✅ ADDED: Allow opening PayPal URLs
+        LSApplicationQueriesSchemes: ["https", "http"]
       },
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
-      }
+      },
+      // ✅ UPDATED: Deep linking for PayPal return (iOS Universal Links - optional)
+      associatedDomains: [
+        // Uncomment if you want to use Universal Links:
+        // "applinks:drift.ky"
+      ]
     },
     android: {
       package: "com.drift.global",
@@ -42,7 +55,31 @@ module.exports = {
         googleMaps: {
           apiKey: "AIzaSyDjk96AyKGgPJRhzBRH7VY2qTsEsuvIq0g"
         }
-      }
+      },
+      // ✅ UPDATED: Deep linking for PayPal return with specific host
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true, // ✅ ADDED: Enable Android App Links
+          data: [
+            {
+              scheme: "drift",
+              host: "paypal" // ✅ ADDED: Specific host for PayPal callbacks
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        },
+        // ✅ ADDED: General deep link fallback (for other features)
+        {
+          action: "VIEW",
+          data: [
+            {
+              scheme: "drift"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     plugins: [
       [
@@ -90,6 +127,7 @@ module.exports = {
       "@react-native-firebase/app",
       "@react-native-google-signin/google-signin",
     ],
+    // ✅ CONFIRMED: Deep linking scheme for PayPal return
     scheme: "drift",
     web: {
       favicon: "./assets/favicon.png"

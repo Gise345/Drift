@@ -1,4 +1,11 @@
-import React, { useState } from 'react';
+/**
+ * SELECT PAYMENT SCREEN
+ * Production implementation with real PayPal integration
+ * 
+ * EXPO SDK 52 - Firebase + PayPal
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,12 +17,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
-
-// DEV MODE: Set to true to bypass payment for testing
-const DEV_BYPASS_PAYMENT = true;
+import { PayPalCheckout } from '@/components/PayPalCheckout';
+import { PayPalService, PayPalPaymentMethod } from '@/src/services/paypal.service';
+import { firebaseAuth } from '@/src/config/firebase';
 
 const Colors = {
   primary: '#D4E700',
@@ -40,52 +48,76 @@ const Colors = {
 
 interface PaymentMethod {
   id: string;
-  type: 'card' | 'cash' | 'wallet';
+  type: 'paypal' | 'credit_card' | 'apple_pay' | 'google_pay';
   name: string;
   icon: string;
   details?: string;
   isDefault?: boolean;
+  connected?: boolean;
 }
 
 export default function SelectPaymentScreen() {
   const router = useRouter();
-  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType, pricing, lockedContribution } = useCarpoolStore();
+  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType } = useCarpoolStore();
   const { createTrip, setCurrentTrip } = useTripStore();
   const { user } = useAuthStore();
 
-  const [selectedPayment, setSelectedPayment] = useState<string>('card');
+  const [selectedPayment, setSelectedPayment] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [paypalMethods, setPaypalMethods] = useState<PayPalPaymentMethod[]>([]);
+  const [loadingMethods, setLoadingMethods] = useState(true);
+  const [showPayPalCheckout, setShowPayPalCheckout] = useState(false);
 
-  // Production payment methods - Only real payment options
+  // Load saved PayPal payment methods
+  useEffect(() => {
+    loadPaymentMethods();
+  }, [user]);
+
+  const loadPaymentMethods = async () => {
+    if (!user) return;
+
+    try {
+      setLoadingMethods(true);
+      const methods = await PayPalService.getPaymentMethods(user.id);
+      setPaypalMethods(methods);
+
+      // Auto-select default method
+      const defaultMethod = methods.find(m => m.isDefault);
+      if (defaultMethod) {
+        setSelectedPayment(`paypal-${defaultMethod.id}`);
+      }
+    } catch (error) {
+      console.error('Error loading payment methods:', error);
+    } finally {
+      setLoadingMethods(false);
+    }
+  };
+
+  // Production payment methods
   const paymentMethods: PaymentMethod[] = [
     {
-      id: 'card',
-      type: 'card',
-      name: 'Credit/Debit Card',
-      details: 'Visa, Mastercard, Amex',
-      icon: '💳',
-      isDefault: true,
-    },
-    {
-      id: 'paypal',
-      type: 'wallet',
+      id: 'paypal-new',
+      type: 'paypal',
       name: 'PayPal',
-      details: 'Secure payment with PayPal',
-      icon: '💰',
+      details: 'Pay with your PayPal account',
+      icon: 'logo-paypal',
+      connected: true,
     },
     {
       id: 'apple-pay',
-      type: 'wallet',
+      type: 'apple_pay',
       name: 'Apple Pay',
       details: 'Quick and secure',
-      icon: '',
+      icon: 'logo-apple',
+      connected: false,
     },
     {
       id: 'google-pay',
-      type: 'wallet',
+      type: 'google_pay',
       name: 'Google Pay',
       details: 'Fast checkout',
-      icon: 'G',
+      icon: 'logo-google',
+      connected: false,
     },
   ];
 
@@ -93,64 +125,78 @@ export default function SelectPaymentScreen() {
     setSelectedPayment(paymentId);
   };
 
-  const handleAddCard = () => {
-    router.push('/(rider)/add-card');
-  };
-
   const handleConfirmPayment = async () => {
-    console.log('💳 Payment Confirmation Started');
-    console.log('  DEV_BYPASS_PAYMENT:', DEV_BYPASS_PAYMENT);
-    console.log('  selectedPayment:', selectedPayment);
-    console.log('  user:', user?.id);
-    console.log('  pickupLocation:', pickupLocation?.address);
-    console.log('  destination:', destination?.address);
-    console.log('  estimatedCost:', estimatedCost);
 
-    // DEV MODE: Skip payment validation if bypass is enabled
-    if (!DEV_BYPASS_PAYMENT && !selectedPayment) {
-      console.log('❌ No payment selected');
+      // ADD THIS DEBUG CODE
+  console.log('🔍 Checking auth state...');
+  const user = firebaseAuth.currentUser;
+  console.log('🔍 User:', user?.uid);
+  console.log('🔍 Email:', user?.email);
+  
+  if (user) {
+    try {
+      const token = await user.getIdToken();
+      console.log('🔍 Token length:', token.length);
+      console.log('🔍 Token preview:', token.substring(0, 50) + '...');
+    } catch (error) {
+      console.error('🔍 Failed to get token:', error);
+    }
+  } else {
+    console.error('🔍 NO USER LOGGED IN!');
+  }
+  // END DEBUG CODE
+
+    if (!selectedPayment) {
       Alert.alert('Select Payment', 'Please select a payment method');
       return;
     }
 
-    if (!user || !pickupLocation || !destination || !pricing || !lockedContribution) {
-      console.log('❌ Missing required trip information');
-      console.log('  user:', !!user);
-      console.log('  pickupLocation:', !!pickupLocation);
-      console.log('  destination:', !!destination);
-      console.log('  pricing:', !!pricing);
-      console.log('  lockedContribution:', lockedContribution);
-      Alert.alert('Error', 'Missing required trip information. Please go back and recalculate pricing.');
+    if (!user || !pickupLocation || !destination || !estimatedCost) {
+      Alert.alert('Error', 'Missing required trip information');
       return;
     }
+
+    // For non-connected methods, show coming soon
+    const method = paymentMethods.find(m => m.id === selectedPayment);
+    if (method && !method.connected && !selectedPayment.startsWith('paypal-')) {
+      Alert.alert('Coming Soon', `${method.name} integration coming soon!`);
+      return;
+    }
+
+    // If PayPal is selected, show checkout
+    if (selectedPayment === 'paypal-new' || selectedPayment.startsWith('paypal-')) {
+      setShowPayPalCheckout(true);
+      return;
+    }
+
+    // Otherwise, create trip without payment (cash, etc.)
+    await createTripRequest();
+  };
+
+  const createTripRequest = async (paymentDetails?: {
+    orderId?: string;
+    payerId?: string;
+    paymentMethod?: string;
+  }) => {
+    if (!user || !pickupLocation || !destination || !estimatedCost) return;
 
     setLoading(true);
 
     try {
-      // Save payment method (use 'dev-bypass' if no payment selected in dev mode)
-      const paymentMethodToUse = selectedPayment || 'dev-bypass';
-      setSelectedPaymentMethod(paymentMethodToUse);
-
-      console.log('💳 Payment method:', paymentMethodToUse);
-
-      // DEV MODE: Show bypass notification
-      if (DEV_BYPASS_PAYMENT && !selectedPayment) {
-        console.log('🔧 DEV MODE: Bypassing payment selection');
-      }
+      // Save payment method
+      setSelectedPaymentMethod(paymentDetails?.paymentMethod || selectedPayment);
 
       // Create trip in Firebase with status "REQUESTED"
-      console.log('📝 Creating trip in Firebase...');
-
-      const tripData = {
+      const tripId = await createTrip({
         riderId: user.id,
-        status: 'REQUESTED' as const,
+        status: 'REQUESTED',
         pickup: {
           address: pickupLocation.address || '',
           coordinates: {
             latitude: pickupLocation.latitude,
             longitude: pickupLocation.longitude,
           },
-          ...(pickupLocation.placeName && { placeName: pickupLocation.placeName }),
+          placeName: (pickupLocation as any).placeName || pickupLocation.address || '',
         },
         destination: {
           address: destination.address || '',
@@ -158,38 +204,82 @@ export default function SelectPaymentScreen() {
             latitude: destination.latitude,
             longitude: destination.longitude,
           },
-          ...((destination as any).placeName && { placeName: (destination as any).placeName }),
+          placeName: (destination as any).placeName || destination.address || '',
         },
         vehicleType: vehicleType || 'standard',
-        distance: pickupLocation.distance || 0,
-        duration: pickupLocation.duration || 0,
-        estimatedCost: lockedContribution, // Use locked contribution amount
-        lockedContribution: lockedContribution, // Store locked contribution
-        pricing: pricing, // Store full pricing data for reference
-        paymentMethod: paymentMethodToUse,
+        distance: (pickupLocation as any).distance || 0,
+        duration: (pickupLocation as any).duration || 0,
+        estimatedCost: estimatedCost.max || 0,
+        paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
+        ...(paymentDetails ? {
+          paymentDetails: {
+            paypalOrderId: paymentDetails.orderId,
+            paypalPayerId: paymentDetails.payerId,
+          }
+        } : {}),
         requestedAt: new Date(),
-      };
-
-      console.log('📝 Trip data:', JSON.stringify(tripData, null, 2));
-
-      const tripId = await createTrip(tripData);
+      });
 
       console.log('✅ Trip created in Firebase:', tripId);
 
       // Navigate to finding driver screen
-      console.log('🚗 Navigating to finding-driver screen...');
-      router.push('/(rider)/finding-driver');
+      router.push('/rider/finding-driver');
     } catch (error) {
       console.error('❌ Failed to create trip:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
-      Alert.alert(
-        'Error',
-        `Failed to request ride. Please try again.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      Alert.alert('Error', 'Failed to request ride. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handlePayPalSuccess = async (orderId: string, payerId: string, details: any) => {
+    console.log('✅ PayPal payment successful:', { orderId, payerId });
+
+    setShowPayPalCheckout(false);
+
+    // Save PayPal account if new
+    if (user && details.payer?.email_address) {
+      try {
+        await PayPalService.addPaymentMethod(
+          user.id,
+          details.payer.email_address,
+          paypalMethods.length === 0 // Set as default if first method
+        );
+        await loadPaymentMethods();
+      } catch (error) {
+        console.error('Error saving PayPal method:', error);
+      }
+    }
+
+    // Create trip with payment details
+    await createTripRequest({
+      orderId,
+      payerId,
+      paymentMethod: 'paypal',
+    });
+  };
+
+  const handlePayPalCancel = () => {
+    console.log('❌ PayPal payment cancelled');
+    setShowPayPalCheckout(false);
+  };
+
+  const handlePayPalError = (error: Error) => {
+    console.error('❌ PayPal error:', error);
+    setShowPayPalCheckout(false);
+    Alert.alert('Payment Error', error.message || 'Failed to process payment');
+  };
+
+  if (loadingMethods) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading payment methods...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -201,11 +291,11 @@ export default function SelectPaymentScreen() {
             onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
           </TouchableOpacity>
-          
+
           <Text style={styles.title}>Select Payment</Text>
-          
+
           <View style={styles.headerSpacer} />
         </View>
 
@@ -214,88 +304,103 @@ export default function SelectPaymentScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Zone-Based Pricing Display */}
-          {pricing && lockedContribution && (
-            <View style={styles.costCard}>
-              <Text style={styles.costLabel}>Locked Contribution Amount</Text>
-              <Text style={styles.costAmount}>
-                CI${lockedContribution.toFixed(2)}
-              </Text>
-              <Text style={styles.costNote}>
-                {pricing.displayText} • {pricing.isWithinZone ? 'Within-zone flat rate' : pricing.isAirportTrip ? 'Airport fixed rate' : 'Cross-zone trip'}
-              </Text>
-              <Text style={styles.costNote}>
-                Amount locked at request time and cannot change
+          {/* Cost Summary */}
+          <View style={styles.costCard}>
+            <View style={styles.costRow}>
+              <Text style={styles.costLabel}>Estimated Cost</Text>
+              <Text style={styles.costValue}>
+                CI${estimatedCost?.max?.toFixed(2) || '0.00'}
               </Text>
             </View>
-          )}
-
-          {/* Payment Methods */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Methods</Text>
-            
-            {paymentMethods.map((method) => (
-              <TouchableOpacity
-                key={method.id}
-                style={[
-                  styles.paymentCard,
-                  selectedPayment === method.id && styles.paymentCardSelected,
-                ]}
-                onPress={() => handleSelectPayment(method.id)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.paymentIcon}>
-                  <Text style={styles.paymentIconText}>{method.icon}</Text>
-                </View>
-                
-                <View style={styles.paymentInfo}>
-                  <Text style={styles.paymentName}>{method.name}</Text>
-                  {method.details && (
-                    <Text style={styles.paymentDetails}>{method.details}</Text>
-                  )}
-                  {method.isDefault && (
-                    <View style={styles.defaultBadge}>
-                      <Text style={styles.defaultText}>DEFAULT</Text>
-                    </View>
-                  )}
-                </View>
-                
-                {selectedPayment === method.id && (
-                  <View style={styles.selectedCheck}>
-                    <Text style={styles.checkMark}>✓</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-
-            {/* Add New Card */}
-            <TouchableOpacity
-              style={styles.addCardButton}
-              onPress={handleAddCard}
-            >
-              <View style={styles.addCardIcon}>
-                <Text style={styles.addCardIconText}>+</Text>
-              </View>
-              <Text style={styles.addCardText}>Add New Card</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Legal Notice */}
-          <View style={styles.legalNotice}>
-            <Text style={styles.legalText}>
-              💡 <Text style={styles.legalBold}>Peer-to-Peer Cost Sharing:</Text>
-              {' '}Payments are optional contributions for shared expenses. Drift facilitates coordination only.
+            <Text style={styles.costNote}>
+              Final amount may vary based on actual distance
             </Text>
           </View>
 
-          {/* DEV MODE Indicator */}
-          {DEV_BYPASS_PAYMENT && (
-            <View style={styles.devModeNotice}>
-              <Text style={styles.devModeText}>
-                🔧 DEV MODE: Payment validation is bypassed for testing
-              </Text>
-            </View>
+          {/* Saved PayPal Methods */}
+          {paypalMethods.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Saved PayPal Accounts</Text>
+              {paypalMethods.map((method) => (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[
+                    styles.paymentCard,
+                    selectedPayment === `paypal-${method.id}` && styles.paymentCardSelected,
+                  ]}
+                  onPress={() => handleSelectPayment(`paypal-${method.id}`)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.paymentLeft}>
+                    <View style={[styles.iconContainer, styles.paypalBg]}>
+                      <Ionicons name="logo-paypal" size={24} color={Colors.white} />
+                    </View>
+                    <View style={styles.paymentInfo}>
+                      <Text style={styles.paymentName}>PayPal</Text>
+                      <Text style={styles.paymentDetails}>{method.email}</Text>
+                      {method.isDefault && (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultText}>Default</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  {selectedPayment === `paypal-${method.id}` && (
+                    <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </>
           )}
+
+          {/* Payment Methods */}
+          <Text style={styles.sectionTitle}>Payment Methods</Text>
+
+          {paymentMethods.map((method) => (
+            <TouchableOpacity
+              key={method.id}
+              style={[
+                styles.paymentCard,
+                selectedPayment === method.id && styles.paymentCardSelected,
+                !method.connected && styles.paymentCardDisabled,
+              ]}
+              onPress={() => method.connected && handleSelectPayment(method.id)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.paymentLeft}>
+                <View style={[
+                  styles.iconContainer,
+                  method.type === 'paypal' && styles.paypalBg,
+                  method.type === 'apple_pay' && styles.appleBg,
+                  method.type === 'google_pay' && styles.googleBg,
+                ]}>
+                  <Ionicons 
+                    name={method.icon as any} 
+                    size={24} 
+                    color={method.type === 'apple_pay' ? Colors.black : Colors.white} 
+                  />
+                </View>
+                <View style={styles.paymentInfo}>
+                  <Text style={styles.paymentName}>{method.name}</Text>
+                  <Text style={styles.paymentDetails}>{method.details}</Text>
+                  {!method.connected && (
+                    <Text style={styles.comingSoon}>Coming Soon</Text>
+                  )}
+                </View>
+              </View>
+              {selectedPayment === method.id && method.connected && (
+                <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+              )}
+            </TouchableOpacity>
+          ))}
+
+          {/* Legal Disclaimer */}
+          <View style={styles.disclaimer}>
+            <Ionicons name="information-circle-outline" size={20} color={Colors.gray[600]} />
+            <Text style={styles.disclaimerText}>
+              This is a voluntary cost-sharing contribution for a private carpool ride, not a commercial fare. By proceeding, you agree to Drift's peer-to-peer terms of service.
+            </Text>
+          </View>
         </ScrollView>
 
         {/* Confirm Button */}
@@ -303,21 +408,44 @@ export default function SelectPaymentScreen() {
           <TouchableOpacity
             style={[
               styles.confirmButton,
-              (!DEV_BYPASS_PAYMENT && !selectedPayment || loading) && styles.confirmButtonDisabled,
+              (!selectedPayment || loading) && styles.confirmButtonDisabled,
             ]}
             onPress={handleConfirmPayment}
-            disabled={!DEV_BYPASS_PAYMENT && !selectedPayment || loading}
+            disabled={!selectedPayment || loading}
           >
             {loading ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
               <>
-                <Text style={styles.confirmButtonText}>Request Carpool</Text>
-                <Text style={styles.confirmButtonArrow}>→</Text>
+                <Text style={styles.confirmButtonText}>
+                  Confirm Payment Method
+                </Text>
+                <Ionicons name="arrow-forward" size={20} color={Colors.white} />
               </>
             )}
           </TouchableOpacity>
         </View>
+
+       {/* PayPal Hosted Checkout Modal - Opens in Browser */}
+        {showPayPalCheckout && estimatedCost && (
+          <PayPalCheckout
+            visible={showPayPalCheckout}
+            amount={estimatedCost.max}
+            currency="USD"
+            description={`Drift Carpool: ${(pickupLocation as any)?.placeName || pickupLocation?.address || 'Pickup'} to ${(destination as any)?.placeName || destination?.address || 'Destination'}`}
+            onSuccess={(orderId, captureId) => {
+              handlePayPalSuccess(orderId, captureId, {});
+            }}
+            onCancel={handlePayPalCancel}
+            onError={handlePayPalError}
+            metadata={{
+              userId: user?.id,
+              pickup: (pickupLocation as any)?.placeName || pickupLocation?.address,
+              destination: (destination as any)?.placeName || destination?.address,
+              vehicleType,
+            }}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -345,10 +473,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backIcon: {
-    fontSize: 24,
-    color: Colors.black,
-  },
   title: {
     flex: 1,
     fontSize: 18,
@@ -363,46 +487,51 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    padding: 16,
     paddingBottom: 120,
   },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.gray[600],
+  },
   costCard: {
-    backgroundColor: Colors.purple,
-    margin: 16,
-    padding: 20,
+    backgroundColor: Colors.gray[50],
     borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  costRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   costLabel: {
     fontSize: 14,
-    fontWeight: '600',
-    color: Colors.white,
-    marginBottom: 8,
+    color: Colors.gray[600],
   },
-  costAmount: {
-    fontSize: 32,
+  costValue: {
+    fontSize: 24,
     fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: 8,
+    color: Colors.black,
   },
   costNote: {
     fontSize: 12,
-    color: Colors.white,
-    textAlign: 'center',
-    opacity: 0.9,
-  },
-  section: {
-    marginTop: 8,
-    paddingHorizontal: 16,
+    color: Colors.gray[500],
+    fontStyle: 'italic',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: Colors.black,
-    marginBottom: 16,
+    marginBottom: 12,
+    marginTop: 8,
   },
   paymentCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: Colors.white,
     borderWidth: 2,
     borderColor: Colors.gray[200],
@@ -412,117 +541,82 @@ const styles = StyleSheet.create({
   },
   paymentCardSelected: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.gray[50],
+    backgroundColor: Colors.primary + '10',
   },
-  paymentIcon: {
+  paymentCardDisabled: {
+    opacity: 0.6,
+  },
+  paymentLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  iconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.gray[100],
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  paymentIconText: {
-    fontSize: 24,
+  paypalBg: {
+    backgroundColor: '#0070BA',
+  },
+  appleBg: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.gray[300],
+  },
+  googleBg: {
+    backgroundColor: '#4285F4',
   },
   paymentInfo: {
     flex: 1,
   },
   paymentName: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.black,
     marginBottom: 4,
   },
   paymentDetails: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.gray[600],
   },
   defaultBadge: {
-    marginTop: 4,
+    backgroundColor: Colors.success + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
     alignSelf: 'flex-start',
+    marginTop: 4,
   },
   defaultText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.success,
-    letterSpacing: 0.5,
   },
-  selectedCheck: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  comingSoon: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.gray[500],
+    fontStyle: 'italic',
+    marginTop: 2,
   },
-  checkMark: {
-    fontSize: 18,
-    color: Colors.black,
-    fontWeight: '700',
-  },
-  addCardButton: {
+  disclaimer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.white,
-    borderWidth: 2,
-    borderColor: Colors.gray[300],
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-  },
-  addCardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.gray[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  addCardIconText: {
-    fontSize: 28,
-    color: Colors.gray[600],
-  },
-  addCardText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.gray[700],
-  },
-  legalNotice: {
-    marginHorizontal: 16,
-    marginTop: 24,
-    padding: 12,
+    alignItems: 'flex-start',
     backgroundColor: Colors.gray[50],
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.purple,
-  },
-  legalText: {
-    fontSize: 12,
-    color: Colors.gray[600],
-    lineHeight: 18,
-  },
-  legalBold: {
-    fontWeight: '700',
-    color: Colors.purple,
-  },
-  devModeNotice: {
-    marginHorizontal: 16,
-    marginTop: 16,
     padding: 12,
-    backgroundColor: '#FEF3C7',
     borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#F59E0B',
+    marginTop: 16,
   },
-  devModeText: {
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 18,
-    fontWeight: '600',
+  disclaimerText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.gray[600],
+    lineHeight: 16,
+    marginLeft: 8,
   },
   bottomContainer: {
     position: 'absolute',
@@ -547,24 +641,14 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    gap: 8,
   },
   confirmButtonDisabled: {
     opacity: 0.6,
   },
   confirmButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
-    marginRight: 8,
-  },
-  confirmButtonArrow: {
-    fontSize: 20,
-    color: Colors.white,
-    fontWeight: '700',
   },
 });
