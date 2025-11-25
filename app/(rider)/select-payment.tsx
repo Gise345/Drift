@@ -212,10 +212,10 @@ export default function SelectPaymentScreen() {
         estimatedCost: estimatedCost.max || 0,
         paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
         ...(paymentDetails ? {
-          paymentDetails: {
-            paypalOrderId: paymentDetails.orderId,
-            paypalPayerId: paymentDetails.payerId,
-          }
+          paymentMethod: paymentDetails 
+          ? `paypal:${paymentDetails.orderId}:${paymentDetails.payerId}`
+          : selectedPayment,
+        paymentStatus: paymentDetails ? 'COMPLETED' : 'PENDING',
         } : {}),
         requestedAt: new Date(),
       });
@@ -223,7 +223,7 @@ export default function SelectPaymentScreen() {
       console.log('✅ Trip created in Firebase:', tripId);
 
       // Navigate to finding driver screen
-      router.push('/rider/finding-driver');
+      router.push('/(rider)/finding-driver');
     } catch (error) {
       console.error('❌ Failed to create trip:', error);
       Alert.alert('Error', 'Failed to request ride. Please try again.');
