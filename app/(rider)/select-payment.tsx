@@ -5,7 +5,7 @@
  * EXPO SDK 52 - Firebase + PayPal
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -67,6 +67,8 @@ export default function SelectPaymentScreen() {
   const [paypalMethods, setPaypalMethods] = useState<PayPalPaymentMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [showPayPalCheckout, setShowPayPalCheckout] = useState(false);
+  const [paymentProcessed, setPaymentProcessed] = useState(false); // Prevent double processing
+  const paymentProcessedRef = useRef(false); // Ref for immediate check
 
   // Load saved PayPal payment methods
   useEffect(() => {
@@ -222,8 +224,8 @@ export default function SelectPaymentScreen() {
 
       console.log('✅ Trip created in Firebase:', tripId);
 
-      // Navigate to finding driver screen
-      router.push('/(rider)/finding-driver');
+      // Navigate to finding driver screen - use replace to avoid stacking
+      router.replace('/(rider)/finding-driver');
     } catch (error) {
       console.error('❌ Failed to create trip:', error);
       Alert.alert('Error', 'Failed to request ride. Please try again.');
@@ -233,6 +235,14 @@ export default function SelectPaymentScreen() {
   };
 
   const handlePayPalSuccess = async (orderId: string, payerId: string, details: any) => {
+    // Prevent double processing - use ref for immediate check
+    if (paymentProcessedRef.current || paymentProcessed) {
+      console.log('⚠️ Payment already processed, ignoring duplicate callback');
+      return;
+    }
+    paymentProcessedRef.current = true;
+    setPaymentProcessed(true);
+
     console.log('✅ PayPal payment successful:', { orderId, payerId });
 
     setShowPayPalCheckout(false);

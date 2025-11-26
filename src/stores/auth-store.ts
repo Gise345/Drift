@@ -8,8 +8,23 @@
 
 import { create } from 'zustand';
 import auth, { onAuthStateChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
-import firestore, { doc, getDoc } from '@react-native-firebase/firestore';
+import firestore, { doc, getDoc, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutUser } from '../services/firebase-auth-service';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
+
+// Storage key for persisting the last active mode
+const LAST_MODE_KEY = '@drift_last_mode';
 
 // ============================================================================
 // Get Firebase instances - v22 modular way
@@ -48,7 +63,7 @@ interface AuthStore {
 
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
-  setMode: (mode: 'RIDER' | 'DRIVER') => void;
+  setMode: (mode: 'RIDER' | 'DRIVER') => Promise<void>;
   signOut: () => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => () => void;
@@ -79,10 +94,19 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   /**
    * Switch between rider and driver mode
+   * Persists the mode to AsyncStorage so user returns to the same screen
    */
-  setMode: (mode) => {
+  setMode: async (mode) => {
     console.log('🔄 Switching mode to:', mode);
     set({ currentMode: mode });
+
+    // Persist mode to AsyncStorage
+    try {
+      await AsyncStorage.setItem(LAST_MODE_KEY, mode);
+      console.log('💾 Saved last mode to storage:', mode);
+    } catch (error) {
+      console.error('❌ Failed to save mode to storage:', error);
+    }
   },
 
   /**
@@ -141,19 +165,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           while (retries < maxRetries) {
             const userRef = doc(db, 'users', firebaseUser.uid);
             userDoc = await getDoc(userRef);
-            
-            if (userDoc.exists) {
+
+            // Use helper that handles both boolean and function versions
+            if (documentExists(userDoc)) {
               break; // Document found!
             }
-            
+
             retries++;
             if (retries < maxRetries) {
               console.log(`⏳ Document not found yet, retry ${retries}/${maxRetries} in ${retryDelay}ms...`);
               await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
           }
-          
-          if (!userDoc || !userDoc.exists) {
+
+          // Use helper that handles both boolean and function versions
+          if (!userDoc || !documentExists(userDoc)) {
             // After all retries, document still doesn't exist
             console.warn('⚠️ User authenticated but no Firestore document found after retries');
             console.warn('⚠️ This usually means registration didn\'t complete properly');
@@ -195,8 +221,32 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
               roles: user.roles,
             });
 
-            // Determine initial mode based on roles
-            const initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+            // Try to load the last saved mode from AsyncStorage
+            let initialMode: 'RIDER' | 'DRIVER' = 'RIDER';
+            try {
+              const savedMode = await AsyncStorage.getItem(LAST_MODE_KEY);
+              if (savedMode === 'DRIVER' || savedMode === 'RIDER') {
+                // Only use saved mode if user has that role
+                if (savedMode === 'DRIVER' && user.roles?.includes('DRIVER')) {
+                  initialMode = 'DRIVER';
+                  console.log('📂 Restored last mode from storage: DRIVER');
+                } else if (savedMode === 'RIDER' && user.roles?.includes('RIDER')) {
+                  initialMode = 'RIDER';
+                  console.log('📂 Restored last mode from storage: RIDER');
+                } else {
+                  // Saved mode doesn't match user's roles, default based on roles
+                  initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+                  console.log('📂 Saved mode not available, defaulting to:', initialMode);
+                }
+              } else {
+                // No saved mode, default based on roles
+                initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+                console.log('📂 No saved mode, defaulting to:', initialMode);
+              }
+            } catch (error) {
+              console.error('❌ Failed to load mode from storage:', error);
+              initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+            }
 
             set({
               user,

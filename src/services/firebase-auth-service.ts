@@ -29,8 +29,20 @@ import firestore, {
   getDoc,
   setDoc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
@@ -263,7 +275,8 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
     const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
     const userDoc = await getDoc(userRef);
 
-    if (userDoc.exists) {
+    // Use helper that handles both boolean and function versions
+    if (documentExists(userDoc)) {
       console.log('✅ Existing user found, updating...');
       
       // Update last login
@@ -333,7 +346,8 @@ export async function getUserData(userId: string): Promise<DriftUser | null> {
     const userRef = doc(firestoreInstance, 'users', userId);
     const userDoc = await getDoc(userRef);
 
-    if (!userDoc.exists) {
+    // Use helper that handles both boolean and function versions
+    if (!documentExists(userDoc)) {
       console.warn('⚠️ User document not found');
       return null;
     }

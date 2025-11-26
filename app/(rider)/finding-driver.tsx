@@ -38,10 +38,22 @@ const Colors = {
 export default function FindingDriverScreen() {
   const router = useRouter();
   const { vehicleType, estimatedCost, destination, clearBookingFlow } = useCarpoolStore();
-  const { currentTrip, subscribeToTrip } = useTripStore();
+
+  // Get current trip from store - subscribe to full object to catch all changes
+  const currentTrip = useTripStore((state) => state.currentTrip);
+  const subscribeToTrip = useTripStore((state) => state.subscribeToTrip);
 
   const [searchStatus, setSearchStatus] = useState<string>('Searching for available drivers...');
   const [pulseAnim] = useState(new Animated.Value(1));
+
+  // Debug: Log trip changes
+  useEffect(() => {
+    console.log('🔍 FindingDriver - currentTrip changed:', {
+      id: currentTrip?.id,
+      status: currentTrip?.status,
+      driverInfo: currentTrip?.driverInfo?.name || 'None',
+    });
+  }, [currentTrip]);
 
   useEffect(() => {
     // Animated pulse effect
@@ -61,6 +73,11 @@ export default function FindingDriverScreen() {
     ).start();
   }, []);
 
+  // Track if we've already navigated to prevent duplicate navigation
+  const hasNavigatedRef = React.useRef(false);
+  // Track the currently subscribed trip ID to prevent duplicate subscriptions
+  const subscribedTripIdRef = React.useRef<string | null>(null);
+
   // Listen for trip status changes in real-time
   useEffect(() => {
     if (!currentTrip?.id) {
@@ -68,49 +85,75 @@ export default function FindingDriverScreen() {
       return;
     }
 
+    // Prevent duplicate subscription to the same trip
+    if (subscribedTripIdRef.current === currentTrip.id) {
+      console.log('⚠️ Already subscribed to trip:', currentTrip.id);
+      return;
+    }
+
     console.log('👀 Starting to monitor trip:', currentTrip.id);
     setSearchStatus('Searching for available drivers...');
+    hasNavigatedRef.current = false; // Reset navigation flag for new trip
+    subscribedTripIdRef.current = currentTrip.id;
 
     // Subscribe to trip updates from Firebase
     const unsubscribe = subscribeToTrip(currentTrip.id);
 
     return () => {
+      console.log('🔔 Unsubscribing from trip:', currentTrip.id);
+      subscribedTripIdRef.current = null;
       if (unsubscribe) {
         unsubscribe();
       }
     };
   }, [currentTrip?.id]);
 
-  // Handle trip status changes
+  // Handle trip status changes - this is the main effect that navigates when driver accepts
   useEffect(() => {
-    if (!currentTrip) return;
-
-    console.log('📍 Trip status changed:', currentTrip.status);
-
-    switch (currentTrip.status) {
-      case 'REQUESTED':
-        setSearchStatus('Looking for nearby drivers...');
-        break;
-
-      case 'ACCEPTED':
-      case 'DRIVER_ARRIVING':
-        setSearchStatus('Driver found! Preparing trip details...');
-        // Wait a moment then navigate
-        setTimeout(() => {
-          router.replace('/(rider)/driver-arriving');
-        }, 1500);
-        break;
-
-      case 'CANCELLED':
-        Alert.alert('Trip Cancelled', 'The trip has been cancelled.');
-        clearBookingFlow();
-        router.back();
-        break;
-
-      default:
-        break;
+    if (!currentTrip) {
+      console.log('📍 No current trip in status handler');
+      return;
     }
-  }, [currentTrip?.status]);
+
+    const status = currentTrip.status;
+    const driverName = currentTrip.driverInfo?.name || 'None';
+
+    console.log('📍 Status handler triggered:', { status, driverName, hasNavigated: hasNavigatedRef.current });
+
+    // Prevent duplicate navigation
+    if (hasNavigatedRef.current) {
+      console.log('⚠️ Already navigated, skipping status handler');
+      return;
+    }
+
+    // Handle different statuses
+    if (status === 'REQUESTED') {
+      setSearchStatus('Looking for nearby drivers...');
+      return;
+    }
+
+    if (status === 'ACCEPTED' || status === 'DRIVER_ARRIVING') {
+      console.log('🚗🚗🚗 DRIVER FOUND! Navigating to driver-arriving screen...');
+      console.log('Driver info:', currentTrip.driverInfo);
+      setSearchStatus('Driver found! Preparing trip details...');
+      hasNavigatedRef.current = true; // Mark as navigated BEFORE setTimeout
+
+      // Navigate immediately
+      router.replace('/(rider)/driver-arriving');
+      return;
+    }
+
+    if (status === 'CANCELLED') {
+      console.log('❌ Trip was cancelled');
+      hasNavigatedRef.current = true;
+      Alert.alert('Trip Cancelled', 'The trip has been cancelled.');
+      clearBookingFlow();
+      router.back();
+      return;
+    }
+
+    console.log('⚠️ Unhandled trip status:', status);
+  }, [currentTrip]); // Listen to full currentTrip object, not just status
 
   const handleCancel = () => {
     Alert.alert(

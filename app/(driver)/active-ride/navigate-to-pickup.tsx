@@ -1,37 +1,182 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Navigate to Pickup Screen
+ * Professional navigation UI similar to Uber/Google Maps
+ *
+ * Features:
+ * - Real-time route polyline from Google Directions API
+ * - Minimizable bottom sheet
+ * - Turn-by-turn navigation hints
+ * - Live ETA and distance updates
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Linking,
   Alert,
+  Animated,
+  Dimensions,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
 
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
+const BOTTOM_SHEET_MIN_HEIGHT = 100;
+
+// Google Directions API Key
+const GOOGLE_DIRECTIONS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+interface RouteCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+interface NavigationStep {
+  instruction: string;
+  distance: string;
+  duration: string;
+  maneuver?: string;
+}
+
 export default function NavigateToPickup() {
   const router = useRouter();
+  const mapRef = useRef<MapView>(null);
   const { activeRide, updateLocation, arrivedAtPickup } = useDriverStore();
   const { updateDriverLocation } = useTripStore();
+
+  // State
   const [eta, setEta] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
+  const [currentStep, setCurrentStep] = useState<NavigationStep | null>(null);
+  const [allSteps, setAllSteps] = useState<NavigationStep[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<RouteCoordinate | null>(null);
+  const [isSheetMinimized, setIsSheetMinimized] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Animation
+  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+
+  // Fetch route from Google Directions API
+  const fetchRoute = async (
+    origin: RouteCoordinate,
+    destination: RouteCoordinate
+  ) => {
+    if (!GOOGLE_DIRECTIONS_API_KEY) {
+      console.error('❌ Google Directions API key not configured');
+      return;
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const leg = route.legs[0];
+
+        // Decode polyline
+        const points = decodePolyline(route.overview_polyline.points);
+        setRouteCoordinates(points);
+
+        // Set ETA and distance
+        setEta(Math.ceil(leg.duration.value / 60)); // Convert seconds to minutes
+        setDistance(leg.distance.value / 1000); // Convert meters to km
+
+        // Parse navigation steps
+        const steps: NavigationStep[] = leg.steps.map((step: any) => ({
+          instruction: step.html_instructions.replace(/<[^>]*>/g, ''), // Remove HTML tags
+          distance: step.distance.text,
+          duration: step.duration.text,
+          maneuver: step.maneuver,
+        }));
+        setAllSteps(steps);
+        if (steps.length > 0) {
+          setCurrentStep(steps[0]);
+        }
+
+        // Fit map to show both points
+        if (mapRef.current) {
+          mapRef.current.fitToCoordinates(
+            [origin, destination],
+            {
+              edgePadding: { top: 100, right: 50, bottom: BOTTOM_SHEET_MAX_HEIGHT + 50, left: 50 },
+              animated: true,
+            }
+          );
+        }
+      } else {
+        console.error('❌ Directions API error:', data.status);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch route:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Decode Google polyline
+  const decodePolyline = (encoded: string): RouteCoordinate[] => {
+    const points: RouteCoordinate[] = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+      let shift = 0;
+      let result = 0;
+      let byte;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+
+    return points;
+  };
+
+  // Start location tracking
   useEffect(() => {
     if (!activeRide) return;
 
-    // Start real-time location tracking
     let locationSubscription: Location.LocationSubscription | null = null;
 
     const startTracking = async () => {
@@ -42,20 +187,37 @@ export default function NavigateToPickup() {
           return;
         }
 
-        // Update driver status to "arriving"
+        // Update driver status
         await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVING');
+
+        // Get initial location and fetch route
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+
+        const initialLocation = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+        setCurrentLocation(initialLocation);
+
+        // Fetch route to pickup
+        await fetchRoute(initialLocation, {
+          latitude: activeRide.pickup.lat,
+          longitude: activeRide.pickup.lng,
+        });
 
         // Start watching position
         locationSubscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
-            timeInterval: 5000, // Update every 5 seconds
-            distanceInterval: 10, // Or every 10 meters
+            timeInterval: 3000,
+            distanceInterval: 10,
           },
-          (location) => {
-            const { latitude, longitude, heading, speed } = location.coords;
-
-            setCurrentLocation({ latitude, longitude });
+          (loc) => {
+            const { latitude, longitude, heading, speed } = loc.coords;
+            const newLocation = { latitude, longitude };
+            setCurrentLocation(newLocation);
 
             // Update driver location in store
             updateLocation({
@@ -65,37 +227,36 @@ export default function NavigateToPickup() {
               speed: speed || 0,
             });
 
-            // Update driver location in Firebase
+            // Update Firebase
             if (activeRide.id) {
               updateDriverLocation(activeRide.id, {
                 latitude,
                 longitude,
                 timestamp: new Date(),
-                accuracy: location.coords.accuracy,
+                accuracy: loc.coords.accuracy,
                 speed: speed || 0,
                 heading: heading || 0,
               });
             }
 
-            // Calculate distance and ETA
+            // Recalculate distance
             const distanceToPickup = calculateDistance(
               latitude,
               longitude,
               activeRide.pickup.lat,
               activeRide.pickup.lng
             );
-
             setDistance(distanceToPickup);
 
-            // Simple ETA calculation (distance / average speed)
-            // Assuming 30 km/h average speed
-            const averageSpeed = 30; // km/h
-            const etaMinutes = (distanceToPickup / averageSpeed) * 60;
-            setEta(etaMinutes);
+            // Simple ETA recalculation
+            const avgSpeed = 30; // km/h
+            const newEta = (distanceToPickup / avgSpeed) * 60;
+            setEta(Math.ceil(newEta));
           }
         );
       } catch (error) {
-        console.error('Failed to start location tracking:', error);
+        console.error('Failed to start tracking:', error);
+        setIsLoading(false);
       }
     };
 
@@ -108,9 +269,9 @@ export default function NavigateToPickup() {
     };
   }, [activeRide?.id]);
 
-  // Calculate distance using Haversine formula (in km)
+  // Calculate distance (Haversine)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
     const dLon = ((lon2 - lon1) * Math.PI) / 180;
     const a =
@@ -121,6 +282,88 @@ export default function NavigateToPickup() {
         Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+  };
+
+  // Toggle sheet
+  const toggleSheet = () => {
+    const toValue = isSheetMinimized ? BOTTOM_SHEET_MAX_HEIGHT : BOTTOM_SHEET_MIN_HEIGHT;
+    Animated.spring(sheetHeight, {
+      toValue,
+      useNativeDriver: false,
+      friction: 8,
+    }).start();
+    setIsSheetMinimized(!isSheetMinimized);
+  };
+
+  // Get maneuver icon
+  const getManeuverIcon = (maneuver?: string): string => {
+    switch (maneuver) {
+      case 'turn-left':
+        return 'arrow-back';
+      case 'turn-right':
+        return 'arrow-forward';
+      case 'turn-slight-left':
+        return 'arrow-back';
+      case 'turn-slight-right':
+        return 'arrow-forward';
+      case 'uturn-left':
+      case 'uturn-right':
+        return 'refresh';
+      case 'roundabout-left':
+      case 'roundabout-right':
+        return 'sync';
+      default:
+        return 'arrow-up';
+    }
+  };
+
+  // Handlers
+  const handleOpenMaps = () => {
+    if (!activeRide) return;
+    const { lat, lng } = activeRide.pickup;
+    const url = Platform.select({
+      ios: `maps://app?daddr=${lat},${lng}`,
+      android: `google.navigation:q=${lat},${lng}`,
+    });
+    if (url) Linking.openURL(url);
+  };
+
+  const handleArrived = async () => {
+    if (!activeRide) return;
+
+    try {
+      await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVED');
+      arrivedAtPickup();
+      router.push('/(driver)/active-ride/arrived-at-pickup');
+    } catch (error) {
+      console.error('Failed to update arrival:', error);
+      Alert.alert('Error', 'Failed to update status. Please try again.');
+    }
+  };
+
+  const handleCancel = () => {
+    Alert.alert('Cancel Ride?', 'Are you sure you want to cancel this ride?', [
+      { text: 'No', style: 'cancel' },
+      {
+        text: 'Yes, Cancel',
+        style: 'destructive',
+        onPress: () => router.push('/(driver)/active-ride/cancel-ride'),
+      },
+    ]);
+  };
+
+  const handleCallRider = () => {
+    Alert.alert('Call Rider', 'Contact feature coming soon.');
+  };
+
+  const handleCenterMap = () => {
+    if (currentLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        ...currentLocation,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
   };
 
   if (!activeRide) {
@@ -137,60 +380,11 @@ export default function NavigateToPickup() {
     );
   }
 
-  const handleOpenMaps = () => {
-    const { lat, lng } = activeRide.pickup;
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-    Linking.openURL(url);
-  };
-
-  const handleCallRider = async () => {
-    // TODO: Fetch rider phone from Firebase users collection
-    // For now, show alert
-    Alert.alert('Call Rider', 'Contact feature will be available soon.');
-  };
-
-  const handleMessageRider = async () => {
-    // TODO: Use in-app messaging or fetch rider phone
-    Alert.alert('Message Rider', 'In-app messaging will be available soon.');
-  };
-
-  const handleArrived = async () => {
-    if (!activeRide) return;
-
-    try {
-      // Update ride status in Firebase
-      await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVED');
-
-      // Update local state
-      arrivedAtPickup();
-
-      // Navigate to arrived screen
-      router.push('/(driver)/active-ride/arrived-at-pickup');
-    } catch (error) {
-      console.error('Failed to update arrival status:', error);
-      Alert.alert('Error', 'Failed to update status. Please try again.');
-    }
-  };
-
-  const handleCancel = () => {
-    Alert.alert(
-      'Cancel Ride?',
-      'Are you sure you want to cancel this ride?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: () => router.push('/(driver)/active-ride/cancel-ride'),
-        },
-      ]
-    );
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Map */}
+    <View style={styles.container}>
+      {/* Full Screen Map */}
       <MapView
+        ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={{
@@ -200,119 +394,153 @@ export default function NavigateToPickup() {
           longitudeDelta: 0.02,
         }}
         showsUserLocation
-        followsUserLocation
+        showsMyLocationButton={false}
+        showsCompass={false}
+        followsUserLocation={false}
       >
+        {/* Pickup Marker */}
         <Marker
           coordinate={{
             latitude: activeRide.pickup.lat,
             longitude: activeRide.pickup.lng,
           }}
-          title="Pickup Location"
-          pinColor={Colors.success}
-        />
-        
-        {/* Mock route polyline */}
-        <Polyline
-          coordinates={[
-            { latitude: 19.3133, longitude: -81.2546 },
-            { latitude: activeRide.pickup.lat, longitude: activeRide.pickup.lng },
-          ]}
-          strokeColor={Colors.primary}
-          strokeWidth={4}
-        />
+          title={activeRide.riderName}
+          description="Pickup Location"
+        >
+          <View style={styles.pickupMarker}>
+            <View style={styles.pickupMarkerInner}>
+              <Ionicons name="person" size={16} color={Colors.white} />
+            </View>
+          </View>
+        </Marker>
+
+        {/* Route Polyline */}
+        {routeCoordinates.length > 0 && (
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor={Colors.primary}
+            strokeWidth={5}
+            lineDashPattern={[0]}
+          />
+        )}
       </MapView>
 
-      {/* ETA Card */}
-      <View style={styles.etaCard}>
-        <View style={styles.etaLeft}>
-          <Text style={styles.etaTime}>{eta ? Math.ceil(eta) : '--'} min</Text>
-          <Text style={styles.etaLabel}>ETA</Text>
+      {/* Top Navigation Card */}
+      <SafeAreaView edges={['top']} style={styles.topSafeArea}>
+        <View style={styles.navCard}>
+          <View style={styles.navIconContainer}>
+            <Ionicons
+              name={getManeuverIcon(currentStep?.maneuver) as any}
+              size={28}
+              color={Colors.white}
+            />
+          </View>
+          <View style={styles.navContent}>
+            <Text style={styles.navInstruction} numberOfLines={2}>
+              {currentStep?.instruction || 'Calculating route...'}
+            </Text>
+            <Text style={styles.navDistance}>
+              {currentStep?.distance || ''}
+            </Text>
+          </View>
         </View>
+      </SafeAreaView>
+
+      {/* ETA Pill */}
+      <View style={styles.etaPill}>
+        <Text style={styles.etaTime}>{eta ?? '--'}</Text>
+        <Text style={styles.etaUnit}>min</Text>
         <View style={styles.etaDivider} />
-        <View style={styles.etaRight}>
-          <Text style={styles.etaDistance}>{distance ? distance.toFixed(1) : '--'} km</Text>
-          <Text style={styles.etaLabel}>away</Text>
-        </View>
+        <Text style={styles.etaDistance}>{distance?.toFixed(1) ?? '--'} km</Text>
+      </View>
+
+      {/* Map Controls */}
+      <View style={styles.mapControls}>
+        <TouchableOpacity style={styles.mapControlButton} onPress={handleCenterMap}>
+          <Ionicons name="locate" size={22} color={Colors.gray[700]} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.mapControlButton} onPress={handleOpenMaps}>
+          <Ionicons name="navigate" size={22} color={Colors.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Bottom Sheet */}
-      <View style={styles.bottomSheet}>
-        {/* Header */}
-        <View style={styles.sheetHeader}>
-          <View style={styles.sheetHandle} />
-        </View>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
+        {/* Handle */}
+        <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
+          <View style={styles.handleBar} />
+          <Ionicons
+            name={isSheetMinimized ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={Colors.gray[400]}
+          />
+        </TouchableOpacity>
 
-        {/* Navigation Instructions */}
-        <View style={styles.instructionCard}>
-          <View style={styles.instructionIcon}>
-            <Ionicons name="arrow-up" size={24} color={Colors.primary} />
+        {/* Minimized View */}
+        {isSheetMinimized ? (
+          <View style={styles.minimizedContent}>
+            <View style={styles.riderAvatarSmall}>
+              <Ionicons name="person" size={20} color={Colors.primary} />
+            </View>
+            <View style={styles.minimizedInfo}>
+              <Text style={styles.minimizedName}>{activeRide.riderName}</Text>
+              <Text style={styles.minimizedAddress} numberOfLines={1}>
+                {activeRide.pickup.address}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.arrivedButtonSmall} onPress={handleArrived}>
+              <Text style={styles.arrivedButtonSmallText}>Arrived</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.instructionText}>
-            <Text style={styles.instructionMain}>Continue straight</Text>
-            <Text style={styles.instructionSub}>for 500 meters</Text>
-          </View>
-        </View>
+        ) : (
+          /* Expanded View */
+          <View style={styles.expandedContent}>
+            {/* Rider Card */}
+            <View style={styles.riderCard}>
+              <View style={styles.riderAvatar}>
+                <Ionicons name="person" size={28} color={Colors.primary} />
+              </View>
+              <View style={styles.riderInfo}>
+                <Text style={styles.riderName}>{activeRide.riderName}</Text>
+                <View style={styles.riderRating}>
+                  <Ionicons name="star" size={14} color={Colors.rating} />
+                  <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
+                </View>
+              </View>
+              <View style={styles.contactButtons}>
+                <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
+                  <Ionicons name="call" size={20} color={Colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        {/* Rider Info */}
-        <View style={styles.riderCard}>
-          <Ionicons name="person-circle" size={48} color={Colors.primary} />
-          <View style={styles.riderInfo}>
-            <Text style={styles.riderName}>{activeRide.riderName}</Text>
-            <View style={styles.riderRating}>
-              <Ionicons name="star" size={14} color={Colors.primary} />
-              <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
+            {/* Pickup Location */}
+            <View style={styles.locationCard}>
+              <View style={styles.locationDot} />
+              <View style={styles.locationInfo}>
+                <Text style={styles.locationLabel}>PICKUP</Text>
+                <Text style={styles.locationAddress} numberOfLines={2}>
+                  {activeRide.pickup.address}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+                <Ionicons name="close" size={20} color={Colors.error} />
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.arrivedButton} onPress={handleArrived}>
+                <Ionicons name="checkmark-circle" size={22} color={Colors.white} />
+                <Text style={styles.arrivedText}>I've Arrived</Text>
+              </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.contactButtons}>
-            <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
-              <Ionicons name="chatbubble" size={20} color={Colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
-              <Ionicons name="call" size={20} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Pickup Address */}
-        <View style={styles.addressCard}>
-          <View style={styles.addressIcon}>
-            <Ionicons name="location" size={20} color={Colors.success} />
-          </View>
-          <View style={styles.addressText}>
-            <Text style={styles.addressLabel}>Pickup Location</Text>
-            <Text style={styles.addressValue}>{activeRide.pickup.address}</Text>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={handleCancel}>
-            <Ionicons name="close-circle-outline" size={20} color={Colors.error} />
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.mapsButton} onPress={handleOpenMaps}>
-            <Ionicons name="map" size={20} color={Colors.white} />
-            <Text style={styles.mapsButtonText}>Open Maps</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Arrived Button */}
-        <TouchableOpacity style={styles.arrivedButton} onPress={handleArrived}>
-          <Ionicons name="checkmark-circle" size={24} color={Colors.white} />
-          <Text style={styles.arrivedButtonText}>I've Arrived</Text>
-        </TouchableOpacity>
-
-        {/* Emergency SOS */}
-        <TouchableOpacity 
-          style={styles.sosButton}
-          onPress={() => router.push('/(driver)/active-ride/emergency-sos')}
-        >
-          <Ionicons name="alert-circle" size={16} color={Colors.error} />
-          <Text style={styles.sosText}>Emergency SOS</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+        )}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -322,260 +550,328 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   map: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
-  etaCard: {
+
+  // Top Navigation Card
+  topSafeArea: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    right: 20,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  navCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: Spacing.lg,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  etaLeft: {
-    flex: 1,
     alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 16,
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    ...Shadows.lg,
   },
-  etaTime: {
-    fontSize: Typography.fontSize['3xl'],
-    fontWeight: '700',
-    color: Colors.primary,
+  navIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  navContent: {
+    flex: 1,
+  },
+  navInstruction: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.white,
     marginBottom: 4,
   },
-  etaLabel: {
-    fontSize: Typography.fontSize.xs,
+  navDistance: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+  },
+
+  // ETA Pill
+  etaPill: {
+    position: 'absolute',
+    top: 140,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    ...Shadows.md,
+  },
+  etaTime: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  etaUnit: {
+    fontSize: 14,
     color: Colors.gray[600],
+    marginLeft: 4,
   },
   etaDivider: {
     width: 1,
+    height: 20,
     backgroundColor: Colors.gray[300],
-    marginHorizontal: Spacing.lg,
-  },
-  etaRight: {
-    flex: 1,
-    alignItems: 'center',
+    marginHorizontal: 12,
   },
   etaDistance: {
-    fontSize: Typography.fontSize['3xl'],
-    fontWeight: '700',
-    color: Colors.black,
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.gray[700],
   },
-  bottomSheet: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['2xl'],
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
+
+  // Map Controls
+  mapControls: {
+    position: 'absolute',
+    right: 16,
+    top: 200,
+    gap: 10,
   },
-  sheetHeader: {
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: Colors.gray[300],
-    borderRadius: 2,
-  },
-  instructionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary + '10',
-    borderRadius: 12,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  instructionIcon: {
+  mapControlButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
     backgroundColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: Spacing.md,
+    ...Shadows.md,
   },
-  instructionText: {
+
+  // Pickup Marker
+  pickupMarker: {
+    alignItems: 'center',
+  },
+  pickupMarkerInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: Colors.white,
+    ...Shadows.md,
+  },
+
+  // Bottom Sheet
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    ...Shadows.xl,
+  },
+  sheetHandle: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.gray[300],
+    marginBottom: 4,
+  },
+
+  // Minimized Content
+  minimizedContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  riderAvatarSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minimizedInfo: {
     flex: 1,
+    marginLeft: 12,
   },
-  instructionMain: {
-    fontSize: Typography.fontSize.lg,
+  minimizedName: {
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.black,
-    marginBottom: 2,
   },
-  instructionSub: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
+  minimizedAddress: {
+    fontSize: 13,
+    color: Colors.gray[600],
+    marginTop: 2,
+  },
+  arrivedButtonSmall: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  arrivedButtonSmallText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+
+  // Expanded Content
+  expandedContent: {
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   riderCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  riderAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   riderInfo: {
     flex: 1,
-    marginLeft: Spacing.md,
+    marginLeft: 12,
   },
   riderName: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.black,
-    marginBottom: 4,
   },
   riderRating: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginTop: 4,
   },
   ratingText: {
-    fontSize: Typography.fontSize.sm,
+    fontSize: 14,
     color: Colors.gray[700],
+    marginLeft: 4,
   },
   contactButtons: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    gap: 10,
   },
   contactButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.white,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.gray[300],
   },
-  addressCard: {
+
+  // Location Card
+  locationCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
   },
-  addressIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.success + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.md,
+  locationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.success,
+    marginTop: 4,
+    marginRight: 12,
   },
-  addressText: {
+  locationInfo: {
     flex: 1,
   },
-  addressLabel: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[600],
+  locationLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.gray[500],
+    letterSpacing: 1,
     marginBottom: 4,
   },
-  addressValue: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
+  locationAddress: {
+    fontSize: 15,
     color: Colors.black,
     lineHeight: 20,
   },
-  actionButtons: {
+
+  // Action Row
+  actionRow: {
     flexDirection: 'row',
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
+    gap: 12,
+    marginTop: 16,
   },
-  secondaryButton: {
+  cancelButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.white,
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: Colors.error,
-    borderRadius: 12,
-    paddingVertical: Spacing.md,
+    backgroundColor: Colors.white,
   },
-  secondaryButtonText: {
-    fontSize: Typography.fontSize.sm,
+  cancelText: {
+    fontSize: 15,
     fontWeight: '600',
     color: Colors.error,
-  },
-  mapsButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.gray[800],
-    borderRadius: 12,
-    paddingVertical: Spacing.md,
-  },
-  mapsButtonText: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.white,
   },
   arrivedButton: {
+    flex: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.primary,
+    gap: 8,
+    paddingVertical: 14,
     borderRadius: 12,
-    paddingVertical: Spacing.lg,
-    marginBottom: Spacing.sm,
+    backgroundColor: Colors.primary,
   },
-  arrivedButtonText: {
-    fontSize: Typography.fontSize.base,
+  arrivedText: {
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.white,
   },
-  sosButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-  },
-  sosText: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.error,
-  },
+
+  // Error State
   errorContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Spacing.xl,
+    padding: 20,
   },
   errorText: {
-    fontSize: Typography.fontSize.lg,
+    fontSize: 18,
     color: Colors.gray[600],
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.xl,
+    marginTop: 16,
+    marginBottom: 24,
   },
   backButton: {
     backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
     borderRadius: 12,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
   },
   backButtonText: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.white,
   },

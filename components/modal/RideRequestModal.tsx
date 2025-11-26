@@ -2,9 +2,13 @@
  * Ride Request Modal
  * Shows incoming ride requests to drivers
  * Allows accept/decline with countdown timer
+ *
+ * IMPORTANT: This modal handles the timing and user actions for ride requests.
+ * The timer stops when user accepts or declines, and only auto-declines if
+ * the user truly didn't respond.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -39,27 +43,121 @@ export default function RideRequestModal({
   autoExpireSeconds = 30,
 }: RideRequestModalProps) {
   const [timeLeft, setTimeLeft] = useState(autoExpireSeconds);
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  // Track if user has already responded to this request
+  const hasRespondedRef = useRef(false);
+  // Track the current request ID to detect when a new request comes in
+  const currentRequestIdRef = useRef<string | null>(null);
+  // Store interval reference for cleanup
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Reset state when request changes or modal becomes visible
   useEffect(() => {
-    if (visible) {
-      setTimeLeft(autoExpireSeconds);
+    if (visible && request) {
+      // Check if this is a new request
+      if (currentRequestIdRef.current !== request.id) {
+        console.log('🔔 New ride request in modal:', request.id);
+        currentRequestIdRef.current = request.id;
+        hasRespondedRef.current = false;
+        setIsProcessing(false);
+        setTimeLeft(autoExpireSeconds);
+      }
+    }
+  }, [visible, request?.id, autoExpireSeconds]);
 
-      const interval = setInterval(() => {
+  // Timer effect - only runs when visible and user hasn't responded
+  useEffect(() => {
+    // Clear any existing timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    // Only start timer if visible and user hasn't responded
+    if (visible && !hasRespondedRef.current && !isProcessing) {
+      console.log('⏱️ Starting ride request timer');
+
+      timerIntervalRef.current = setInterval(() => {
         setTimeLeft((prev) => {
+          // Don't decrement if user has responded
+          if (hasRespondedRef.current) {
+            return prev;
+          }
+
           if (prev <= 1) {
-            clearInterval(interval);
-            // Auto-decline when time runs out
-            Alert.alert('Request Expired', 'You did not respond in time.');
-            onDecline();
+            // Time's up - only auto-decline if user truly didn't respond
+            if (!hasRespondedRef.current) {
+              console.log('⏰ Timer expired - auto declining');
+              hasRespondedRef.current = true; // Prevent duplicate calls
+
+              // Clear interval before showing alert
+              if (timerIntervalRef.current) {
+                clearInterval(timerIntervalRef.current);
+                timerIntervalRef.current = null;
+              }
+
+              Alert.alert('Request Expired', 'You did not respond in time.');
+              onDecline();
+            }
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-
-      return () => clearInterval(interval);
     }
-  }, [visible, autoExpireSeconds]);
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [visible, isProcessing]);
+
+  // Handle accept with proper state management
+  const handleAccept = useCallback(async () => {
+    // Prevent double-tap and processing after response
+    if (hasRespondedRef.current || isProcessing) {
+      console.log('⚠️ Already responded or processing, ignoring accept');
+      return;
+    }
+
+    console.log('✅ User accepted ride request');
+    hasRespondedRef.current = true;
+    setIsProcessing(true);
+
+    // Clear the timer immediately
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    // Call the parent's onAccept
+    onAccept();
+  }, [onAccept, isProcessing]);
+
+  // Handle decline with proper state management
+  const handleDecline = useCallback(() => {
+    // Prevent double-tap and processing after response
+    if (hasRespondedRef.current || isProcessing) {
+      console.log('⚠️ Already responded or processing, ignoring decline');
+      return;
+    }
+
+    console.log('❌ User declined ride request');
+    hasRespondedRef.current = true;
+    setIsProcessing(true);
+
+    // Clear the timer immediately
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
+    // Call the parent's onDecline
+    onDecline();
+  }, [onDecline, isProcessing]);
 
   if (!request) return null;
 
@@ -84,7 +182,7 @@ export default function RideRequestModal({
       transparent
       animationType="slide"
       statusBarTranslucent
-      onRequestClose={onDecline}
+      onRequestClose={handleDecline}
     >
       <View style={styles.overlay}>
         <View style={styles.container}>
@@ -178,17 +276,23 @@ export default function RideRequestModal({
 
           {/* Action Buttons */}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.declineButton} onPress={onDecline}>
-              <Ionicons name="close-circle" size={24} color={Colors.error} />
-              <Text style={styles.declineText}>Decline</Text>
+            <TouchableOpacity
+              style={[styles.declineButton, isProcessing && styles.buttonDisabled]}
+              onPress={handleDecline}
+              disabled={isProcessing}
+            >
+              <Ionicons name="close-circle" size={24} color={isProcessing ? Colors.gray[400] : Colors.error} />
+              <Text style={[styles.declineText, isProcessing && styles.textDisabled]}>Decline</Text>
             </TouchableOpacity>
 
             <DriftButton
-              title="Accept"
-              onPress={onAccept}
+              title={isProcessing ? 'Processing...' : 'Accept'}
+              onPress={handleAccept}
               variant="primary"
-              icon="checkmark-circle"
+              icon={isProcessing ? undefined : 'checkmark-circle'}
               style={styles.acceptButton}
+              disabled={isProcessing}
+              loading={isProcessing}
             />
           </View>
         </View>
@@ -416,5 +520,14 @@ const styles = StyleSheet.create({
 
   acceptButton: {
     flex: 1,
+  },
+
+  buttonDisabled: {
+    borderColor: Colors.gray[300],
+    opacity: 0.6,
+  },
+
+  textDisabled: {
+    color: Colors.gray[400],
   },
 });

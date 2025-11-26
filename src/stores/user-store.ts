@@ -1,11 +1,23 @@
 import { create } from 'zustand';
 import { firebaseDb, firebaseAuth } from '../config/firebase';
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  serverTimestamp 
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+  FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export interface SavedPlace {
   id: string;
@@ -177,7 +189,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
       const userRef = doc(firebaseDb, 'users', currentUser.uid);
       const userDoc = await getDoc(userRef);
       
-      if (userDoc.exists) {
+      // Use helper that handles both boolean and function versions
+      if (documentExists(userDoc)) {
         const userData = { id: userDoc.id, ...userDoc.data() } as User;
         set({ user: userData, loading: false });
       } else {

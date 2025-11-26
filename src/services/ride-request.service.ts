@@ -16,9 +16,21 @@ import firestore, {
   getDoc,
   orderBy,
   limit,
+  FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
 import { Trip } from '../stores/trip-store';
 import type { PricingResult } from '../stores/carpool-store';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export interface RideRequest extends Trip {
   distanceFromDriver?: number; // in meters
@@ -32,11 +44,14 @@ export interface RideRequest extends Trip {
  * Only shows requests that are:
  * - Status: REQUESTED (not yet accepted by another driver)
  * - Within a reasonable distance from driver
+ * - Not declined by this driver
+ * - Not cancelled
  */
 export function listenForRideRequests(
   driverLocation: { latitude: number; longitude: number },
   maxDistanceKm: number = 10,
-  callback: (requests: RideRequest[]) => void
+  callback: (requests: RideRequest[]) => void,
+  driverId?: string // Pass driver ID to filter out declined requests
 ): () => void {
   const tripsRef = collection(firebaseDb, 'trips');
 
@@ -55,6 +70,76 @@ export function listenForRideRequests(
 
       snapshot.forEach((doc) => {
         const data = doc.data();
+
+        // Log what we're checking
+        console.log('🔍 Checking request:', doc.id, {
+          status: data.status,
+          paymentStatus: data.paymentStatus,
+          driverId: data.driverId || 'none',
+          acceptedAt: data.acceptedAt ? 'yes' : 'no',
+          cancelledAt: data.cancelledAt ? 'yes' : 'no',
+        });
+
+        // Skip if this driver has already declined this request
+        if (driverId && data.declinedBy && Array.isArray(data.declinedBy)) {
+          if (data.declinedBy.includes(driverId)) {
+            console.log('⏭️ Skipping declined request:', doc.id);
+            return; // Skip this request
+          }
+        }
+
+        // Skip cancelled requests (double-check even though query filters by REQUESTED)
+        if (data.status === 'CANCELLED') {
+          console.log('⏭️ Skipping cancelled request:', doc.id);
+          return;
+        }
+
+        // Skip requests that already have a driver assigned (being handled or accepted)
+        if (data.driverId) {
+          console.log('⏭️ Skipping request with assigned driver:', doc.id, 'driver:', data.driverId);
+          return;
+        }
+
+        // Double-check status is still REQUESTED (Firestore query should handle this but verify)
+        if (data.status !== 'REQUESTED') {
+          console.log('⏭️ Skipping non-REQUESTED status:', doc.id, 'status:', data.status);
+          return;
+        }
+
+        // Skip requests where payment is not completed
+        if (data.paymentStatus !== 'COMPLETED') {
+          console.log('⏭️ Skipping unpaid request:', doc.id, 'paymentStatus:', data.paymentStatus);
+          return;
+        }
+
+        // Skip requests that were previously accepted (have acceptedAt timestamp)
+        if (data.acceptedAt) {
+          console.log('⏭️ Skipping previously accepted request:', doc.id);
+          return;
+        }
+
+        // Skip requests that were previously cancelled
+        if (data.cancelledAt || data.cancelledBy) {
+          console.log('⏭️ Skipping previously cancelled request:', doc.id);
+          return;
+        }
+
+        // Skip requests that are too old (older than 5 minutes)
+        // This is aggressive but prevents stale requests from showing up
+        // Riders should re-request if no driver accepts within 5 minutes
+        const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+        if (requestedAt) {
+          const ageInMinutes = (Date.now() - new Date(requestedAt).getTime()) / (1000 * 60);
+          if (ageInMinutes > 5) {
+            console.log('⏭️ Skipping old request:', doc.id, 'age:', Math.round(ageInMinutes), 'minutes (max 5 min)');
+            return;
+          }
+        } else {
+          // If no requestedAt timestamp, skip it (shouldn't happen but safety check)
+          console.log('⏭️ Skipping request without timestamp:', doc.id);
+          return;
+        }
+
         const request: RideRequest = {
           id: doc.id,
           ...data,
@@ -89,6 +174,7 @@ export function listenForRideRequests(
       // Sort by distance (closest first)
       requests.sort((a, b) => (a.distanceFromDriver || 0) - (b.distanceFromDriver || 0));
 
+      console.log('📱 Filtered ride requests for driver:', requests.length);
       callback(requests);
     },
     (error) => {
@@ -120,7 +206,7 @@ export async function acceptRideRequest(
 
     // First, check if ride is still available
     const tripDoc = await getDoc(tripRef);
-    if (!tripDoc.exists) {
+    if (!documentExists(tripDoc)) {
       throw new Error('Ride request not found');
     }
 
@@ -159,6 +245,12 @@ export async function acceptRideRequest(
 
     // Accept the ride and set status to DRIVER_ARRIVING
     // This immediately transitions the rider to the "driver arriving" screen
+    console.log('🔄 Updating trip document with driver info...');
+    console.log('  - Trip ID:', tripId);
+    console.log('  - Driver ID:', driverId);
+    console.log('  - New Status: DRIVER_ARRIVING');
+    console.log('  - Driver Info:', formattedDriverInfo);
+
     await updateDoc(tripRef, {
       driverId,
       driverInfo: formattedDriverInfo,
@@ -167,7 +259,7 @@ export async function acceptRideRequest(
       updatedAt: serverTimestamp(),
     });
 
-    console.log('✅ Ride accepted successfully:', tripId);
+    console.log('✅✅✅ Ride accepted successfully - Firebase should notify rider now:', tripId);
   } catch (error) {
     console.error('❌ Failed to accept ride:', error);
     throw error;

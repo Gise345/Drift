@@ -26,8 +26,20 @@ import firestore, {
   updateDoc,
   serverTimestamp,
   onSnapshot,
-  Timestamp
+  Timestamp,
+  FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 // ============================================================================
 // Get Firebase instances - v22 modular way
@@ -102,7 +114,8 @@ export const FirebaseService = {
   getUser: async (userId: string) => {
     const userRef = doc(firestoreInstance, 'users', userId);
     const userDoc = await getDoc(userRef);
-    return userDoc.exists ? { id: userDoc.id, ...userDoc.data() } : null;
+    // Use helper that handles both boolean and function versions
+    return documentExists(userDoc) ? { id: userDoc.id, ...userDoc.data() } : null;
   },
 
   /**
@@ -136,7 +149,8 @@ export const FirebaseService = {
   subscribeToTrip: (tripId: string, callback: (data: any) => void) => {
     const tripRef = doc(firestoreInstance, 'trips', tripId);
     const unsubscribe = onSnapshot(tripRef, (docSnapshot) => {
-      if (docSnapshot.exists) {
+      // Use helper that handles both boolean and function versions
+      if (documentExists(docSnapshot)) {
         callback({ id: docSnapshot.id, ...docSnapshot.data() });
       }
     });

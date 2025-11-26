@@ -9,21 +9,20 @@
  * EXPO SDK 52 Compatible
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
-  Dimensions,
   Platform,
   Alert,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { DriftButton } from '@/components/ui/DriftButton';
@@ -31,8 +30,6 @@ import DriftMapView from '@/components/ui/DriftMapView';
 import RideRequestModal from '@/components/modal/RideRequestModal';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { Region } from 'react-native-maps';
-
-const { width, height } = Dimensions.get('window');
 
 export default function DriverHomeScreen() {
   const router = useRouter();
@@ -47,6 +44,8 @@ export default function DriverHomeScreen() {
     declineRequest,
     updateLocation,
     loadDriverProfile,
+    markRequestProcessed,
+    processedRequestIds,
   } = useDriverStore();
   const { user } = useAuthStore();
 
@@ -54,6 +53,18 @@ export default function DriverHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [currentRequest, setCurrentRequest] = useState<any>(null);
+  const [isStatusCardMinimized, setIsStatusCardMinimized] = useState(false);
+
+  // Track shown request IDs to prevent modal from re-appearing for same request
+  const shownRequestIds = useRef<Set<string>>(new Set());
+  // Track accepted request ID to prevent showing it again
+  const acceptedRequestId = useRef<string | null>(null);
+  // Track if we're currently processing an accept
+  const isAccepting = useRef(false);
+
+  // Animation values for status card
+  const statusCardAnimation = useRef(new Animated.Value(1)).current;
+  const minimizedButtonAnimation = useRef(new Animated.Value(0)).current;
 
   // Load driver profile from Firebase on mount
   useEffect(() => {
@@ -67,15 +78,52 @@ export default function DriverHomeScreen() {
     getCurrentLocation();
   }, []);
 
+  // Reset accept flags when screen mounts or driver goes back online
+  // This ensures the driver can receive new requests after completing/cancelling a ride
+  useEffect(() => {
+    // Reset flags when driver goes online (might be returning from a completed ride)
+    if (isOnline) {
+      isAccepting.current = false;
+      acceptedRequestId.current = null;
+      // Clear shown request IDs so old requests can be shown again if they're still available
+      shownRequestIds.current.clear();
+      console.log('🔄 Reset ride request tracking - driver is online');
+    }
+  }, [isOnline]);
+
   // Listen for incoming ride requests
   useEffect(() => {
-    if (incomingRequests.length > 0 && !showRequestModal) {
-      // Show modal for the first request in the queue
-      const request = incomingRequests[0];
-      setCurrentRequest(request);
-      setShowRequestModal(true);
+    // Don't show new requests if we're currently accepting one
+    if (isAccepting.current) {
+      return;
     }
-  }, [incomingRequests]);
+
+    if (incomingRequests.length > 0) {
+      // Find the NEWEST unprocessed request (first in list since sorted by requestedAt desc)
+      const newestRequest = incomingRequests.find(
+        (request) =>
+          request.id !== acceptedRequestId.current &&
+          !processedRequestIds.has(request.id) // Also check store's processed IDs
+      );
+
+      if (newestRequest) {
+        // Check if this is different from what's currently being shown
+        if (!showRequestModal) {
+          // No modal open - show this request
+          shownRequestIds.current.add(newestRequest.id);
+          setCurrentRequest(newestRequest);
+          setShowRequestModal(true);
+          console.log('🔔 Showing ride request modal for:', newestRequest.id);
+        } else if (currentRequest && currentRequest.id !== newestRequest.id) {
+          // Modal is open but showing a different (older) request
+          // Update to show the newer request
+          console.log('🔄 Updating modal to show newer request:', newestRequest.id, '(was:', currentRequest.id, ')');
+          shownRequestIds.current.add(newestRequest.id);
+          setCurrentRequest(newestRequest);
+        }
+      }
+    }
+  }, [incomingRequests, showRequestModal, processedRequestIds, currentRequest]);
 
   const getCurrentLocation = async () => {
     try {
@@ -170,33 +218,71 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const handleViewOpportunities = () => {
-    router.push('/(driver)/opportunities');
+  const toggleStatusCard = () => {
+    const toMinimized = !isStatusCardMinimized;
+    setIsStatusCardMinimized(toMinimized);
+
+    // Animate status card out and minimized button in
+    Animated.parallel([
+      Animated.timing(statusCardAnimation, {
+        toValue: toMinimized ? 0 : 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(minimizedButtonAnimation, {
+        toValue: toMinimized ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
   const handleAcceptRequest = async () => {
     if (!currentRequest) return;
 
+    // Prevent double-accept
+    if (isAccepting.current) {
+      console.log('⚠️ Already accepting a request, ignoring');
+      return;
+    }
+
+    // Verify the request is still valid in incomingRequests
+    const requestStillValid = incomingRequests.some(r => r.id === currentRequest.id);
+    if (!requestStillValid) {
+      console.log('⚠️ Request no longer valid:', currentRequest.id);
+      Alert.alert(
+        'Request Unavailable',
+        'This ride request is no longer available. It may have been cancelled or taken by another driver.',
+        [{ text: 'OK' }]
+      );
+      setShowRequestModal(false);
+      setCurrentRequest(null);
+      return;
+    }
+
+    console.log('🚗 Accepting ride request:', currentRequest.id);
+    isAccepting.current = true;
+    acceptedRequestId.current = currentRequest.id;
+
     try {
+      // Accept the request in Firebase (this updates status to DRIVER_ARRIVING)
       await acceptRequest(currentRequest.id);
+
+      console.log('✅ Ride accepted successfully');
+
+      // Close modal and clear state
       setShowRequestModal(false);
       setCurrentRequest(null);
 
-      // Navigate to active ride screen
-      Alert.alert(
-        'Ride Accepted!',
-        'Navigating to pickup location...',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // TODO: Navigate to active ride screen
-              console.log('Navigate to active ride');
-            },
-          },
-        ]
-      );
+      // Navigate directly to navigate-to-pickup screen
+      router.push('/(driver)/active-ride/navigate-to-pickup');
     } catch (error) {
+      console.error('❌ Failed to accept ride:', error);
+
+      // Reset flags on error so driver can try again with a different request
+      isAccepting.current = false;
+      acceptedRequestId.current = null;
+
       Alert.alert(
         'Error',
         'Failed to accept ride. It may have been taken by another driver.',
@@ -212,22 +298,15 @@ export default function DriverHomeScreen() {
 
     try {
       await declineRequest(currentRequest.id, 'Driver declined');
-      setShowRequestModal(false);
-      setCurrentRequest(null);
-
-      // Show next request if available
-      if (incomingRequests.length > 1) {
-        setTimeout(() => {
-          const nextRequest = incomingRequests[1];
-          setCurrentRequest(nextRequest);
-          setShowRequestModal(true);
-        }, 500);
-      }
+      console.log('🚫 Ride declined:', currentRequest.id);
     } catch (error) {
       console.error('Failed to decline request:', error);
-      setShowRequestModal(false);
-      setCurrentRequest(null);
     }
+
+    // Close modal - the useEffect will handle showing the next request
+    // if there are any unshown requests in the queue
+    setShowRequestModal(false);
+    setCurrentRequest(null);
   };
 
   if (loading || !region) {
@@ -289,12 +368,43 @@ export default function DriverHomeScreen() {
           </View>
         </View>
 
-        {/* Status Card */}
-        <View style={styles.statusCard}>
+        {/* Status Card - Animated */}
+        <Animated.View
+          style={[
+            styles.statusCard,
+            {
+              opacity: statusCardAnimation,
+              transform: [
+                {
+                  translateY: statusCardAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [100, 0],
+                  }),
+                },
+                {
+                  scale: statusCardAnimation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents={isStatusCardMinimized ? 'none' : 'auto'}
+        >
+          {/* Minimize button */}
+          <TouchableOpacity
+            style={styles.minimizeButton}
+            onPress={toggleStatusCard}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-down" size={20} color={Colors.gray[400]} />
+          </TouchableOpacity>
+
           <Text style={styles.statusCardTitle}>
             {isOnline ? 'Ready for Requests' : 'Ready to go?'}
           </Text>
-          
+
           {isOnline && (
             <View style={styles.earningsRow}>
               <View style={styles.earningsStat}>
@@ -319,28 +429,7 @@ export default function DriverHomeScreen() {
             fullWidth
             style={styles.toggleButton}
           />
-        </View>
-
-        {/* Opportunities Card */}
-        {!isOnline && (
-          <TouchableOpacity 
-            style={styles.opportunitiesCard}
-            onPress={handleViewOpportunities}
-          >
-            <View style={styles.opportunitiesContent}>
-              <View style={styles.opportunitiesIcon}>
-                <Ionicons name="flash" size={24} color={Colors.primary} />
-              </View>
-              <View style={styles.opportunitiesText}>
-                <Text style={styles.opportunitiesTitle}>Opportunities</Text>
-                <Text style={styles.opportunitiesSubtitle}>
-                  See high-demand areas
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color={Colors.gray[400]} />
-          </TouchableOpacity>
-        )}
+        </Animated.View>
 
         {/* Earnings Quick View (when online) */}
         {isOnline && (
@@ -367,6 +456,42 @@ export default function DriverHomeScreen() {
       >
         <Ionicons name="locate" size={24} color={Colors.primary} />
       </TouchableOpacity>
+
+      {/* Minimized Status Button - Shows when status card is minimized */}
+      <Animated.View
+        style={[
+          styles.minimizedStatusButton,
+          {
+            opacity: minimizedButtonAnimation,
+            transform: [
+              {
+                scale: minimizedButtonAnimation.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.5, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+        pointerEvents={isStatusCardMinimized ? 'auto' : 'none'}
+      >
+        <TouchableOpacity
+          style={[
+            styles.minimizedButton,
+            isOnline ? styles.minimizedButtonOnline : styles.minimizedButtonOffline,
+          ]}
+          onPress={toggleStatusCard}
+          activeOpacity={0.8}
+        >
+          <View style={styles.minimizedButtonContent}>
+            <View style={[styles.statusDot, isOnline ? styles.statusDotOnline : styles.statusDotOffline]} />
+            <Text style={styles.minimizedButtonText}>
+              {isOnline ? 'Online' : 'Offline'}
+            </Text>
+            <Ionicons name="chevron-up" size={16} color={Colors.white} />
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Ride Request Modal */}
       <RideRequestModal
@@ -538,51 +663,7 @@ const styles = StyleSheet.create({
   toggleButton: {
     marginTop: Spacing.sm,
   },
-  
-  // Opportunities Card
-  opportunitiesCard: {
-    marginHorizontal: Spacing.base,
-    marginBottom: Spacing.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.base,
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.lg,
-    ...Shadows.base,
-  },
-  
-  opportunitiesContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  
-  opportunitiesIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primaryLight + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  opportunitiesText: {
-    gap: 2,
-  },
-  
-  opportunitiesTitle: {
-    fontSize: Typography.fontSize.base,
-    fontFamily: Typography.fontFamily.semibold,
-    color: Colors.black,
-  },
-  
-  opportunitiesSubtitle: {
-    fontSize: Typography.fontSize.sm,
-    fontFamily: Typography.fontFamily.regular,
-    color: Colors.gray[600],
-  },
-  
+
   // Earnings Quick View
   earningsQuickView: {
     marginHorizontal: Spacing.base,
@@ -626,5 +707,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.lg,
+  },
+
+  // Minimize button in status card
+  minimizeButton: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.gray[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+
+  // Minimized status button (floating pill)
+  minimizedStatusButton: {
+    position: 'absolute',
+    bottom: 100,
+    left: Spacing.base,
+    zIndex: 100,
+  },
+
+  minimizedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    ...Shadows.lg,
+  },
+
+  minimizedButtonOnline: {
+    backgroundColor: Colors.success,
+  },
+
+  minimizedButtonOffline: {
+    backgroundColor: Colors.gray[700],
+  },
+
+  minimizedButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+
+  minimizedButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.white,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  statusDotOnline: {
+    backgroundColor: Colors.white,
+  },
+
+  statusDotOffline: {
+    backgroundColor: Colors.gray[400],
   },
 });

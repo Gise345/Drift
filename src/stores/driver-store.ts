@@ -207,6 +207,9 @@ interface DriverStore {
   // Real-time listeners
   rideRequestListener: (() => void) | null;
 
+  // Track requests we've already processed to prevent re-showing on app refresh
+  processedRequestIds: Set<string>;
+
   // Actions - Registration
   setRegistrationStep: (step: number) => void;
   updateRegistrationData: (data: Partial<DriverRegistration>) => void;
@@ -232,6 +235,8 @@ interface DriverStore {
   removeIncomingRequest: (requestId: string) => void;
   acceptRequest: (requestId: string) => Promise<void>;
   declineRequest: (requestId: string, reason: string) => Promise<void>;
+  markRequestProcessed: (requestId: string) => void;
+  clearProcessedRequests: () => void;
   
   // Actions - Active Ride
   setActiveRide: (ride: ActiveRide) => void;
@@ -295,6 +300,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   todayTrips: 0,
   currentLocation: null,
   rideRequestListener: null,
+  processedRequestIds: new Set<string>(),
   
   // Registration actions
   setRegistrationStep: (step) => set({ registrationStep: step }),
@@ -453,7 +459,14 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       return;
     }
 
+    const driverId = state.driver?.id;
+    if (!driverId) {
+      console.error('❌ Cannot start listening: no driver ID');
+      return;
+    }
+
     // Start listening for ride requests within 10km
+    // Pass driver ID to filter out requests this driver has declined
     const unsubscribe = listenForRideRequests(
       {
         latitude: state.currentLocation.lat,
@@ -461,7 +474,15 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       },
       10, // 10km radius
       (requests: FirebaseRideRequest[]) => {
-        console.log('📱 Received ride requests:', requests.length);
+        console.log('📱 Received ride requests from Firebase:', requests.length);
+        // Log all request IDs for debugging
+        if (requests.length > 0) {
+          console.log('📋 Available request IDs (newest first):', requests.map(r => r.id).join(', '));
+        }
+
+        // NOTE: We do NOT filter by processedRequestIds here because the driver home screen
+        // needs to find the request in incomingRequests when accepting.
+        // The filtering for showing the modal is done in the UI component instead.
 
         // Convert Firebase requests to app format
         const appRequests: RideRequest[] = requests.map((req) => ({
@@ -487,11 +508,12 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         }));
 
         set({ incomingRequests: appRequests });
-      }
+      },
+      driverId // Pass driver ID to filter out declined requests
     );
 
     set({ rideRequestListener: unsubscribe });
-    console.log('✅ Started listening for ride requests');
+    console.log('✅ Started listening for ride requests for driver:', driverId);
   },
 
   stopListeningForRequests: () => {
@@ -511,7 +533,19 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   removeIncomingRequest: (requestId) => set((state) => ({
     incomingRequests: state.incomingRequests.filter(r => r.id !== requestId)
   })),
-  
+
+  markRequestProcessed: (requestId) => {
+    const newProcessedIds = new Set(get().processedRequestIds);
+    newProcessedIds.add(requestId);
+    set({ processedRequestIds: newProcessedIds });
+    console.log('✓ Marked request as processed:', requestId);
+  },
+
+  clearProcessedRequests: () => {
+    set({ processedRequestIds: new Set<string>() });
+    console.log('🧹 Cleared processed request IDs');
+  },
+
   acceptRequest: async (requestId) => {
     const state = get();
     const request = state.incomingRequests.find((r) => r.id === requestId);
@@ -519,11 +553,22 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     const vehicle = state.vehicle;
 
     if (!request || !driver || !vehicle) {
-      console.error('❌ Cannot accept: missing request, driver, or vehicle data');
+      console.error('❌ Cannot accept: missing request, driver, or vehicle data', {
+        hasRequest: !!request,
+        hasDriver: !!driver,
+        hasVehicle: !!vehicle,
+        requestId,
+        incomingRequestsCount: state.incomingRequests.length,
+      });
       return;
     }
 
+    // Mark as processed immediately to prevent re-showing
+    get().markRequestProcessed(requestId);
+
     try {
+      console.log('🚗 Accepting ride request in Firebase:', requestId);
+
       // Accept ride in Firebase
       await acceptRideService(requestId, driver.id, {
         name: `${driver.firstName} ${driver.lastName}`,
@@ -541,9 +586,13 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         acceptedAt: new Date(),
       };
 
+      // Stop listening for new requests while we have an active ride
+      // This prevents other requests from coming in and confusing the UI
+      get().stopListeningForRequests();
+
       set({
         activeRide,
-        incomingRequests: state.incomingRequests.filter((r) => r.id !== requestId),
+        incomingRequests: [], // Clear all incoming requests - we only handle one at a time
       });
 
       console.log('✅ Accepted ride request:', requestId);
@@ -561,6 +610,9 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       console.error('❌ Cannot decline: missing driver data');
       return;
     }
+
+    // Mark as processed immediately to prevent re-showing
+    get().markRequestProcessed(requestId);
 
     try {
       // Decline ride in Firebase
@@ -762,5 +814,6 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     todayEarnings: 0,
     todayTrips: 0,
     currentLocation: null,
+    processedRequestIds: new Set<string>(),
   }),
 }));

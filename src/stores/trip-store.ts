@@ -11,9 +11,21 @@ import {
   onSnapshot,
   serverTimestamp,
   updateDoc,
-  addDoc
+  addDoc,
+  FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
 import * as Location from 'expo-location';
+
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 let TaskManager: any = null;
 try {
@@ -244,7 +256,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       const tripRef = doc(firebaseDb, 'trips', tripId);
       const tripDoc = await getDoc(tripRef);
       
-      if (tripDoc.exists) {
+      if (documentExists(tripDoc)) {
         return { id: tripDoc.id, ...tripDoc.data() } as Trip;
       }
       return null;
@@ -361,14 +373,46 @@ export const useTripStore = create<TripStore>((set, get) => ({
   
   subscribeToTrip: (tripId) => {
     const tripRef = doc(firebaseDb, 'trips', tripId);
-    
-    const unsubscribe = onSnapshot(tripRef, (docSnapshot) => {
-      if (docSnapshot.exists) {
-        const tripData = { id: docSnapshot.id, ...docSnapshot.data() } as Trip;
-        set({ currentTrip: tripData });
+
+    console.log('🔔🔔🔔 Setting up trip subscription for:', tripId);
+
+    const unsubscribe = onSnapshot(
+      tripRef,
+      (docSnapshot) => {
+        // Use helper that handles both boolean and function versions
+        if (documentExists(docSnapshot)) {
+          const data = docSnapshot.data();
+          const tripData = {
+            id: docSnapshot.id,
+            ...data,
+            // Properly convert Firestore timestamps to Dates
+            requestedAt: data?.requestedAt?.toDate?.() || data?.requestedAt,
+            acceptedAt: data?.acceptedAt?.toDate?.() || data?.acceptedAt,
+            startedAt: data?.startedAt?.toDate?.() || data?.startedAt,
+            completedAt: data?.completedAt?.toDate?.() || data?.completedAt,
+            createdAt: data?.createdAt?.toDate?.() || data?.createdAt,
+            updatedAt: data?.updatedAt?.toDate?.() || data?.updatedAt,
+          } as Trip;
+
+          console.log('📍📍📍 Trip update received from Firebase:');
+          console.log('  - Trip ID:', tripData.id);
+          console.log('  - Status:', tripData.status);
+          console.log('  - Driver ID:', tripData.driverId || 'None');
+          console.log('  - Driver Name:', tripData.driverInfo?.name || 'None');
+
+          // Update the store
+          set({ currentTrip: tripData });
+          console.log('✅ Store updated with new trip data');
+        } else {
+          console.log('⚠️ Trip document does not exist:', tripId);
+        }
+      },
+      (error) => {
+        console.error('❌ Trip subscription error:', error);
+        console.error('Error details:', error.message);
       }
-    });
-    
+    );
+
     return unsubscribe;
   },
   
