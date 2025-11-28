@@ -1,4 +1,15 @@
-import React, { useState } from 'react';
+/**
+ * Add Tip Screen - Production
+ * Shows when driver completes trip to allow rider to add a tip
+ *
+ * Features:
+ * - Suggested tip amounts
+ * - Custom tip input
+ * - Firebase integration for tip submission
+ * - Real-time updates
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +19,16 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useTripStore } from '@/src/stores/trip-store';
+import { addTipToTrip, skipTipAndFinalize } from '@/src/services/ride-request.service';
 
 const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
+  primary: '#5d1289',
   black: '#000000',
   white: '#FFFFFF',
   gray: {
@@ -35,17 +49,44 @@ const Colors = {
 
 export default function AddTipScreen() {
   const router = useRouter();
-  
+  const { currentTrip, setCurrentTrip, subscribeToTrip } = useTripStore();
+
   const [selectedTip, setSelectedTip] = useState<number | null>(null);
   const [customTip, setCustomTip] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const driver = {
-    name: 'John Smith',
-    photo: '👤',
-  };
+  // Subscribe to trip updates
+  useEffect(() => {
+    if (!currentTrip?.id) return;
 
-  const suggestedTips = [3, 5, 7, 10];
+    const unsubscribe = subscribeToTrip(currentTrip.id);
+    return () => unsubscribe();
+  }, [currentTrip?.id]);
+
+  // If trip becomes fully completed (driver finalized), navigate away
+  useEffect(() => {
+    if (currentTrip?.status === 'COMPLETED') {
+      console.log('Trip fully completed, navigating to trip-complete');
+      router.replace('/(rider)/trip-complete');
+    }
+  }, [currentTrip?.status]);
+
+  // If no trip, go home
+  if (!currentTrip) {
+    router.replace('/(tabs)');
+    return null;
+  }
+
+  const driver = currentTrip.driverInfo;
+  const tripCost = currentTrip.finalCost || currentTrip.estimatedCost || 0;
+
+  // Suggested tip amounts based on trip cost
+  const suggestedTips = [
+    Math.max(2, Math.round(tripCost * 0.1)), // 10%
+    Math.max(3, Math.round(tripCost * 0.15)), // 15%
+    Math.max(5, Math.round(tripCost * 0.2)), // 20%
+    Math.max(7, Math.round(tripCost * 0.25)), // 25%
+  ];
 
   const handleTipSelect = (amount: number) => {
     setSelectedTip(amount);
@@ -53,7 +94,6 @@ export default function AddTipScreen() {
   };
 
   const handleCustomTipChange = (text: string) => {
-    // Only allow numbers and decimal
     const cleaned = text.replace(/[^0-9.]/g, '');
     setCustomTip(cleaned);
     setSelectedTip(null);
@@ -66,37 +106,67 @@ export default function AddTipScreen() {
 
   const handleAddTip = async () => {
     const tipAmount = getTipAmount();
-    
+
     if (tipAmount <= 0) {
       Alert.alert('Invalid Tip', 'Please enter a valid tip amount');
+      return;
+    }
+
+    if (!currentTrip?.id || !currentTrip?.driverId) {
+      Alert.alert('Error', 'Trip information not available');
       return;
     }
 
     setLoading(true);
 
     try {
-      // Simulate API call to process tip
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Add tip to Firebase
+      await addTipToTrip(currentTrip.id, tipAmount, currentTrip.driverId);
 
       Alert.alert(
-        'Tip Added',
-        `$${tipAmount.toFixed(2)} tip added for ${driver.name}`,
+        'Tip Added!',
+        `CI$${tipAmount.toFixed(2)} tip added for ${driver?.name || 'your driver'}. Thank you!`,
         [
           {
             text: 'OK',
-            onPress: () => router.push('/(tabs)'),
+            onPress: () => {
+              setCurrentTrip(null);
+              router.replace('/(tabs)');
+            },
           },
         ]
       );
     } catch (error) {
+      console.error('Failed to add tip:', error);
       Alert.alert('Error', 'Failed to add tip. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSkip = () => {
-    router.push('/(tabs)');
+  const handleSkip = async () => {
+    if (!currentTrip?.id || !currentTrip?.driverId) {
+      setCurrentTrip(null);
+      router.replace('/(tabs)');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Skip tip and finalize trip in Firebase
+      await skipTipAndFinalize(currentTrip.id, currentTrip.driverId);
+
+      setCurrentTrip(null);
+      router.replace('/(tabs)');
+    } catch (error) {
+      console.error('Failed to skip tip:', error);
+      // Still navigate away even if there's an error
+      setCurrentTrip(null);
+      router.replace('/(tabs)');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -104,18 +174,14 @@ export default function AddTipScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          
+          <View style={{ width: 40 }} />
+
           <Text style={styles.title}>Add a Tip</Text>
-          
+
           <TouchableOpacity
             style={styles.skipButton}
             onPress={handleSkip}
+            disabled={loading}
           >
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
@@ -126,22 +192,44 @@ export default function AddTipScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* Success Banner */}
+          <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={32} color={Colors.success} />
+            <Text style={styles.successText}>Trip Completed!</Text>
+          </View>
+
           {/* Driver Info */}
           <View style={styles.driverContainer}>
-            <View style={styles.driverPhoto}>
-              <Text style={styles.driverPhotoText}>{driver.photo}</Text>
-            </View>
-            <Text style={styles.driverName}>{driver.name}</Text>
+            {driver?.photo ? (
+              <Image source={{ uri: driver.photo }} style={styles.driverPhoto} />
+            ) : (
+              <View style={styles.driverPhotoPlaceholder}>
+                <Ionicons name="person" size={40} color={Colors.primary} />
+              </View>
+            )}
+            <Text style={styles.driverName}>{driver?.name || 'Your Driver'}</Text>
+            {driver?.rating && (
+              <View style={styles.ratingContainer}>
+                <Ionicons name="star" size={16} color="#f39c12" />
+                <Text style={styles.ratingText}>{driver.rating.toFixed(1)}</Text>
+              </View>
+            )}
             <Text style={styles.subtitle}>
               Show your appreciation with a tip
             </Text>
+          </View>
+
+          {/* Trip Cost Summary */}
+          <View style={styles.tripSummary}>
+            <Text style={styles.tripCostLabel}>Trip Cost</Text>
+            <Text style={styles.tripCostAmount}>CI${tripCost.toFixed(2)}</Text>
           </View>
 
           {/* Suggested Tips */}
           <View style={styles.tipsContainer}>
             <Text style={styles.sectionTitle}>Suggested Amounts</Text>
             <View style={styles.tipsGrid}>
-              {suggestedTips.map((amount) => (
+              {suggestedTips.map((amount, index) => (
                 <TouchableOpacity
                   key={amount}
                   style={[
@@ -149,18 +237,19 @@ export default function AddTipScreen() {
                     selectedTip === amount && styles.tipButtonSelected,
                   ]}
                   onPress={() => handleTipSelect(amount)}
+                  disabled={loading}
                 >
                   <Text style={[
                     styles.tipAmount,
                     selectedTip === amount && styles.tipAmountSelected,
                   ]}>
-                    ${amount}
+                    CI${amount}
                   </Text>
                   <Text style={[
                     styles.tipLabel,
                     selectedTip === amount && styles.tipLabelSelected,
                   ]}>
-                    KYD
+                    {['10%', '15%', '20%', '25%'][index]}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -171,7 +260,7 @@ export default function AddTipScreen() {
           <View style={styles.customContainer}>
             <Text style={styles.sectionTitle}>Or Enter Custom Amount</Text>
             <View style={styles.customInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
+              <Text style={styles.currencySymbol}>CI$</Text>
               <TextInput
                 style={styles.customInput}
                 placeholder="0.00"
@@ -179,15 +268,16 @@ export default function AddTipScreen() {
                 value={customTip}
                 onChangeText={handleCustomTipChange}
                 keyboardType="decimal-pad"
+                editable={!loading}
               />
-              <Text style={styles.currencyCode}>KYD</Text>
             </View>
           </View>
 
           {/* Info */}
           <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={20} color={Colors.primary} />
             <Text style={styles.infoText}>
-              💡 Tips are optional and go 100% to your driver as a token of appreciation for great service.
+              Tips are optional and go 100% to your driver as a token of appreciation for great service.
             </Text>
           </View>
         </ScrollView>
@@ -198,11 +288,11 @@ export default function AddTipScreen() {
             <View style={styles.totalContainer}>
               <Text style={styles.totalLabel}>Total Tip</Text>
               <Text style={styles.totalAmount}>
-                ${getTipAmount().toFixed(2)} KYD
+                CI${getTipAmount().toFixed(2)}
               </Text>
             </View>
           )}
-          
+
           <TouchableOpacity
             style={[
               styles.addButton,
@@ -215,10 +305,18 @@ export default function AddTipScreen() {
               <ActivityIndicator color={Colors.white} />
             ) : (
               <>
-                <Text style={styles.addButtonText}>Add Tip</Text>
-                <Text style={styles.addButtonArrow}>→</Text>
+                <Ionicons name="heart" size={20} color={Colors.white} />
+                <Text style={styles.addButtonText}>Add CI${getTipAmount().toFixed(2)} Tip</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.noTipButton}
+            onPress={handleSkip}
+            disabled={loading}
+          >
+            <Text style={styles.noTipText}>No tip this time</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -237,27 +335,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray[200],
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backIcon: {
-    fontSize: 24,
-    color: Colors.black,
-  },
   title: {
-    flex: 1,
     fontSize: 18,
     fontWeight: '700',
     color: Colors.black,
-    textAlign: 'center',
   },
   skipButton: {
     paddingHorizontal: 12,
@@ -272,33 +359,79 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 180,
+    paddingBottom: 200,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.success + '15',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  successText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.success,
   },
   driverContainer: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 24,
   },
   driverPhoto: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Colors.gray[100],
+    marginBottom: 12,
+  },
+  driverPhotoPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-  },
-  driverPhotoText: {
-    fontSize: 40,
   },
   driverName: {
     fontSize: 22,
     fontWeight: '700',
     color: Colors.black,
+    marginBottom: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     marginBottom: 8,
+  },
+  ratingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.black,
   },
   subtitle: {
     fontSize: 15,
     color: Colors.gray[600],
+  },
+  tripSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    padding: 16,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  tripCostLabel: {
+    fontSize: 14,
+    color: Colors.gray[600],
+  },
+  tripCostAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.black,
   },
   tipsContainer: {
     paddingHorizontal: 16,
@@ -322,29 +455,29 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.gray[300],
     borderRadius: 12,
-    padding: 20,
+    padding: 16,
     alignItems: 'center',
   },
   tipButtonSelected: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.primary + '15',
     borderColor: Colors.primary,
   },
   tipAmount: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.black,
     marginBottom: 4,
   },
   tipAmountSelected: {
-    color: Colors.black,
+    color: Colors.primary,
   },
   tipLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: Colors.gray[600],
+    color: Colors.gray[500],
   },
   tipLabelSelected: {
-    color: Colors.black,
+    color: Colors.primary,
   },
   customContainer: {
     paddingHorizontal: 16,
@@ -361,33 +494,31 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.black,
     marginRight: 8,
   },
   customInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.black,
     padding: 0,
   },
-  currencyCode: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.gray[600],
-    marginLeft: 8,
-  },
   infoCard: {
     marginHorizontal: 16,
     padding: 16,
-    backgroundColor: Colors.gray[50],
+    backgroundColor: Colors.primary + '10',
     borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   infoText: {
+    flex: 1,
     fontSize: 13,
-    color: Colors.gray[600],
+    color: Colors.gray[700],
     lineHeight: 20,
   },
   bottomContainer: {
@@ -399,6 +530,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.gray[200],
     padding: 16,
+    paddingBottom: 32,
   },
   totalContainer: {
     flexDirection: 'row',
@@ -418,25 +550,30 @@ const styles = StyleSheet.create({
   },
   addButton: {
     flexDirection: 'row',
-    backgroundColor: Colors.black,
+    backgroundColor: Colors.primary,
     paddingVertical: 16,
     paddingHorizontal: 32,
-    borderRadius: 32,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   addButtonDisabled: {
-    opacity: 0.6,
+    backgroundColor: Colors.gray[300],
   },
   addButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
-    marginRight: 8,
   },
-  addButtonArrow: {
-    fontSize: 20,
-    color: Colors.white,
-    fontWeight: '700',
+  noTipButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  noTipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.gray[500],
   },
 });

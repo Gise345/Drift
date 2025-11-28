@@ -6,6 +6,8 @@ import {
   RideRequest as FirebaseRideRequest,
 } from '../services/ride-request.service';
 import { useTripStore } from './trip-store';
+import { firebaseDb } from '../config/firebase';
+import { doc, getDoc } from '@react-native-firebase/firestore';
 
 /**
  * DRIVER STORE - Production Mode
@@ -239,7 +241,7 @@ interface DriverStore {
   clearProcessedRequests: () => void;
   
   // Actions - Active Ride
-  setActiveRide: (ride: ActiveRide) => void;
+  setActiveRide: (ride: ActiveRide | null) => void;
   updateRideStatus: (status: ActiveRide['status']) => void;
   startNavigation: () => void;
   arrivedAtPickup: () => void;
@@ -465,6 +467,40 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       return;
     }
 
+    // Cache for rider info to avoid repeated Firebase calls
+    const riderCache: Map<string, { name: string; rating: number }> = new Map();
+
+    // Helper to fetch rider info from Firebase
+    const fetchRiderInfo = async (riderId: string): Promise<{ name: string; rating: number }> => {
+      // Check cache first
+      if (riderCache.has(riderId)) {
+        return riderCache.get(riderId)!;
+      }
+
+      try {
+        const userRef = doc(firebaseDb, 'users', riderId);
+        const userDoc = await getDoc(userRef);
+
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          const riderInfo = {
+            name: userData?.name || userData?.firstName || 'Rider',
+            rating: userData?.rating || 4.5,
+          };
+          riderCache.set(riderId, riderInfo);
+          console.log('👤 Fetched rider info:', riderId, riderInfo.name);
+          return riderInfo;
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not fetch rider info:', riderId, error);
+      }
+
+      // Default fallback
+      const defaultInfo = { name: 'Rider', rating: 4.5 };
+      riderCache.set(riderId, defaultInfo);
+      return defaultInfo;
+    };
+
     // Start listening for ride requests within 10km
     // Pass driver ID to filter out requests this driver has declined
     const unsubscribe = listenForRideRequests(
@@ -473,7 +509,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         longitude: state.currentLocation.lng,
       },
       10, // 10km radius
-      (requests: FirebaseRideRequest[]) => {
+      async (requests: FirebaseRideRequest[]) => {
         console.log('📱 Received ride requests from Firebase:', requests.length);
         // Log all request IDs for debugging
         if (requests.length > 0) {
@@ -484,28 +520,35 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         // needs to find the request in incomingRequests when accepting.
         // The filtering for showing the modal is done in the UI component instead.
 
-        // Convert Firebase requests to app format
-        const appRequests: RideRequest[] = requests.map((req) => ({
-          id: req.id,
-          riderId: req.riderId,
-          riderName: 'Rider', // TODO: Fetch rider name from users collection
-          riderRating: 4.5, // TODO: Fetch from users collection
-          pickup: {
-            lat: req.pickup.coordinates.latitude,
-            lng: req.pickup.coordinates.longitude,
-            address: req.pickup.address,
-          },
-          destination: {
-            lat: req.destination.coordinates.latitude,
-            lng: req.destination.coordinates.longitude,
-            address: req.destination.address,
-          },
-          distance: req.distance,
-          estimatedDuration: req.duration,
-          estimatedEarnings: req.estimatedCost,
-          requestedAt: req.requestedAt,
-          expiresAt: new Date(req.requestedAt.getTime() + 5 * 60 * 1000), // 5 min expiry
-        }));
+        // Convert Firebase requests to app format with actual rider names
+        const appRequests: RideRequest[] = await Promise.all(
+          requests.map(async (req) => {
+            // Fetch actual rider info from Firebase users collection
+            const riderInfo = await fetchRiderInfo(req.riderId);
+
+            return {
+              id: req.id,
+              riderId: req.riderId,
+              riderName: riderInfo.name,
+              riderRating: riderInfo.rating,
+              pickup: {
+                lat: req.pickup.coordinates.latitude,
+                lng: req.pickup.coordinates.longitude,
+                address: req.pickup.address,
+              },
+              destination: {
+                lat: req.destination.coordinates.latitude,
+                lng: req.destination.coordinates.longitude,
+                address: req.destination.address,
+              },
+              distance: req.distance,
+              estimatedDuration: req.duration,
+              estimatedEarnings: req.estimatedCost,
+              requestedAt: req.requestedAt,
+              expiresAt: new Date(req.requestedAt.getTime() + 5 * 60 * 1000), // 5 min expiry
+            };
+          })
+        );
 
         set({ incomingRequests: appRequests });
       },

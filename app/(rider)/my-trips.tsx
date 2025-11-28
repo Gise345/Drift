@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,14 @@ import {
   TouchableOpacity,
   ScrollView,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useTripStore, Trip as TripData } from '@/src/stores/trip-store';
+import { useUserStore, RecentTravel } from '@/src/stores/user-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 type Tab = 'upcoming' | 'past';
 
@@ -25,68 +29,112 @@ interface Trip {
   rating?: number;
 }
 
-const MOCK_TRIPS: { upcoming: Trip[]; past: Trip[] } = {
-  upcoming: [
-    {
-      id: '1',
-      date: 'Oct 26, 2025',
-      time: '09:00 AM',
-      from: 'George Town',
-      to: 'Seven Mile Beach',
-      driver: 'John Smith',
-      cost: '$15.00',
-      status: 'upcoming',
-    },
-    {
-      id: '2',
-      date: 'Oct 27, 2025',
-      time: '03:30 PM',
-      from: 'Camana Bay',
-      to: 'Owen Roberts Airport',
-      driver: 'Sarah Johnson',
-      cost: '$22.00',
-      status: 'upcoming',
-    },
-  ],
-  past: [
-    {
-      id: '3',
-      date: 'Oct 24, 2025',
-      time: '02:15 PM',
-      from: 'Seven Mile Beach',
-      to: 'George Town',
-      driver: 'Mike Wilson',
-      cost: '$12.00',
-      status: 'completed',
-      rating: 5,
-    },
-    {
-      id: '4',
-      date: 'Oct 20, 2025',
-      time: '10:45 AM',
-      from: 'George Town',
-      to: 'Rum Point',
-      driver: 'Emma Davis',
-      cost: '$35.00',
-      status: 'completed',
-      rating: 4,
-    },
-    {
-      id: '5',
-      date: 'Oct 18, 2025',
-      time: '06:00 PM',
-      from: 'Camana Bay',
-      to: 'George Town',
-      driver: 'James Brown',
-      cost: '$8.00',
-      status: 'cancelled',
-    },
-  ],
+// Helper to format date
+const formatDate = (date: Date | undefined): string => {
+  if (!date) return 'Unknown date';
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 };
+
+// Helper to format time
+const formatTime = (date: Date | undefined): string => {
+  if (!date) return 'Unknown time';
+  const d = new Date(date);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
+// Convert Firebase trip to display format
+const convertTrip = (trip: TripData): Trip => ({
+  id: trip.id,
+  date: formatDate(trip.requestedAt || trip.createdAt),
+  time: formatTime(trip.requestedAt || trip.createdAt),
+  from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
+  to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
+  driver: trip.driverInfo?.name || 'Driver',
+  cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
+  status: trip.status === 'COMPLETED' ? 'completed' :
+          trip.status === 'CANCELLED' ? 'cancelled' : 'upcoming',
+  rating: trip.driverRating,
+});
+
+// Convert recent travel to display format
+const convertRecentTravel = (travel: RecentTravel): Trip => ({
+  id: travel.id,
+  date: formatDate(new Date(travel.timestamp)),
+  time: formatTime(new Date(travel.timestamp)),
+  from: travel.pickup.name || travel.pickup.address,
+  to: travel.destination.name || travel.destination.address,
+  driver: 'Driver',
+  cost: `$${travel.cost.toFixed(2)}`,
+  status: 'completed',
+});
 
 export default function MyTripsScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
+  const [loading, setLoading] = useState(true);
+  const [upcomingTrips, setUpcomingTrips] = useState<Trip[]>([]);
+  const [pastTrips, setPastTrips] = useState<Trip[]>([]);
+
+  const { getTripHistory, pastTrips: storePastTrips, upcomingTrips: storeUpcomingTrips } = useTripStore();
+  const { user, getRecentTravels } = useUserStore();
+  const { user: authUser } = useAuthStore();
+
+  useEffect(() => {
+    loadTrips();
+  }, [user, authUser]);
+
+  const loadTrips = async () => {
+    setLoading(true);
+    try {
+      const userId = authUser?.id || user?.id;
+
+      if (userId) {
+        // Load from Firebase trip history
+        await getTripHistory(userId);
+
+        // Convert to display format
+        const upcoming = storeUpcomingTrips.map(convertTrip);
+        const past = storePastTrips.map(convertTrip);
+
+        // Also get recent travels from user store (hard cached)
+        const recentTravels = getRecentTravels();
+        const recentTripsDisplay = recentTravels.map(convertRecentTravel);
+
+        // Merge recent travels with past trips (dedupe by id)
+        const mergedPast = [...past];
+        recentTripsDisplay.forEach(rt => {
+          if (!mergedPast.find(p => p.id === rt.id)) {
+            mergedPast.push(rt);
+          }
+        });
+
+        // Sort by date (most recent first)
+        mergedPast.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        setUpcomingTrips(upcoming);
+        setPastTrips(mergedPast);
+
+        console.log(`Loaded ${upcoming.length} upcoming and ${mergedPast.length} past trips from Firebase`);
+      } else {
+        console.log('No user ID, showing empty trips');
+        setUpcomingTrips([]);
+        setPastTrips([]);
+      }
+    } catch (error) {
+      console.error('Error loading trips:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderTripCard = ({ item }: { item: Trip }) => (
     <TouchableOpacity
@@ -159,7 +207,29 @@ export default function MyTripsScreen() {
     </TouchableOpacity>
   );
 
-  const trips = MOCK_TRIPS[activeTab];
+  // Use state-based trips (loaded from Firebase) instead of mock data
+  const trips = activeTab === 'upcoming' ? upcomingTrips : pastTrips;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>My Trips</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#5d1289" />
+          <Text style={styles.loadingText}>Loading trips...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -467,5 +537,15 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6B7280',
   },
 });

@@ -327,7 +327,8 @@ export async function startTrip(tripId: string): Promise<void> {
 }
 
 /**
- * Complete the trip
+ * Complete the trip - marks as AWAITING_TIP first to allow rider to add tip
+ * Driver should call this when they arrive at destination
  */
 export async function completeTrip(
   tripId: string,
@@ -338,7 +339,7 @@ export async function completeTrip(
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
     await updateDoc(tripRef, {
-      status: 'COMPLETED',
+      status: 'AWAITING_TIP',
       finalCost,
       actualDistance,
       actualDuration,
@@ -346,8 +347,155 @@ export async function completeTrip(
       paymentStatus: 'PENDING',
       updatedAt: serverTimestamp(),
     });
+    console.log('✅ Trip marked as AWAITING_TIP:', tripId);
   } catch (error) {
     console.error('Failed to complete trip:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add tip to a completed trip
+ * Called by rider after trip completion
+ */
+export async function addTipToTrip(
+  tripId: string,
+  tipAmount: number,
+  driverId: string
+): Promise<void> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+
+    // Get current trip data to calculate total
+    const tripDoc = await getDoc(tripRef);
+    if (!documentExists(tripDoc)) {
+      throw new Error('Trip not found');
+    }
+
+    const tripData = tripDoc.data();
+    const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
+
+    // Update trip with tip
+    await updateDoc(tripRef, {
+      tip: tipAmount,
+      totalWithTip: finalCost + tipAmount,
+      status: 'COMPLETED',
+      updatedAt: serverTimestamp(),
+    });
+
+    // Update driver's earnings in Firebase
+    await updateDriverEarnings(driverId, finalCost, tipAmount);
+
+    console.log('✅ Tip added to trip:', tripId, 'Amount:', tipAmount);
+  } catch (error) {
+    console.error('Failed to add tip:', error);
+    throw error;
+  }
+}
+
+/**
+ * Skip tip and finalize trip
+ * Called by rider if they choose not to tip
+ */
+export async function skipTipAndFinalize(tripId: string, driverId: string): Promise<void> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+
+    // Get trip data for earnings
+    const tripDoc = await getDoc(tripRef);
+    if (!documentExists(tripDoc)) {
+      throw new Error('Trip not found');
+    }
+
+    const tripData = tripDoc.data();
+    const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
+
+    await updateDoc(tripRef, {
+      tip: 0,
+      totalWithTip: finalCost,
+      status: 'COMPLETED',
+      updatedAt: serverTimestamp(),
+    });
+
+    // Update driver's earnings (no tip)
+    await updateDriverEarnings(driverId, finalCost, 0);
+
+    console.log('✅ Trip finalized without tip:', tripId);
+  } catch (error) {
+    console.error('Failed to finalize trip:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update driver's earnings in Firebase
+ */
+async function updateDriverEarnings(
+  driverId: string,
+  tripEarnings: number,
+  tipAmount: number
+): Promise<void> {
+  try {
+    const driverRef = doc(firebaseDb, 'drivers', driverId);
+    const driverDoc = await getDoc(driverRef);
+
+    if (documentExists(driverDoc)) {
+      const driverData = driverDoc.data();
+      const currentTodayEarnings = driverData?.todayEarnings || 0;
+      const currentTotalEarnings = driverData?.totalEarnings || 0;
+      const currentTotalTrips = driverData?.totalTrips || 0;
+      const currentTotalTips = driverData?.totalTips || 0;
+
+      await updateDoc(driverRef, {
+        todayEarnings: currentTodayEarnings + tripEarnings + tipAmount,
+        totalEarnings: currentTotalEarnings + tripEarnings + tipAmount,
+        totalTrips: currentTotalTrips + 1,
+        totalTips: currentTotalTips + tipAmount,
+        lastTripAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log('✅ Driver earnings updated:', driverId, 'Total:', tripEarnings + tipAmount);
+    }
+  } catch (error) {
+    console.error('Failed to update driver earnings:', error);
+    // Don't throw - earnings update failure shouldn't block trip completion
+  }
+}
+
+/**
+ * Finalize trip from driver side (after tip window expires or rider tips)
+ * This is called when driver presses "Finish" button
+ */
+export async function finalizeTrip(tripId: string): Promise<void> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!documentExists(tripDoc)) {
+      throw new Error('Trip not found');
+    }
+
+    const tripData = tripDoc.data();
+
+    // If still awaiting tip, finalize without tip
+    if (tripData?.status === 'AWAITING_TIP') {
+      await updateDoc(tripRef, {
+        status: 'COMPLETED',
+        tip: tripData?.tip || 0,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Update driver earnings if not already done
+      if (tripData?.driverId) {
+        const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
+        await updateDriverEarnings(tripData.driverId, finalCost, tripData?.tip || 0);
+      }
+    }
+
+    console.log('✅ Trip finalized:', tripId);
+  } catch (error) {
+    console.error('Failed to finalize trip:', error);
     throw error;
   }
 }
@@ -417,4 +565,138 @@ export function formatTime(minutes: number): string {
     return '< 1 min';
   }
   return `${Math.round(minutes)} min`;
+}
+
+/**
+ * Get active trip for a rider
+ * Returns the most recent trip that is in an active state (not completed or cancelled)
+ */
+export async function getActiveRiderTrip(riderId: string): Promise<RideRequest | null> {
+  try {
+    const tripsRef = collection(firebaseDb, 'trips');
+
+    // Query for active trips for this rider
+    // Active statuses: REQUESTED, ACCEPTED, DRIVER_ARRIVING, DRIVER_ARRIVED, IN_PROGRESS
+    const q = query(
+      tripsRef,
+      where('riderId', '==', riderId),
+      orderBy('requestedAt', 'desc'),
+      limit(5) // Get recent trips to check
+    );
+
+    const snapshot = await firestore().collection('trips')
+      .where('riderId', '==', riderId)
+      .orderBy('requestedAt', 'desc')
+      .limit(5)
+      .get();
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const status = data.status;
+
+      // Check if trip is in an active state
+      if (['REQUESTED', 'ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
+        console.log('✅ Found active rider trip:', doc.id, 'Status:', status);
+
+        return {
+          id: doc.id,
+          ...data,
+          requestedAt: data.requestedAt?.toDate(),
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          acceptedAt: data.acceptedAt?.toDate(),
+          startedAt: data.startedAt?.toDate(),
+          completedAt: data.completedAt?.toDate(),
+        } as RideRequest;
+      }
+    }
+
+    console.log('ℹ️ No active trip found for rider:', riderId);
+    return null;
+  } catch (error) {
+    console.error('❌ Error fetching active rider trip:', error);
+    return null;
+  }
+}
+
+/**
+ * Get rider info from users collection
+ * Use this when rider name is not stored in trip data
+ */
+export async function getRiderInfo(riderId: string): Promise<{ name: string; rating: number; photo?: string } | null> {
+  try {
+    const userDoc = await firestore().collection('users').doc(riderId).get();
+
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return {
+        name: userData?.name || userData?.firstName || 'Rider',
+        rating: userData?.rating || 5.0,
+        photo: userData?.profilePhotoUrl || userData?.photoUrl,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error fetching rider info:', error);
+    return null;
+  }
+}
+
+/**
+ * Get active trip for a driver
+ * Returns the most recent trip that is assigned to this driver and in an active state
+ */
+export async function getActiveDriverTrip(driverId: string): Promise<RideRequest | null> {
+  try {
+    const snapshot = await firestore().collection('trips')
+      .where('driverId', '==', driverId)
+      .orderBy('acceptedAt', 'desc')
+      .limit(5)
+      .get();
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const status = data.status;
+
+      // Check if trip is in an active state for driver
+      if (['ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
+        console.log('✅ Found active driver trip:', doc.id, 'Status:', status);
+
+        // If riderName is missing, fetch from users collection
+        let riderName = data.riderName;
+        let riderRating = data.riderProfileRating || data.riderRating; // Support both field names
+        let riderPhoto = data.riderPhoto;
+
+        if (!riderName && data.riderId) {
+          console.log('⚠️ Rider name not in trip, fetching from users collection...');
+          const riderInfo = await getRiderInfo(data.riderId);
+          if (riderInfo) {
+            riderName = riderInfo.name;
+            riderRating = riderInfo.rating;
+            riderPhoto = riderInfo.photo;
+          }
+        }
+
+        return {
+          id: doc.id,
+          ...data,
+          riderName: riderName || 'Rider',
+          riderRating: riderRating || 5.0,
+          riderPhoto: riderPhoto,
+          requestedAt: data.requestedAt?.toDate(),
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          acceptedAt: data.acceptedAt?.toDate(),
+          startedAt: data.startedAt?.toDate(),
+          completedAt: data.completedAt?.toDate(),
+        } as RideRequest;
+      }
+    }
+
+    console.log('ℹ️ No active trip found for driver:', driverId);
+    return null;
+  } catch (error) {
+    console.error('❌ Error fetching active driver trip:', error);
+    return null;
+  }
 }

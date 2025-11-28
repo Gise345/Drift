@@ -15,6 +15,7 @@ import {
   FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
 import * as Location from 'expo-location';
+import { useUserStore } from './user-store';
 
 /**
  * Helper to check if document exists
@@ -48,8 +49,15 @@ export interface TripLocation {
 export interface Trip {
   id: string;
   riderId: string;
+  riderName?: string;  // Rider's display name
+  riderPhoto?: string; // Rider's profile photo URL
+  riderProfileRating?: number; // Rider's profile rating (from their account)
   driverId?: string;
-  status: 'REQUESTED' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  status: 'REQUESTED' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'AWAITING_TIP' | 'COMPLETED' | 'CANCELLED';
+
+  // Tip and final cost
+  tip?: number;
+  totalWithTip?: number;
 
   // Route info
   pickup: {
@@ -239,11 +247,39 @@ export const useTripStore = create<TripStore>((set, get) => ({
         ...updates,
         updatedAt: serverTimestamp(),
       });
-      
+
       // Update local state
       const currentTrip = get().currentTrip;
       if (currentTrip?.id === tripId) {
-        set({ currentTrip: { ...currentTrip, ...updates } });
+        const updatedTrip = { ...currentTrip, ...updates };
+        set({ currentTrip: updatedTrip });
+
+        // If trip is being marked as COMPLETED, save to recent travels
+        if (updates.status === 'COMPLETED' && updatedTrip) {
+          try {
+            const { addRecentTravel } = useUserStore.getState();
+            await addRecentTravel({
+              tripId: updatedTrip.id,
+              pickup: {
+                name: updatedTrip.pickup.placeName || 'Pickup',
+                address: updatedTrip.pickup.address,
+                latitude: updatedTrip.pickup.coordinates.latitude,
+                longitude: updatedTrip.pickup.coordinates.longitude,
+              },
+              destination: {
+                name: updatedTrip.destination.placeName || 'Destination',
+                address: updatedTrip.destination.address,
+                latitude: updatedTrip.destination.coordinates.latitude,
+                longitude: updatedTrip.destination.coordinates.longitude,
+              },
+              vehicleType: updatedTrip.vehicleType,
+              cost: updatedTrip.finalCost || updatedTrip.estimatedCost,
+            });
+            console.log('Trip saved to recent travels');
+          } catch (travelError) {
+            console.warn('Failed to save recent travel:', travelError);
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to update trip:', error);
@@ -400,9 +436,25 @@ export const useTripStore = create<TripStore>((set, get) => ({
           console.log('  - Driver ID:', tripData.driverId || 'None');
           console.log('  - Driver Name:', tripData.driverInfo?.name || 'None');
 
-          // Update the store
-          set({ currentTrip: tripData });
-          console.log('✅ Store updated with new trip data');
+          // Check if trip is completed or cancelled - clear from store after delay
+          if (tripData.status === 'CANCELLED') {
+            console.log('🏁 Trip cancelled');
+            // Clear the current trip after a short delay to allow UI to show cancellation
+            setTimeout(() => {
+              set({ currentTrip: null });
+              console.log('✅ Current trip cleared from store');
+            }, 2000);
+          } else if (tripData.status === 'COMPLETED') {
+            console.log('🏁 Trip completed');
+            // Don't clear immediately - let the UI screens handle navigation
+            // The trip-complete or add-tip screens will clear when user dismisses
+            set({ currentTrip: tripData });
+            console.log('✅ Store updated with completed trip data');
+          } else {
+            // Update the store with active trip (including AWAITING_TIP status)
+            set({ currentTrip: tripData });
+            console.log('✅ Store updated with new trip data');
+          }
         } else {
           console.log('⚠️ Trip document does not exist:', tripId);
         }

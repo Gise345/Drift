@@ -97,8 +97,11 @@ export default function RideRequestModal({
                 timerIntervalRef.current = null;
               }
 
-              Alert.alert('Request Expired', 'You did not respond in time.');
-              onDecline();
+              // Use setTimeout to defer the state update and avoid updating parent during render
+              setTimeout(() => {
+                Alert.alert('Request Expired', 'You did not respond in time.');
+                onDecline();
+              }, 0);
             }
             return 0;
           }
@@ -113,7 +116,7 @@ export default function RideRequestModal({
         timerIntervalRef.current = null;
       }
     };
-  }, [visible, isProcessing]);
+  }, [visible, isProcessing, onDecline]);
 
   // Handle accept with proper state management
   const handleAccept = useCallback(async () => {

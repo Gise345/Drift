@@ -22,6 +22,7 @@ export default function DriverArrivingScreen() {
   const { clearBookingFlow } = useCarpoolStore();
   const [eta, setEta] = useState(5); // minutes
   const [showShareModal, setShowShareModal] = useState(false);
+  const hasNavigatedRef = React.useRef(false);
 
   // If no current trip, redirect back
   if (!currentTrip) {
@@ -47,15 +48,44 @@ export default function DriverArrivingScreen() {
     }
   }, [currentTrip?.id]);
 
+  // Handle trip status changes - navigate when driver arrives or trip starts
   useEffect(() => {
-    // Countdown ETA
+    if (!currentTrip || hasNavigatedRef.current) return;
+
+    // When driver has arrived at pickup, navigate to pickup-point
+    if (currentTrip.status === 'DRIVER_ARRIVED') {
+      console.log('🚗 Driver has arrived! Navigating to pickup-point...');
+      hasNavigatedRef.current = true;
+      router.replace('/(rider)/pickup-point');
+      return;
+    }
+
+    // When driver starts the ride (skipping pickup-point), go directly to trip-in-progress
+    if (currentTrip.status === 'IN_PROGRESS') {
+      console.log('🚗 Trip started! Navigating to trip-in-progress...');
+      hasNavigatedRef.current = true;
+      router.replace('/(rider)/trip-in-progress');
+      return;
+    }
+
+    // If trip was cancelled
+    if (currentTrip.status === 'CANCELLED') {
+      console.log('❌ Trip was cancelled');
+      hasNavigatedRef.current = true;
+      clearBookingFlow();
+      Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
+      router.replace('/(rider)');
+      return;
+    }
+  }, [currentTrip?.status]);
+
+  useEffect(() => {
+    // Countdown ETA (backup - status change should trigger navigation first)
     if (eta > 0) {
       const timer = setTimeout(() => setEta(eta - 1), 60000);
       return () => clearTimeout(timer);
-    } else {
-      // Driver arrived - navigate to at-pickup screen
-      router.replace('/(rider)/pickup-point');
     }
+    // Note: Don't auto-navigate based on ETA anymore - let status change handle it
   }, [eta]);
 
   useEffect(() => {
@@ -96,6 +126,7 @@ export default function DriverArrivingScreen() {
   const toRad = (degrees: number) => degrees * (Math.PI / 180);
 
   const handleCall = () => {
+    if (!driver) return;
     Alert.alert(
       'Call Driver',
       `Call ${driver.name}?`,
@@ -110,6 +141,7 @@ export default function DriverArrivingScreen() {
   };
 
   const handleMessage = () => {
+    if (!driver) return;
     const sms = Platform.OS === 'ios' ? 'sms:' : 'sms:';
     Linking.openURL(`${sms}${driver.phone}`);
   };

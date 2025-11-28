@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUserStore } from '@/src/stores/user-store';
 
 /**
  * DRIFT SEARCH LOCATION SCREEN - WITH MULTI-STOP SUPPORT
@@ -213,18 +214,64 @@ const SearchLocationScreen = () => {
 
   const loadSavedAddresses = async () => {
     try {
+      // Try to load from Firebase first (source of truth)
+      const currentUser = useUserStore.getState().user;
+      const addresses: SavedAddress[] = [];
+
+      if (currentUser) {
+        if (currentUser.homeAddress) {
+          addresses.push({
+            id: currentUser.homeAddress.id,
+            type: 'home',
+            label: currentUser.homeAddress.label || 'Home',
+            address: currentUser.homeAddress.address,
+            latitude: currentUser.homeAddress.coordinates.latitude,
+            longitude: currentUser.homeAddress.coordinates.longitude,
+          });
+        }
+        if (currentUser.workAddress) {
+          addresses.push({
+            id: currentUser.workAddress.id,
+            type: 'work',
+            label: currentUser.workAddress.label || 'Work',
+            address: currentUser.workAddress.address,
+            latitude: currentUser.workAddress.coordinates.latitude,
+            longitude: currentUser.workAddress.coordinates.longitude,
+          });
+        }
+        if (currentUser.savedPlaces && currentUser.savedPlaces.length > 0) {
+          currentUser.savedPlaces.forEach(place => {
+            addresses.push({
+              id: place.id,
+              type: 'custom',
+              label: place.label,
+              address: place.address,
+              latitude: place.coordinates.latitude,
+              longitude: place.coordinates.longitude,
+            });
+          });
+        }
+
+        if (addresses.length > 0) {
+          setSavedAddresses(addresses);
+          console.log('Loaded saved addresses from Firebase');
+          return;
+        }
+      }
+
+      // Fallback to AsyncStorage if not logged in
       const [home, work, custom] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.HOME_ADDRESS),
         AsyncStorage.getItem(STORAGE_KEYS.WORK_ADDRESS),
         AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_ADDRESSES),
       ]);
 
-      const addresses: SavedAddress[] = [];
       if (home) addresses.push(JSON.parse(home));
       if (work) addresses.push(JSON.parse(work));
       if (custom) addresses.push(...JSON.parse(custom));
 
       setSavedAddresses(addresses);
+      console.log('Loaded saved addresses from local storage');
     } catch (error) {
       console.error('Error loading saved addresses:', error);
     }
@@ -232,11 +279,25 @@ const SearchLocationScreen = () => {
 
   const loadRecentSearches = async () => {
     try {
+      // Try to load from Firebase first (source of truth)
+      const currentUser = useUserStore.getState().user;
+
+      if (currentUser && currentUser.recentSearches && currentUser.recentSearches.length > 0) {
+        const searches = currentUser.recentSearches
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 10);
+        setRecentSearches(searches);
+        console.log('Loaded recent searches from Firebase');
+        return;
+      }
+
+      // Fallback to AsyncStorage
       const recent = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
       if (recent) {
         const searches = JSON.parse(recent);
         searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
         setRecentSearches(searches.slice(0, 10));
+        console.log('Loaded recent searches from local storage');
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
@@ -388,18 +449,33 @@ const SearchLocationScreen = () => {
         timestamp: Date.now(),
       };
 
+      // Save to Firebase (primary - persists across reinstalls)
+      const { addRecentSearch: addSearchToFirebase } = useUserStore.getState();
+      try {
+        await addSearchToFirebase({
+          name: search.name,
+          address: search.address,
+          latitude: search.latitude,
+          longitude: search.longitude,
+        });
+        console.log('Recent search saved to Firebase');
+      } catch (firebaseError) {
+        console.warn('Failed to save to Firebase, using local storage:', firebaseError);
+      }
+
+      // Also save to AsyncStorage for offline access
       const existing = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
       let searches: RecentSearch[] = existing ? JSON.parse(existing) : [];
-      
+
       // Remove if already exists
       searches = searches.filter(s => s.address !== search.address);
-      
+
       // Add to beginning
       searches.unshift(newSearch);
-      
+
       // Keep only 10
       searches = searches.slice(0, 10);
-      
+
       await AsyncStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(searches));
       setRecentSearches(searches);
     } catch (error) {

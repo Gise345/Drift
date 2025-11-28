@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,43 +12,69 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useTripStore } from '@/src/stores/trip-store';
+import { cancelTrip } from '@/src/services/ride-request.service';
 
 export default function PickupPointScreen() {
   const router = useRouter();
-  const [timeRemaining, setTimeRemaining] = useState(120); // 2 minutes
+  const { currentTrip, subscribeToTrip } = useTripStore();
+  const [waitTime, setWaitTime] = useState(0); // Track wait time in seconds
+  const hasNavigatedRef = useRef(false);
 
-  // Mock driver data
-  const driver = {
-    name: 'John Smith',
-    photo: 'https://i.pravatar.cc/150?img=12',
-    rating: 4.9,
-    vehicle: {
-      make: 'Toyota',
-      model: 'Camry',
-      color: 'Silver',
-      plate: 'CI 1234',
-    },
-    phone: '+1-345-555-0123',
-  };
+  // If no current trip, redirect back
+  if (!currentTrip) {
+    router.replace('/(rider)');
+    return null;
+  }
 
-  // Mock location
-  const currentLocation = {
+  // Get driver info from current trip
+  const driver = currentTrip.driverInfo;
+
+  // Get pickup location from current trip
+  const pickupLocation = currentTrip.pickup?.coordinates || {
     latitude: 19.3133,
     longitude: -81.2546,
   };
 
-  // Countdown timer
+  // Subscribe to trip updates and handle status changes
   useEffect(() => {
-    if (timeRemaining > 0) {
-      const timer = setTimeout(() => {
-        setTimeRemaining(timeRemaining - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else {
-      // Auto-navigate to trip in progress
-      router.push('/(rider)/trip-in-progress');
+    if (!currentTrip?.id) return;
+
+    const unsubscribe = subscribeToTrip(currentTrip.id);
+
+    return () => unsubscribe();
+  }, [currentTrip?.id]);
+
+  // Handle trip status changes - navigate when driver starts the ride
+  useEffect(() => {
+    if (!currentTrip || hasNavigatedRef.current) return;
+
+    // When driver starts the ride, navigate to trip-in-progress
+    if (currentTrip.status === 'IN_PROGRESS') {
+      console.log('🚗 Driver started the ride! Navigating to trip-in-progress...');
+      hasNavigatedRef.current = true;
+      router.replace('/(rider)/trip-in-progress');
+      return;
     }
-  }, [timeRemaining]);
+
+    // If trip was cancelled, go back
+    if (currentTrip.status === 'CANCELLED') {
+      console.log('❌ Trip was cancelled');
+      hasNavigatedRef.current = true;
+      Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
+      router.replace('/(rider)');
+      return;
+    }
+  }, [currentTrip?.status]);
+
+  // Wait time counter (for display purposes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWaitTime((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -57,15 +83,19 @@ export default function PickupPointScreen() {
   };
 
   const handleCall = () => {
+    if (!driver?.phone) {
+      Alert.alert('Error', 'Driver phone number not available');
+      return;
+    }
     Linking.openURL(`tel:${driver.phone}`);
   };
 
   const handleMessage = () => {
-    Alert.alert(
-      'Message Driver',
-      'This feature will be available soon',
-      [{ text: 'OK' }]
-    );
+    if (!driver?.phone) {
+      Alert.alert('Error', 'Driver phone number not available');
+      return;
+    }
+    Linking.openURL(`sms:${driver.phone}`);
   };
 
   const handleCancel = () => {
@@ -77,11 +107,33 @@ export default function PickupPointScreen() {
         {
           text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => router.push('/(tabs)'),
+          onPress: async () => {
+            try {
+              if (currentTrip?.id) {
+                await cancelTrip(currentTrip.id, 'RIDER', 'Rider cancelled at pickup point');
+                console.log('✅ Trip cancelled');
+              }
+              router.replace('/(rider)');
+            } catch (error) {
+              console.error('❌ Failed to cancel trip:', error);
+              Alert.alert('Error', 'Failed to cancel ride. Please try again.');
+            }
+          },
         },
       ]
     );
   };
+
+  // If no driver info, show loading
+  if (!driver) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, color: '#666' }}>Loading driver information...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -103,15 +155,15 @@ export default function PickupPointScreen() {
           provider={PROVIDER_GOOGLE}
           style={styles.map}
           initialRegion={{
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
+            latitude: pickupLocation.latitude,
+            longitude: pickupLocation.longitude,
             latitudeDelta: 0.005,
             longitudeDelta: 0.005,
           }}
         >
           {/* Pickup marker */}
           <Marker
-            coordinate={currentLocation}
+            coordinate={pickupLocation}
             title="Pickup Point"
           >
             <View style={styles.pickupMarker}>
@@ -119,13 +171,16 @@ export default function PickupPointScreen() {
             </View>
           </Marker>
 
-          {/* Driver marker */}
+          {/* Driver marker - show at pickup since driver has arrived */}
           <Marker
-            coordinate={{
-              latitude: currentLocation.latitude + 0.0005,
-              longitude: currentLocation.longitude + 0.0005,
+            coordinate={currentTrip.driverLocation ? {
+              latitude: currentTrip.driverLocation.latitude,
+              longitude: currentTrip.driverLocation.longitude,
+            } : {
+              latitude: pickupLocation.latitude + 0.0002,
+              longitude: pickupLocation.longitude + 0.0002,
             }}
-            title="Driver"
+            title={driver.name}
           >
             <View style={styles.driverMarker}>
               <Ionicons name="car" size={24} color="#FFF" />
@@ -142,7 +197,7 @@ export default function PickupPointScreen() {
           <View style={styles.waitingTextContainer}>
             <Text style={styles.waitingTitle}>Driver is here!</Text>
             <Text style={styles.waitingTime}>
-              Waiting: {formatTime(timeRemaining)}
+              Wait time: {formatTime(waitTime)}
             </Text>
           </View>
         </View>
@@ -151,10 +206,16 @@ export default function PickupPointScreen() {
       {/* Driver Info Card */}
       <View style={styles.driverCard}>
         <View style={styles.driverHeader}>
-          <Image
-            source={{ uri: driver.photo }}
-            style={styles.driverPhoto}
-          />
+          {driver.photo ? (
+            <Image
+              source={{ uri: driver.photo }}
+              style={styles.driverPhoto}
+            />
+          ) : (
+            <View style={[styles.driverPhoto, styles.driverPhotoPlaceholder]}>
+              <Ionicons name="person" size={28} color="#5d1289ff" />
+            </View>
+          )}
           <View style={styles.driverInfo}>
             <Text style={styles.driverName}>{driver.name}</Text>
             <View style={styles.ratingContainer}>
@@ -201,15 +262,13 @@ export default function PickupPointScreen() {
           </Text>
         </View>
 
-        {/* Start Ride Button */}
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={() => router.push('/(rider)/trip-in-progress')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startButtonText}>Start Ride</Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFF" />
-        </TouchableOpacity>
+        {/* Waiting for driver to start info */}
+        <View style={styles.waitingForDriverContainer}>
+          <Ionicons name="hourglass-outline" size={20} color="#5d1289ff" />
+          <Text style={styles.waitingForDriverText}>
+            Waiting for driver to start the ride...
+          </Text>
+        </View>
 
         {/* Cancel Button */}
         <TouchableOpacity
@@ -409,7 +468,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDE9FE',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   instructionsText: {
     fontSize: 12,
@@ -417,24 +476,32 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
   },
-  startButton: {
+  waitingForDriverContainer: {
     flexDirection: 'row',
-    backgroundColor: '#000',
-    paddingVertical: 18,
-    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    backgroundColor: '#F3F4F6',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
   },
-  startButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginRight: 8,
+  waitingForDriverText: {
+    fontSize: 14,
+    color: '#5d1289ff',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  driverPhotoPlaceholder: {
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
     paddingVertical: 14,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 12,
   },
   cancelButtonText: {
     color: '#EF4444',

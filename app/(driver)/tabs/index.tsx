@@ -23,13 +23,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useDriverStore } from '@/src/stores/driver-store';
+import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { DriftButton } from '@/components/ui/DriftButton';
 import DriftMapView from '@/components/ui/DriftMapView';
 import RideRequestModal from '@/components/modal/RideRequestModal';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { Region } from 'react-native-maps';
+import { getActiveDriverTrip } from '@/src/services/ride-request.service';
 
 export default function DriverHomeScreen() {
   const router = useRouter();
@@ -46,6 +47,8 @@ export default function DriverHomeScreen() {
     loadDriverProfile,
     markRequestProcessed,
     processedRequestIds,
+    activeRide,
+    setActiveRide,
   } = useDriverStore();
   const { user } = useAuthStore();
 
@@ -54,6 +57,8 @@ export default function DriverHomeScreen() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [currentRequest, setCurrentRequest] = useState<any>(null);
   const [isStatusCardMinimized, setIsStatusCardMinimized] = useState(false);
+  const [isActiveTripMinimized, setIsActiveTripMinimized] = useState(false);
+  const [hasCheckedActiveTrip, setHasCheckedActiveTrip] = useState(false);
 
   // Track shown request IDs to prevent modal from re-appearing for same request
   const shownRequestIds = useRef<Set<string>>(new Set());
@@ -65,6 +70,7 @@ export default function DriverHomeScreen() {
   // Animation values for status card
   const statusCardAnimation = useRef(new Animated.Value(1)).current;
   const minimizedButtonAnimation = useRef(new Animated.Value(0)).current;
+  const activeTripCardAnimation = useRef(new Animated.Value(1)).current;
 
   // Load driver profile from Firebase on mount
   useEffect(() => {
@@ -72,6 +78,131 @@ export default function DriverHomeScreen() {
       loadDriverProfile(user.id);
     }
   }, [user?.id]);
+
+  // Check for active trip on mount (persists across app restart/logout)
+  useEffect(() => {
+    if (!hasCheckedActiveTrip && driver?.id) {
+      checkForActiveTrip();
+    }
+  }, [driver?.id, hasCheckedActiveTrip]);
+
+  /**
+   * Check if driver has an active trip and restore it
+   * Only restore trips that are genuinely in progress (IN_PROGRESS status)
+   * or recently accepted (within last 30 minutes)
+   */
+  const checkForActiveTrip = async () => {
+    if (!driver?.id) return;
+
+    try {
+      console.log('🔍 Checking for active trip for driver:', driver.id);
+      const activeTrip = await getActiveDriverTrip(driver.id);
+
+      if (activeTrip) {
+        console.log('🔍 Found trip:', activeTrip.id, 'Status:', activeTrip.status);
+
+        // Only restore trips that are genuinely active:
+        // 1. IN_PROGRESS trips should always be restored (driver is mid-ride)
+        // 2. For other statuses (DRIVER_ARRIVING, DRIVER_ARRIVED), only restore if recently accepted (within 30 min)
+        const isInProgress = activeTrip.status === 'IN_PROGRESS';
+        const acceptedAt = activeTrip.acceptedAt;
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+        const isRecentlyAccepted = acceptedAt && new Date(acceptedAt) > thirtyMinutesAgo;
+
+        if (!isInProgress && !isRecentlyAccepted) {
+          console.log('⏭️ Skipping stale trip (not in progress and older than 30 min):', activeTrip.id);
+          setHasCheckedActiveTrip(true);
+          return;
+        }
+
+        console.log('✅ Restoring active trip:', activeTrip.id, 'Status:', activeTrip.status);
+
+        // Get rider info from the trip data
+        const riderName = (activeTrip as any).riderName || 'Rider';
+        const riderRating = (activeTrip as any).riderRating || 4.5;
+        const riderPhoto = (activeTrip as any).riderPhoto;
+
+        // Convert to ActiveRide format
+        const restoredRide: ActiveRide = {
+          id: activeTrip.id,
+          riderId: activeTrip.riderId,
+          riderName: riderName,
+          riderRating: riderRating,
+          riderPhoto: riderPhoto,
+          pickup: {
+            lat: activeTrip.pickup.coordinates.latitude,
+            lng: activeTrip.pickup.coordinates.longitude,
+            address: activeTrip.pickup.address,
+          },
+          destination: {
+            lat: activeTrip.destination.coordinates.latitude,
+            lng: activeTrip.destination.coordinates.longitude,
+            address: activeTrip.destination.address,
+          },
+          distance: activeTrip.distance || 0,
+          estimatedDuration: activeTrip.duration || 0,
+          estimatedEarnings: activeTrip.estimatedCost || 0,
+          requestedAt: activeTrip.requestedAt || new Date(),
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          status: mapTripStatusToRideStatus(activeTrip.status),
+          acceptedAt: activeTrip.acceptedAt || new Date(),
+          arrivedAt: activeTrip.status === 'DRIVER_ARRIVED' ? new Date() : undefined,
+          startedAt: activeTrip.startedAt,
+        };
+
+        setActiveRide(restoredRide);
+      } else {
+        // No active trip found - clear any stale activeRide state
+        console.log('ℹ️ No active trip found for driver');
+        setActiveRide(null);
+      }
+
+      setHasCheckedActiveTrip(true);
+    } catch (error) {
+      console.error('❌ Error checking for active trip:', error);
+      setHasCheckedActiveTrip(true);
+    }
+  };
+
+  /**
+   * Map trip status to driver ride status
+   */
+  const mapTripStatusToRideStatus = (status: string): ActiveRide['status'] => {
+    switch (status) {
+      case 'ACCEPTED':
+      case 'DRIVER_ARRIVING':
+        return 'navigating_to_pickup';
+      case 'DRIVER_ARRIVED':
+        return 'arrived';
+      case 'IN_PROGRESS':
+        return 'started';
+      default:
+        return 'accepted';
+    }
+  };
+
+  /**
+   * Navigate to the appropriate screen based on active ride status
+   */
+  const navigateToActiveRide = () => {
+    if (!activeRide) return;
+
+    switch (activeRide.status) {
+      case 'accepted':
+      case 'navigating_to_pickup':
+        router.push('/(driver)/active-ride/navigate-to-pickup');
+        break;
+      case 'arrived':
+        router.push('/(driver)/active-ride/arrived-at-pickup');
+        break;
+      case 'started':
+      case 'in_progress':
+        router.push('/(driver)/active-ride/navigate-to-destination');
+        break;
+      default:
+        router.push('/(driver)/active-ride/navigate-to-pickup');
+    }
+  };
 
   // Get user location and set region
   useEffect(() => {
@@ -237,6 +368,17 @@ export default function DriverHomeScreen() {
     ]).start();
   };
 
+  const toggleActiveTripCard = () => {
+    const toMinimized = !isActiveTripMinimized;
+    setIsActiveTripMinimized(toMinimized);
+
+    Animated.timing(activeTripCardAnimation, {
+      toValue: toMinimized ? 0 : 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
   const handleAcceptRequest = async () => {
     if (!currentRequest) return;
 
@@ -332,7 +474,7 @@ export default function DriverHomeScreen() {
       <SafeAreaView style={styles.overlay}>
         {/* Top Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuButton}
             onPress={() => router.push('/(driver)/tabs/menu')}
           >
@@ -349,7 +491,7 @@ export default function DriverHomeScreen() {
           </View>
 
           <View style={styles.headerIcons}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.iconButton}
               onPress={() => router.push('/(driver)/dashboard/notifications')}
             >
@@ -358,8 +500,8 @@ export default function DriverHomeScreen() {
                 <Text style={styles.badgeText}>3</Text>
               </View>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.iconButton}
               onPress={() => router.push('/(driver)/settings')}
             >
@@ -367,6 +509,91 @@ export default function DriverHomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Active Trip Card - Shows if driver has an ongoing trip */}
+        {activeRide && !isActiveTripMinimized && (
+          <Animated.View
+            style={[
+              styles.activeTripCard,
+              {
+                opacity: activeTripCardAnimation,
+                transform: [
+                  {
+                    translateY: activeTripCardAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.activeTripMinimizeBtn}
+              onPress={toggleActiveTripCard}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="chevron-up" size={18} color={Colors.gray[400]} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.activeTripContent}
+              onPress={navigateToActiveRide}
+              activeOpacity={0.8}
+            >
+              <View style={styles.activeTripHeader}>
+                <View style={styles.activeTripIconContainer}>
+                  <Ionicons
+                    name={activeRide.status === 'started' || activeRide.status === 'in_progress' ? 'car' : 'navigate'}
+                    size={24}
+                    color={Colors.primary}
+                  />
+                </View>
+                <View style={styles.activeTripInfo}>
+                  <Text style={styles.activeTripTitle}>
+                    {activeRide.status === 'accepted' && 'Navigate to pickup'}
+                    {activeRide.status === 'navigating_to_pickup' && 'Navigate to pickup'}
+                    {activeRide.status === 'arrived' && 'Waiting for rider'}
+                    {activeRide.status === 'started' && 'Trip in progress'}
+                    {activeRide.status === 'in_progress' && 'Trip in progress'}
+                  </Text>
+                  <Text style={styles.activeTripDestination} numberOfLines={1}>
+                    {activeRide.status === 'started' || activeRide.status === 'in_progress'
+                      ? `To: ${activeRide.destination.address}`
+                      : `Pickup: ${activeRide.pickup.address}`}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color={Colors.primary} />
+              </View>
+              <View style={styles.activeTripRider}>
+                <View style={styles.activeTripRiderInfo}>
+                  <Ionicons name="person-circle" size={20} color={Colors.gray[600]} />
+                  <Text style={styles.activeTripRiderName}>{activeRide.riderName}</Text>
+                </View>
+                <Text style={styles.activeTripEarnings}>
+                  CI${activeRide.estimatedEarnings?.toFixed(2) || '0.00'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {/* Minimized Active Trip Button - Shows when active trip card is collapsed */}
+        {activeRide && isActiveTripMinimized && (
+          <TouchableOpacity
+            style={styles.minimizedActiveTripButton}
+            onPress={toggleActiveTripCard}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={activeRide.status === 'started' || activeRide.status === 'in_progress' ? 'car' : 'navigate'}
+              size={22}
+              color={Colors.white}
+            />
+            <Text style={styles.minimizedActiveTripText}>
+              {activeRide.status === 'started' || activeRide.status === 'in_progress' ? 'Trip' : 'Pickup'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Status Card - Animated */}
         <Animated.View
@@ -608,7 +835,96 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
     color: Colors.white,
   },
-  
+
+  // Active Trip Card
+  activeTripCard: {
+    marginHorizontal: Spacing.base,
+    marginTop: Spacing.md,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    ...Shadows.lg,
+  },
+  activeTripMinimizeBtn: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  activeTripContent: {
+    padding: Spacing.base,
+  },
+  activeTripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeTripIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  activeTripInfo: {
+    flex: 1,
+  },
+  activeTripTitle: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.black,
+    marginBottom: 2,
+  },
+  activeTripDestination: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.gray[600],
+  },
+  activeTripRider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+  },
+  activeTripRiderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeTripRiderName: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.black,
+    marginLeft: Spacing.xs,
+  },
+  minimizedActiveTripButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 120 : 100,
+    right: Spacing.base,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    gap: Spacing.xs,
+    ...Shadows.lg,
+  },
+  minimizedActiveTripText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.white,
+  },
+  activeTripEarnings: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.success,
+  },
+
   // Status Card
   statusCard: {
     marginHorizontal: Spacing.base,

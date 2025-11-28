@@ -1,22 +1,51 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Arrived at Pickup Screen
+ * Shows when driver has arrived at pickup location
+ *
+ * Features:
+ * - Live map in background showing pickup location
+ * - Bottom sheet with rider info and actions (takes half screen)
+ * - Wait timer with progress indicator
+ * - Contact options (call/message)
+ * - Start Ride button to begin the trip
+ * - No-show option for absent riders
+ */
+
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Linking,
+  Alert,
+  Animated,
+  Dimensions,
+  Platform,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Colors, Typography, Spacing, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { startTrip } from '@/src/services/ride-request.service';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.55;
 
 export default function ArrivedAtPickup() {
   const router = useRouter();
-  const { activeRide } = useDriverStore();
+  const mapRef = useRef<MapView>(null);
+  const { activeRide, startRide } = useDriverStore();
   const [waitTime, setWaitTime] = useState(0);
+  const [isStarting, setIsStarting] = useState(false);
   const maxWaitTime = 300; // 5 minutes in seconds
+
+  // Animation for pulsing effect
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -24,6 +53,26 @@ export default function ArrivedAtPickup() {
     }, 1000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // Pulsing animation for the "waiting" indicator
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
   }, []);
 
   if (!activeRide) {
@@ -38,113 +87,231 @@ export default function ArrivedAtPickup() {
   };
 
   const handleCallRider = () => {
-    Linking.openURL(`tel:${(activeRide as any).riderPhone || '+13455551234'}`);
+    const phone = (activeRide as any).riderPhone || '+13455551234';
+    Alert.alert('Call Rider', `Call ${activeRide.riderName}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Call', onPress: () => Linking.openURL(`tel:${phone}`) },
+    ]);
   };
 
   const handleMessageRider = () => {
-    Linking.openURL(`sms:${(activeRide as any).riderPhone || '+13455551234'}`);
+    const phone = (activeRide as any).riderPhone || '+13455551234';
+    Linking.openURL(`sms:${phone}`);
   };
 
-  const handleStartRide = () => {
-    router.push('/(driver)/active-ride/start-ride');
+  const handleStartRide = async () => {
+    setIsStarting(true);
+
+    try {
+      // Update trip status to IN_PROGRESS in Firebase
+      // This will trigger the rider's screen to navigate to trip-in-progress
+      await startTrip(activeRide.id);
+      console.log('✅ Trip started successfully - Rider should see status change');
+
+      // Update local driver store
+      startRide();
+
+      // Navigate to destination screen
+      router.replace('/(driver)/active-ride/navigate-to-destination');
+    } catch (error) {
+      console.error('❌ Failed to start trip:', error);
+      Alert.alert('Error', 'Failed to start the ride. Please try again.');
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const handleNoShow = () => {
-    router.push('/(driver)/active-ride/rider-no-show');
+    Alert.alert(
+      'Report No-Show',
+      'Are you sure the rider has not arrived? You will receive a cancellation fee.',
+      [
+        { text: 'Wait More', style: 'cancel' },
+        {
+          text: 'Report No-Show',
+          style: 'destructive',
+          onPress: () => router.push('/(driver)/active-ride/rider-no-show'),
+        },
+      ]
+    );
   };
 
   const waitPercentage = Math.min((waitTime / maxWaitTime) * 100, 100);
   const isNearLimit = waitTime > 240; // Last minute warning
+  const canReportNoShow = waitTime >= 120; // 2 minutes minimum wait
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>You've Arrived!</Text>
-          <Text style={styles.headerSubtitle}>Waiting for rider to join</Text>
-        </View>
-
-        {/* Wait Timer */}
-        <View style={styles.timerCard}>
-          <View style={styles.timerCircle}>
-            <View style={styles.timerInner}>
-              <Text style={styles.timerValue}>{formatTime(waitTime)}</Text>
-              <Text style={styles.timerLabel}>Wait Time</Text>
+    <View style={styles.container}>
+      {/* Map Background */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={{
+          latitude: activeRide.pickup.lat,
+          longitude: activeRide.pickup.lng,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }}
+        showsUserLocation
+        showsMyLocationButton={false}
+      >
+        {/* Pickup Marker */}
+        <Marker
+          coordinate={{
+            latitude: activeRide.pickup.lat,
+            longitude: activeRide.pickup.lng,
+          }}
+          title="Pickup Location"
+        >
+          <View style={styles.pickupMarker}>
+            <View style={styles.pickupMarkerInner}>
+              <Ionicons name="person" size={18} color={Colors.white} />
             </View>
           </View>
-          
-          {/* Progress Ring */}
-          <View style={styles.progressRing}>
-            <View 
+        </Marker>
+      </MapView>
+
+      {/* Header Banner */}
+      <SafeAreaView edges={['top']} style={styles.headerContainer}>
+        <View style={styles.headerBanner}>
+          <Animated.View style={[styles.pulseContainer, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={styles.pulseCircle}>
+              <Ionicons name="location" size={20} color={Colors.white} />
+            </View>
+          </Animated.View>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>You've Arrived!</Text>
+            <Text style={styles.headerSubtitle}>Waiting for {activeRide.riderName}</Text>
+          </View>
+          <View style={styles.timerBadge}>
+            <Text style={[styles.timerText, isNearLimit && styles.timerTextWarning]}>
+              {formatTime(waitTime)}
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {/* Bottom Sheet */}
+      <View style={styles.bottomSheet}>
+        {/* Handle */}
+        <View style={styles.sheetHandle}>
+          <View style={styles.handleBar} />
+        </View>
+
+        {/* Wait Progress */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View
               style={[
-                styles.progressFill, 
-                { 
+                styles.progressFill,
+                {
                   width: `${waitPercentage}%`,
                   backgroundColor: isNearLimit ? Colors.warning : Colors.primary,
-                }
-              ]} 
+                },
+              ]}
             />
           </View>
-
-          <Text style={styles.waitInfo}>
-            {isNearLimit 
-              ? '⚠️ Rider has 1 minute remaining'
-              : `Rider has ${Math.floor((maxWaitTime - waitTime) / 60)} minutes to arrive`
-            }
+          <Text style={[styles.progressText, isNearLimit && styles.progressTextWarning]}>
+            {isNearLimit
+              ? 'Rider has less than 1 minute remaining'
+              : `Rider has ${Math.max(0, Math.floor((maxWaitTime - waitTime) / 60))} min to arrive`}
           </Text>
         </View>
 
-        {/* Rider Info */}
+        {/* Rider Card */}
         <View style={styles.riderCard}>
-          <Ionicons name="person-circle" size={64} color={Colors.primary} />
+          {(activeRide as any).riderPhoto ? (
+            <Image
+              source={{ uri: (activeRide as any).riderPhoto }}
+              style={styles.riderPhoto}
+            />
+          ) : (
+            <View style={styles.riderAvatar}>
+              <Ionicons name="person" size={28} color={Colors.primary} />
+            </View>
+          )}
           <View style={styles.riderInfo}>
             <Text style={styles.riderName}>{activeRide.riderName}</Text>
             <View style={styles.riderRating}>
-              <Ionicons name="star" size={16} color={Colors.primary} />
+              <Ionicons name="star" size={14} color={Colors.rating} />
               <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
             </View>
           </View>
-        </View>
-
-        {/* Contact Options */}
-        <View style={styles.contactSection}>
-          <Text style={styles.sectionTitle}>Contact Rider</Text>
           <View style={styles.contactButtons}>
-            <TouchableOpacity style={styles.contactCard} onPress={handleMessageRider}>
-              <Ionicons name="chatbubble" size={32} color={Colors.primary} />
-              <Text style={styles.contactLabel}>Message</Text>
+            <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
+              <Ionicons name="chatbubble" size={20} color={Colors.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.contactCard} onPress={handleCallRider}>
-              <Ionicons name="call" size={32} color={Colors.primary} />
-              <Text style={styles.contactLabel}>Call</Text>
+            <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
+              <Ionicons name="call" size={20} color={Colors.success} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Location Info */}
+        {/* Pickup Location */}
         <View style={styles.locationCard}>
-          <Ionicons name="location" size={20} color={Colors.success} />
-          <View style={styles.locationText}>
-            <Text style={styles.locationLabel}>Pickup Location</Text>
-            <Text style={styles.locationAddress}>{activeRide.pickup.address}</Text>
+          <View style={styles.locationDot} />
+          <View style={styles.locationInfo}>
+            <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
+            <Text style={styles.locationAddress} numberOfLines={2}>
+              {activeRide.pickup.address}
+            </Text>
+          </View>
+        </View>
+
+        {/* Destination Preview */}
+        <View style={styles.destinationPreview}>
+          <View style={styles.destinationDot} />
+          <View style={styles.destinationInfo}>
+            <Text style={styles.destinationLabel}>GOING TO</Text>
+            <Text style={styles.destinationAddress} numberOfLines={1}>
+              {activeRide.destination.address}
+            </Text>
+          </View>
+          <View style={styles.tripInfo}>
+            <Text style={styles.tripDistance}>
+              {(activeRide.distance || 0).toFixed(1)} km
+            </Text>
+            <Text style={styles.tripEarnings}>
+              CI${(activeRide.estimatedEarnings || 0).toFixed(2)}
+            </Text>
           </View>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.noShowButton} onPress={handleNoShow}>
-            <Ionicons name="close-circle-outline" size={20} color={Colors.error} />
-            <Text style={styles.noShowText}>Rider No-Show</Text>
-          </TouchableOpacity>
+          {canReportNoShow && (
+            <TouchableOpacity style={styles.noShowButton} onPress={handleNoShow}>
+              <Ionicons name="close-circle-outline" size={18} color={Colors.error} />
+              <Text style={styles.noShowText}>No-Show</Text>
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity style={styles.startButton} onPress={handleStartRide}>
-            <Ionicons name="checkmark-circle" size={24} color={Colors.white} />
-            <Text style={styles.startButtonText}>Start Ride</Text>
+          <TouchableOpacity
+            style={[styles.startButton, !canReportNoShow && styles.startButtonFull]}
+            onPress={handleStartRide}
+            disabled={isStarting}
+          >
+            {isStarting ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <>
+                <Ionicons name="car" size={22} color={Colors.white} />
+                <Text style={styles.startButtonText}>Start Ride</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
+
+        {/* Safety Info */}
+        <View style={styles.safetyInfo}>
+          <Ionicons name="information-circle-outline" size={16} color={Colors.gray[500]} />
+          <Text style={styles.safetyText}>
+            Verify rider identity before starting the trip
+          </Text>
+        </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -153,177 +320,314 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.xl,
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
-  header: {
+
+  // Header
+  headerContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  headerBanner: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    ...Shadows.lg,
   },
-  headerTitle: {
-    fontSize: Typography.fontSize['2xl'],
-    fontWeight: '700',
-    color: Colors.black,
-    marginBottom: Spacing.xs,
+  pulseContainer: {
+    marginRight: 12,
   },
-  headerSubtitle: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
-  },
-  timerCard: {
-    alignItems: 'center',
-    backgroundColor: Colors.gray[50],
+  pulseCircle: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-  },
-  timerCircle: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: Colors.primary + '10',
+    backgroundColor: Colors.success,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.lg,
   },
-  timerInner: {
-    alignItems: 'center',
+  headerContent: {
+    flex: 1,
   },
-  timerValue: {
-    fontSize: Typography.fontSize['4xl'],
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.black,
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: Colors.gray[600],
+    marginTop: 2,
+  },
+  timerBadge: {
+    backgroundColor: Colors.gray[100],
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  timerText: {
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.primary,
-    marginBottom: Spacing.xs,
   },
-  timerLabel: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+  timerTextWarning: {
+    color: Colors.warning,
   },
-  progressRing: {
-    width: '100%',
-    height: 8,
+
+  // Pickup Marker
+  pickupMarker: {
+    alignItems: 'center',
+  },
+  pickupMarkerInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: Colors.white,
+    ...Shadows.md,
+  },
+
+  // Bottom Sheet
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: BOTTOM_SHEET_HEIGHT,
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    ...Shadows.xl,
+  },
+  sheetHandle: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.gray[300],
+  },
+
+  // Progress
+  progressContainer: {
+    marginBottom: 16,
+  },
+  progressBar: {
+    height: 6,
     backgroundColor: Colors.gray[200],
-    borderRadius: 4,
+    borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: Spacing.md,
+    marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
-  waitInfo: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
+  progressText: {
+    fontSize: 12,
+    color: Colors.gray[600],
     textAlign: 'center',
   },
+  progressTextWarning: {
+    color: Colors.warning,
+    fontWeight: '600',
+  },
+
+  // Rider Card
   riderCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.gray[50],
     borderRadius: 16,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
+    padding: 16,
+    marginBottom: 12,
+  },
+  riderAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riderPhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
   riderInfo: {
-    marginLeft: Spacing.lg,
+    flex: 1,
+    marginLeft: 12,
   },
   riderName: {
-    fontSize: Typography.fontSize.xl,
+    fontSize: 18,
     fontWeight: '600',
     color: Colors.black,
-    marginBottom: Spacing.xs,
   },
   riderRating: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginTop: 4,
   },
   ratingText: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 14,
     color: Colors.gray[700],
-  },
-  contactSection: {
-    marginBottom: Spacing.xl,
-  },
-  sectionTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: Spacing.md,
+    marginLeft: 4,
   },
   contactButtons: {
     flexDirection: 'row',
-    gap: Spacing.md,
+    gap: 10,
   },
-  contactCard: {
-    flex: 1,
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    padding: Spacing.xl,
+  contactButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.white,
     alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.sm,
   },
-  contactLabel: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.black,
-    marginTop: Spacing.sm,
-  },
+
+  // Location Cards
   locationCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: Colors.success + '10',
-    borderRadius: 12,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
   },
-  locationText: {
+  locationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.success,
+    marginTop: 4,
+    marginRight: 12,
+  },
+  locationInfo: {
     flex: 1,
-    marginLeft: Spacing.md,
   },
   locationLabel: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[600],
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.gray[500],
+    letterSpacing: 1,
     marginBottom: 4,
   },
   locationAddress: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
+    fontSize: 14,
     color: Colors.black,
     lineHeight: 20,
   },
+
+  // Destination Preview
+  destinationPreview: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  destinationDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.error,
+    marginTop: 4,
+    marginRight: 12,
+  },
+  destinationInfo: {
+    flex: 1,
+  },
+  destinationLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.gray[500],
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  destinationAddress: {
+    fontSize: 14,
+    color: Colors.black,
+  },
+  tripInfo: {
+    alignItems: 'flex-end',
+  },
+  tripDistance: {
+    fontSize: 13,
+    color: Colors.gray[600],
+  },
+  tripEarnings: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.success,
+    marginTop: 2,
+  },
+
+  // Action Buttons
   actionButtons: {
-    gap: Spacing.md,
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
   },
   noShowButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.white,
+    gap: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: Colors.error,
-    borderRadius: 12,
-    paddingVertical: Spacing.md,
+    backgroundColor: Colors.white,
   },
   noShowText: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.error,
   },
   startButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 14,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: Spacing.lg,
+  },
+  startButtonFull: {
+    flex: 1,
   },
   startButtonText: {
-    fontSize: Typography.fontSize.base,
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.white,
+  },
+
+  // Safety Info
+  safetyInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 20 : 12,
+  },
+  safetyText: {
+    fontSize: 12,
+    color: Colors.gray[500],
+    marginLeft: 6,
   },
 });

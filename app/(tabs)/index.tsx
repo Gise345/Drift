@@ -22,6 +22,9 @@ import { Region } from 'react-native-maps';
 import DriftMapView from '@/components/ui/DriftMapView';
 import SavedAddressItem, { SavedAddress } from '@/components/ui/SavedAddressItem';
 import DestinationCards from '@/components/ui/DestinationCards';
+import { useUserStore, SavedPlace, RecentSearch as UserRecentSearch } from '@/src/stores/user-store';
+import { useTripStore, Trip } from '@/src/stores/trip-store';
+import { getActiveRiderTrip } from '@/src/services/ride-request.service';
 
 /**
  * DRIFT HOME SCREEN - PROPER IMPLEMENTATION
@@ -77,6 +80,22 @@ interface PlacePrediction {
 }
 
 const HomeScreen = () => {
+  // User store - Firebase synced data
+  const {
+    user,
+    fetchUserData,
+    saveHomeAddress: saveHomeToFirebase,
+    saveWorkAddress: saveWorkToFirebase,
+    addSavedPlace: addPlaceToFirebase,
+    removeSavedPlace: removePlaceFromFirebase,
+    addRecentSearch: addSearchToFirebase,
+    getRecentSearches,
+    syncLocalDataToFirebase,
+  } = useUserStore();
+
+  // Trip store - for active trip management
+  const { currentTrip, setCurrentTrip } = useTripStore();
+
   // Location state
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
@@ -85,7 +104,7 @@ const HomeScreen = () => {
   // Map visibility toggle
   const [showMap, setShowMap] = useState(false);
 
-  // Saved data
+  // Saved data - now synced with Firebase
   const [homeAddress, setHomeAddress] = useState<SavedAddress | null>(null);
   const [workAddress, setWorkAddress] = useState<SavedAddress | null>(null);
   const [customAddresses, setCustomAddresses] = useState<SavedAddress[]>([]);
@@ -136,8 +155,90 @@ const HomeScreen = () => {
    */
   const initializeScreen = async () => {
     await getCurrentLocation();
+
+    // Fetch user data from Firebase first
+    await fetchUserData();
+
+    // Try to sync any local data to Firebase (one-time migration)
+    await syncLocalDataToFirebase();
+
+    // Load saved addresses from Firebase (with AsyncStorage fallback)
     await loadSavedAddresses();
     await loadRecentSearches();
+
+    // Check for active trip (persists across app restart/logout)
+    await checkForActiveTrip();
+  };
+
+  /**
+   * Check if rider has an active trip and restore it
+   * Only restore trips that are genuinely active (IN_PROGRESS) or recently requested (within 30 min)
+   */
+  const checkForActiveTrip = async () => {
+    try {
+      const currentUser = useUserStore.getState().user;
+      if (!currentUser?.id) {
+        console.log('ℹ️ No user logged in, skipping active trip check');
+        return;
+      }
+
+      console.log('🔍 Checking for active trip for rider:', currentUser.id);
+      const activeTrip = await getActiveRiderTrip(currentUser.id);
+
+      if (activeTrip) {
+        console.log('🔍 Found trip:', activeTrip.id, 'Status:', activeTrip.status);
+
+        // Only restore trips that are genuinely active:
+        // 1. IN_PROGRESS trips should always be restored (rider is mid-ride)
+        // 2. For other statuses (REQUESTED, DRIVER_ARRIVING, etc.), only restore if recently created (within 30 min)
+        const isInProgress = activeTrip.status === 'IN_PROGRESS';
+        const requestedAt = activeTrip.requestedAt;
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+        const isRecentlyRequested = requestedAt && new Date(requestedAt) > thirtyMinutesAgo;
+
+        if (!isInProgress && !isRecentlyRequested) {
+          console.log('⏭️ Skipping stale trip (not in progress and older than 30 min):', activeTrip.id);
+          // Clear any stale trip from the store
+          setCurrentTrip(null);
+          return;
+        }
+
+        console.log('✅ Restoring active trip:', activeTrip.id, 'Status:', activeTrip.status);
+        // Set the trip in the store
+        setCurrentTrip(activeTrip as Trip);
+      } else {
+        // No active trip found - clear any stale state
+        console.log('ℹ️ No active trip found for rider');
+        setCurrentTrip(null);
+      }
+    } catch (error) {
+      console.error('❌ Error checking for active trip:', error);
+    }
+  };
+
+  /**
+   * Navigate to the appropriate screen based on trip status
+   */
+  const navigateToActiveTrip = () => {
+    if (!currentTrip) return;
+
+    switch (currentTrip.status) {
+      case 'REQUESTED':
+        router.push('/(rider)/searching-driver');
+        break;
+      case 'ACCEPTED':
+      case 'DRIVER_ARRIVING':
+        router.push('/(rider)/driver-arriving');
+        break;
+      case 'DRIVER_ARRIVED':
+        router.push('/(rider)/pickup-point');
+        break;
+      case 'IN_PROGRESS':
+        router.push('/(rider)/trip-in-progress');
+        break;
+      default:
+        console.log('Unknown trip status:', currentTrip.status);
+    }
   };
 
   /**
@@ -189,34 +290,119 @@ const HomeScreen = () => {
   };
 
   /**
-   * Load saved addresses from AsyncStorage
+   * Load saved addresses from Firebase (with AsyncStorage fallback for offline)
+   * Firebase is the source of truth - data persists across app reinstalls
    */
   const loadSavedAddresses = async () => {
     try {
-      const [home, work, custom] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.HOME_ADDRESS),
-        AsyncStorage.getItem(STORAGE_KEYS.WORK_ADDRESS),
-        AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_ADDRESSES),
-      ]);
+      // Get current user from store (already fetched in initializeScreen)
+      const currentUser = useUserStore.getState().user;
 
-      if (home) setHomeAddress(JSON.parse(home));
-      if (work) setWorkAddress(JSON.parse(work));
-      if (custom) setCustomAddresses(JSON.parse(custom));
+      if (currentUser) {
+        // Load from Firebase (source of truth)
+        if (currentUser.homeAddress) {
+          setHomeAddress({
+            id: currentUser.homeAddress.id,
+            type: 'home',
+            label: currentUser.homeAddress.label || 'Home',
+            address: currentUser.homeAddress.address,
+            latitude: currentUser.homeAddress.coordinates.latitude,
+            longitude: currentUser.homeAddress.coordinates.longitude,
+          });
+          // Also update local cache for offline access
+          await AsyncStorage.setItem(STORAGE_KEYS.HOME_ADDRESS, JSON.stringify({
+            id: currentUser.homeAddress.id,
+            type: 'home',
+            label: currentUser.homeAddress.label || 'Home',
+            address: currentUser.homeAddress.address,
+            latitude: currentUser.homeAddress.coordinates.latitude,
+            longitude: currentUser.homeAddress.coordinates.longitude,
+          }));
+        }
+
+        if (currentUser.workAddress) {
+          setWorkAddress({
+            id: currentUser.workAddress.id,
+            type: 'work',
+            label: currentUser.workAddress.label || 'Work',
+            address: currentUser.workAddress.address,
+            latitude: currentUser.workAddress.coordinates.latitude,
+            longitude: currentUser.workAddress.coordinates.longitude,
+          });
+          // Also update local cache for offline access
+          await AsyncStorage.setItem(STORAGE_KEYS.WORK_ADDRESS, JSON.stringify({
+            id: currentUser.workAddress.id,
+            type: 'work',
+            label: currentUser.workAddress.label || 'Work',
+            address: currentUser.workAddress.address,
+            latitude: currentUser.workAddress.coordinates.latitude,
+            longitude: currentUser.workAddress.coordinates.longitude,
+          }));
+        }
+
+        if (currentUser.savedPlaces && currentUser.savedPlaces.length > 0) {
+          const customAddrs = currentUser.savedPlaces.map(place => ({
+            id: place.id,
+            type: 'custom' as const,
+            label: place.label,
+            address: place.address,
+            latitude: place.coordinates.latitude,
+            longitude: place.coordinates.longitude,
+          }));
+          setCustomAddresses(customAddrs);
+          // Also update local cache for offline access
+          await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(customAddrs));
+        }
+
+        console.log('Loaded saved addresses from Firebase');
+      } else {
+        // Fallback: Load from AsyncStorage if not logged in or no user data
+        const [home, work, custom] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.HOME_ADDRESS),
+          AsyncStorage.getItem(STORAGE_KEYS.WORK_ADDRESS),
+          AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_ADDRESSES),
+        ]);
+
+        if (home) setHomeAddress(JSON.parse(home));
+        if (work) setWorkAddress(JSON.parse(work));
+        if (custom) setCustomAddresses(JSON.parse(custom));
+
+        console.log('Loaded saved addresses from local storage (offline fallback)');
+      }
     } catch (error) {
       console.error('Error loading saved addresses:', error);
     }
   };
 
   /**
-   * Load recent searches
+   * Load recent searches from Firebase (with AsyncStorage fallback)
+   * Firebase is the source of truth - data persists across app reinstalls
    */
   const loadRecentSearches = async () => {
     try {
-      const recent = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
-      if (recent) {
-        const searches = JSON.parse(recent);
-        searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
-        setRecentSearches(searches.slice(0, 10));
+      // Get current user from store
+      const currentUser = useUserStore.getState().user;
+
+      if (currentUser && currentUser.recentSearches && currentUser.recentSearches.length > 0) {
+        // Load from Firebase (source of truth)
+        const searches = currentUser.recentSearches
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 10);
+        setRecentSearches(searches);
+
+        // Also update local cache for offline access
+        await AsyncStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(searches));
+
+        console.log('Loaded recent searches from Firebase');
+      } else {
+        // Fallback: Load from AsyncStorage if not logged in or no user data
+        const recent = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
+        if (recent) {
+          const searches = JSON.parse(recent);
+          searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
+          setRecentSearches(searches.slice(0, 10));
+          console.log('Loaded recent searches from local storage (offline fallback)');
+        }
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
@@ -437,25 +623,61 @@ const HomeScreen = () => {
   };
 
   /**
-   * Save address to AsyncStorage
+   * Save address to Firebase AND AsyncStorage (for offline access)
+   * Firebase is the source of truth - data persists across app reinstalls
    */
   const saveAddress = async (address: SavedAddress) => {
     try {
       if (address.type === 'home') {
+        // Save to Firebase (primary)
+        await saveHomeToFirebase({
+          label: address.label,
+          address: address.address,
+          coordinates: {
+            latitude: address.latitude,
+            longitude: address.longitude,
+          },
+        });
+
+        // Also save to AsyncStorage for offline access
         await AsyncStorage.setItem(STORAGE_KEYS.HOME_ADDRESS, JSON.stringify(address));
         setHomeAddress(address);
         Alert.alert('Success', 'Home address saved!');
       } else if (address.type === 'work') {
+        // Save to Firebase (primary)
+        await saveWorkToFirebase({
+          label: address.label,
+          address: address.address,
+          coordinates: {
+            latitude: address.latitude,
+            longitude: address.longitude,
+          },
+        });
+
+        // Also save to AsyncStorage for offline access
         await AsyncStorage.setItem(STORAGE_KEYS.WORK_ADDRESS, JSON.stringify(address));
         setWorkAddress(address);
         Alert.alert('Success', 'Work address saved!');
       } else if (address.type === 'custom') {
         let updated: SavedAddress[];
-        
+
         // Check if editing existing address
         if (editingAddressId) {
-          // Replace the existing address
-          updated = customAddresses.map(a => 
+          // For editing, we need to update the existing place
+          // First remove the old one, then add the new one
+          await removePlaceFromFirebase(editingAddressId);
+          await addPlaceToFirebase({
+            type: 'custom',
+            label: address.label,
+            address: address.address,
+            coordinates: {
+              latitude: address.latitude,
+              longitude: address.longitude,
+            },
+          });
+
+          // Replace the existing address in local state
+          updated = customAddresses.map(a =>
             a.id === editingAddressId ? address : a
           );
           Alert.alert('Success', `${address.label} updated!`);
@@ -465,10 +687,23 @@ const HomeScreen = () => {
             Alert.alert('Limit Reached', 'You can only save up to 3 custom addresses');
             return;
           }
+
+          // Save to Firebase (primary)
+          await addPlaceToFirebase({
+            type: 'custom',
+            label: address.label,
+            address: address.address,
+            coordinates: {
+              latitude: address.latitude,
+              longitude: address.longitude,
+            },
+          });
+
           updated = [...customAddresses, address];
           Alert.alert('Success', `${address.label} saved!`);
         }
 
+        // Also save to AsyncStorage for offline access
         await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(updated));
         setCustomAddresses(updated);
       }
@@ -520,9 +755,10 @@ const HomeScreen = () => {
 
   /**
    * DELETE ADDRESS FUNCTIONALITY
+   * Deletes from Firebase AND AsyncStorage
    */
   const handleDeleteAddress = async (type: 'home' | 'work' | 'custom', addressId?: string) => {
-    const addressLabel = type === 'custom' 
+    const addressLabel = type === 'custom'
       ? customAddresses.find(a => a.id === addressId)?.label || 'saved place'
       : type;
 
@@ -536,18 +772,29 @@ const HomeScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              const { updateUser } = useUserStore.getState();
+
               if (type === 'home') {
+                // Delete from Firebase (set to undefined/null)
+                await updateUser({ homeAddress: undefined });
+                // Delete from AsyncStorage
                 await AsyncStorage.removeItem(STORAGE_KEYS.HOME_ADDRESS);
                 setHomeAddress(null);
               } else if (type === 'work') {
+                // Delete from Firebase (set to undefined/null)
+                await updateUser({ workAddress: undefined });
+                // Delete from AsyncStorage
                 await AsyncStorage.removeItem(STORAGE_KEYS.WORK_ADDRESS);
                 setWorkAddress(null);
               } else if (type === 'custom' && addressId) {
+                // Delete from Firebase
+                await removePlaceFromFirebase(addressId);
+                // Delete from AsyncStorage
                 const updated = customAddresses.filter(addr => addr.id !== addressId);
                 await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(updated));
                 setCustomAddresses(updated);
               }
-              
+
               Alert.alert('Success', 'Address deleted successfully');
             } catch (error) {
               console.error('Error deleting address:', error);
@@ -788,7 +1035,7 @@ const HomeScreen = () => {
             showsVerticalScrollIndicator={false}
           >
             {/* Search Bar */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.searchBar}
               onPress={openSearch}
               activeOpacity={0.7}
@@ -800,6 +1047,48 @@ const HomeScreen = () => {
               </View>
             </TouchableOpacity>
 
+            {/* Active Trip Card - Shows if rider has an ongoing trip */}
+            {currentTrip && ['REQUESTED', 'ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(currentTrip.status) && (
+              <TouchableOpacity
+                style={styles.activeTripCard}
+                onPress={navigateToActiveTrip}
+                activeOpacity={0.8}
+              >
+                <View style={styles.activeTripHeader}>
+                  <View style={styles.activeTripIconContainer}>
+                    <Ionicons
+                      name={currentTrip.status === 'IN_PROGRESS' ? 'car' : 'navigate'}
+                      size={24}
+                      color="#5d1289"
+                    />
+                  </View>
+                  <View style={styles.activeTripInfo}>
+                    <Text style={styles.activeTripTitle}>
+                      {currentTrip.status === 'REQUESTED' && 'Finding a driver...'}
+                      {currentTrip.status === 'ACCEPTED' && 'Driver on the way'}
+                      {currentTrip.status === 'DRIVER_ARRIVING' && 'Driver arriving'}
+                      {currentTrip.status === 'DRIVER_ARRIVED' && 'Driver has arrived'}
+                      {currentTrip.status === 'IN_PROGRESS' && 'Trip in progress'}
+                    </Text>
+                    <Text style={styles.activeTripDestination} numberOfLines={1}>
+                      To: {currentTrip.destination?.address || 'Destination'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={24} color="#5d1289" />
+                </View>
+                {currentTrip.driverInfo && (
+                  <View style={styles.activeTripDriver}>
+                    <View style={styles.activeTripDriverInfo}>
+                      <Ionicons name="person-circle" size={20} color="#666" />
+                      <Text style={styles.activeTripDriverName}>{currentTrip.driverInfo.name}</Text>
+                    </View>
+                    <Text style={styles.activeTripVehicle}>
+                      {currentTrip.driverInfo.vehicle?.color} {currentTrip.driverInfo.vehicle?.make}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
 
             {/* Saved Places Section */}
             <View style={styles.section}>
@@ -1175,6 +1464,64 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#5d1289',
+  },
+  // Active Trip Card Styles
+  activeTripCard: {
+    backgroundColor: '#f0e6f6',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: '#5d1289',
+  },
+  activeTripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeTripIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  activeTripInfo: {
+    flex: 1,
+  },
+  activeTripTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4,
+  },
+  activeTripDestination: {
+    fontSize: 14,
+    color: '#666',
+  },
+  activeTripDriver: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#d4c4e0',
+  },
+  activeTripDriverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activeTripDriverName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginLeft: 8,
+  },
+  activeTripVehicle: {
+    fontSize: 13,
+    color: '#666',
   },
   section: {
     marginBottom: 32,

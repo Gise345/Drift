@@ -82,6 +82,9 @@ export default function PayPalSuccessScreen() {
 
       const tripId = await createTrip({
         riderId: user.id,
+        riderName: user.name || 'Rider',
+        riderPhoto: user.profilePhoto,
+        riderProfileRating: user.rating || 5.0,
         status: 'REQUESTED',
         pickup: {
           address: pickupLocation.address || '',

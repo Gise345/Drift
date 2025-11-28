@@ -1,18 +1,29 @@
-import React, { useState } from 'react';
+/**
+ * Trip Complete Screen - Rider
+ * Shows trip summary after completion
+ *
+ * Features:
+ * - Trip summary with actual data from Firebase
+ * - Rate driver option
+ * - Navigate back to home
+ */
+
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { Ionicons } from '@expo/vector-icons';
+import { useTripStore } from '@/src/stores/trip-store';
 
 const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
+  primary: '#5d1289',
   black: '#000000',
   white: '#FFFFFF',
   gray: {
@@ -33,25 +44,39 @@ const Colors = {
 
 export default function TripCompleteScreen() {
   const router = useRouter();
-  const { estimatedCost, route, clearBookingFlow } = useCarpoolStore();
-  
-  const [showReceipt, setShowReceipt] = useState(false);
+  const { currentTrip, setCurrentTrip } = useTripStore();
 
-  // Mock trip data
-  const trip = {
-    id: 'TRIP-12345',
-    driver: 'John Smith',
-    date: new Date().toLocaleDateString(),
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    distance: route?.distance ? (route.distance / 1000).toFixed(1) : '5.2',
-    duration: route?.duration ? Math.round(route.duration / 60) : 18,
-    costShare: estimatedCost?.max || 15,
-    currency: estimatedCost?.currency || 'KYD',
+  // Clear trip when leaving this screen
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+    };
+  }, []);
+
+  // If no trip data, use placeholder
+  const trip = currentTrip || {
+    id: 'N/A',
+    driverInfo: { name: 'Driver', rating: 4.5 },
+    pickup: { address: 'Pickup location' },
+    destination: { address: 'Destination' },
+    distance: 0,
+    duration: 0,
+    finalCost: 0,
+    estimatedCost: 0,
+    tip: 0,
+    totalWithTip: 0,
   };
 
+  const driver = trip.driverInfo;
+  const tripCost = trip.finalCost || trip.estimatedCost || 0;
+  const tipAmount = trip.tip || 0;
+  const totalPaid = trip.totalWithTip || tripCost + tipAmount;
+  const distance = trip.distance ? (trip.distance / 1000).toFixed(1) : '0';
+  const duration = trip.duration ? Math.round(trip.duration) : 0;
+
   const handleDone = () => {
-    clearBookingFlow();
-    router.push('/(tabs)');
+    setCurrentTrip(null);
+    router.replace('/(tabs)');
   };
 
   const handleRate = () => {
@@ -69,7 +94,7 @@ export default function TripCompleteScreen() {
           {/* Success Icon */}
           <View style={styles.successContainer}>
             <View style={styles.successIcon}>
-              <Text style={styles.checkmark}>✓</Text>
+              <Ionicons name="checkmark" size={48} color={Colors.white} />
             </View>
             <Text style={styles.successTitle}>Trip Complete!</Text>
             <Text style={styles.successSubtitle}>
@@ -77,50 +102,97 @@ export default function TripCompleteScreen() {
             </Text>
           </View>
 
+          {/* Driver Card */}
+          {driver && (
+            <View style={styles.driverCard}>
+              <View style={styles.driverHeader}>
+                {(driver as any).photo ? (
+                  <Image source={{ uri: (driver as any).photo }} style={styles.driverPhoto} />
+                ) : (
+                  <View style={styles.driverPhotoPlaceholder}>
+                    <Ionicons name="person" size={28} color={Colors.primary} />
+                  </View>
+                )}
+                <View style={styles.driverInfo}>
+                  <Text style={styles.driverName}>{driver.name || 'Your Driver'}</Text>
+                  <View style={styles.ratingRow}>
+                    <Ionicons name="star" size={14} color="#f39c12" />
+                    <Text style={styles.ratingText}>{driver.rating?.toFixed(1) || '4.5'}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.rateDriverBtn} onPress={handleRate}>
+                  <Ionicons name="star-outline" size={20} color={Colors.primary} />
+                  <Text style={styles.rateDriverText}>Rate</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {/* Trip Summary Card */}
           <View style={styles.summaryCard}>
             <Text style={styles.cardTitle}>Trip Summary</Text>
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Trip ID</Text>
-              <Text style={styles.summaryValue}>{trip.id}</Text>
+
+            {/* Route */}
+            <View style={styles.routeSection}>
+              <View style={styles.routeRow}>
+                <View style={styles.routeDot} />
+                <View style={styles.routeInfo}>
+                  <Text style={styles.routeLabel}>PICKUP</Text>
+                  <Text style={styles.routeAddress} numberOfLines={1}>
+                    {trip.pickup?.address || 'Pickup location'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.routeLine} />
+              <View style={styles.routeRow}>
+                <View style={[styles.routeDot, styles.routeDotDestination]} />
+                <View style={styles.routeInfo}>
+                  <Text style={styles.routeLabel}>DROP-OFF</Text>
+                  <Text style={styles.routeAddress} numberOfLines={1}>
+                    {trip.destination?.address || 'Destination'}
+                  </Text>
+                </View>
+              </View>
             </View>
-            
+
             <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Driver</Text>
-              <Text style={styles.summaryValue}>{trip.driver}</Text>
+
+            {/* Stats */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Ionicons name="navigate-outline" size={20} color={Colors.gray[500]} />
+                <Text style={styles.statValue}>{distance} km</Text>
+                <Text style={styles.statLabel}>Distance</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Ionicons name="time-outline" size={20} color={Colors.gray[500]} />
+                <Text style={styles.statValue}>{duration} min</Text>
+                <Text style={styles.statLabel}>Duration</Text>
+              </View>
             </View>
-            
+
             <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Date & Time</Text>
-              <Text style={styles.summaryValue}>{trip.date}, {trip.time}</Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Distance</Text>
-              <Text style={styles.summaryValue}>{trip.distance} km</Text>
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Duration</Text>
-              <Text style={styles.summaryValue}>{trip.duration} min</Text>
-            </View>
-            
-            <View style={styles.highlightDivider} />
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.totalLabel}>Cost Share</Text>
-              <Text style={styles.totalAmount}>
-                ${trip.costShare} {trip.currency}
-              </Text>
+
+            {/* Cost Breakdown */}
+            <View style={styles.costSection}>
+              <View style={styles.costRow}>
+                <Text style={styles.costLabel}>Trip Fare</Text>
+                <Text style={styles.costValue}>CI${tripCost.toFixed(2)}</Text>
+              </View>
+              {tipAmount > 0 && (
+                <View style={styles.costRow}>
+                  <View style={styles.tipRow}>
+                    <Ionicons name="heart" size={14} color={Colors.success} />
+                    <Text style={[styles.costLabel, styles.tipText]}>Tip</Text>
+                  </View>
+                  <Text style={[styles.costValue, styles.tipValue]}>CI${tipAmount.toFixed(2)}</Text>
+                </View>
+              )}
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Paid</Text>
+                <Text style={styles.totalAmount}>CI${totalPaid.toFixed(2)}</Text>
+              </View>
             </View>
           </View>
 
@@ -130,28 +202,25 @@ export default function TripCompleteScreen() {
               style={styles.actionButton}
               onPress={handleRate}
             >
-              <Text style={styles.actionIcon}>⭐</Text>
+              <View style={styles.actionIconContainer}>
+                <Ionicons name="star" size={20} color={Colors.primary} />
+              </View>
               <Text style={styles.actionText}>Rate Driver</Text>
-              <Text style={styles.chevron}>›</Text>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray[400]} />
             </TouchableOpacity>
-            
-            <View style={styles.divider} />
-            
+
+            <View style={styles.actionDivider} />
+
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => router.push('/(rider)/add-tip')}
+              onPress={() => router.push('/(rider)/my-trips')}
             >
-              <Text style={styles.actionIcon}>💰</Text>
-              <Text style={styles.actionText}>Add Tip</Text>
-              <Text style={styles.chevron}>›</Text>
+              <View style={styles.actionIconContainer}>
+                <Ionicons name="receipt-outline" size={20} color={Colors.primary} />
+              </View>
+              <Text style={styles.actionText}>View Trip History</Text>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray[400]} />
             </TouchableOpacity>
-          </View>
-
-          {/* Legal Notice */}
-          <View style={styles.legalNotice}>
-            <Text style={styles.legalText}>
-              ⚖️ This was a private carpool arrangement. The cost share shown is for mutual expense splitting only. Drift is a coordination platform, not a transportation provider.
-            </Text>
           </View>
         </ScrollView>
 
@@ -185,41 +254,100 @@ const styles = StyleSheet.create({
   },
   successContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 32,
+    backgroundColor: Colors.success + '10',
   },
   successIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: Colors.success,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  checkmark: {
-    fontSize: 48,
-    color: Colors.white,
-    fontWeight: '700',
+    marginBottom: 16,
   },
   successTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: Colors.black,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   successSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.gray[600],
+  },
+  driverCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  driverHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  driverPhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  driverPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  driverInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  driverName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: 4,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  rateDriverBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primary + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  rateDriverText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   summaryCard: {
     marginHorizontal: 16,
+    marginTop: 16,
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -229,33 +357,112 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 16,
   },
-  summaryRow: {
+  routeSection: {
+    marginBottom: 16,
+  },
+  routeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
+    alignItems: 'flex-start',
   },
-  summaryLabel: {
-    fontSize: 14,
-    color: Colors.gray[600],
+  routeDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.primary,
+    marginTop: 4,
+    marginRight: 12,
   },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.black,
-    textAlign: 'right',
+  routeDotDestination: {
+    backgroundColor: Colors.error,
+  },
+  routeLine: {
+    width: 2,
+    height: 20,
+    backgroundColor: Colors.gray[300],
+    marginLeft: 5,
+    marginVertical: 4,
+  },
+  routeInfo: {
     flex: 1,
-    marginLeft: 16,
+  },
+  routeLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.gray[500],
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  routeAddress: {
+    fontSize: 14,
+    color: Colors.black,
+    marginBottom: 8,
   },
   divider: {
     height: 1,
     backgroundColor: Colors.gray[200],
-    marginVertical: 4,
+    marginVertical: 16,
   },
-  highlightDivider: {
-    height: 2,
-    backgroundColor: Colors.primary,
-    marginVertical: 12,
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.black,
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.gray[500],
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: Colors.gray[200],
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
+  },
+  costSection: {},
+  costRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  costLabel: {
+    fontSize: 14,
+    color: Colors.gray[600],
+  },
+  costValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tipText: {
+    color: Colors.success,
+    fontWeight: '600',
+  },
+  tipValue: {
+    color: Colors.success,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
   },
   totalLabel: {
     fontSize: 16,
@@ -265,28 +472,32 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.success,
+    color: Colors.primary,
   },
   actionsCard: {
     marginHorizontal: 16,
+    marginTop: 16,
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 8,
-    marginBottom: 16,
+    overflow: 'hidden',
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    padding: 16,
   },
-  actionIcon: {
-    fontSize: 24,
+  actionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
   actionText: {
@@ -295,22 +506,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.black,
   },
-  chevron: {
-    fontSize: 24,
-    color: Colors.gray[400],
-  },
-  legalNotice: {
-    marginHorizontal: 16,
-    padding: 12,
-    backgroundColor: Colors.gray[50],
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.purple,
-  },
-  legalText: {
-    fontSize: 12,
-    color: Colors.gray[600],
-    lineHeight: 18,
+  actionDivider: {
+    height: 1,
+    backgroundColor: Colors.gray[200],
+    marginLeft: 68,
   },
   bottomContainer: {
     position: 'absolute',
@@ -321,16 +520,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.gray[200],
     padding: 16,
+    paddingBottom: 32,
   },
   doneButton: {
-    backgroundColor: Colors.black,
+    backgroundColor: Colors.primary,
     paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 32,
+    borderRadius: 12,
     alignItems: 'center',
   },
   doneButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
   },

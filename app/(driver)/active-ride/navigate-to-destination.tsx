@@ -21,6 +21,7 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -34,6 +35,8 @@ import { useTripStore } from '@/src/stores/trip-store';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.40;
 const BOTTOM_SHEET_MIN_HEIGHT = 100;
+// Extra padding for Android navigation bar
+const ANDROID_NAV_BAR_HEIGHT = Platform.OS === 'android' ? 48 : 0;
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -452,81 +455,90 @@ export default function NavigateToDestination() {
       </View>
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
-        {/* Handle */}
-        <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
-          <View style={styles.handleBar} />
-          <Ionicons
-            name={isSheetMinimized ? 'chevron-up' : 'chevron-down'}
-            size={20}
-            color={Colors.gray[400]}
-          />
-        </TouchableOpacity>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: ANDROID_NAV_BAR_HEIGHT }]}>
+        <View style={styles.bottomSheetSafeArea}>
+          {/* Handle */}
+          <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
+            <View style={styles.handleBar} />
+            <Ionicons
+              name={isSheetMinimized ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={Colors.gray[400]}
+            />
+          </TouchableOpacity>
 
-        {/* Minimized View */}
-        {isSheetMinimized ? (
-          <View style={styles.minimizedContent}>
-            <View style={styles.destinationIconSmall}>
-              <Ionicons name="flag" size={18} color={Colors.error} />
-            </View>
-            <View style={styles.minimizedInfo}>
-              <Text style={styles.minimizedLabel}>DESTINATION</Text>
-              <Text style={styles.minimizedAddress} numberOfLines={1}>
-                {activeRide.destination.address}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.completeButtonSmall} onPress={handleComplete}>
-              <Text style={styles.completeButtonSmallText}>Complete</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          /* Expanded View */
-          <View style={styles.expandedContent}>
-            {/* Trip Progress Indicator */}
-            <View style={styles.tripProgress}>
-              <View style={styles.progressDot}>
-                <Ionicons name="checkmark" size={12} color={Colors.white} />
+          {/* Minimized View */}
+          {isSheetMinimized ? (
+            <View style={styles.minimizedContent}>
+              <View style={styles.destinationIconSmall}>
+                <Ionicons name="flag" size={18} color={Colors.error} />
               </View>
-              <View style={styles.progressLine} />
-              <View style={styles.progressDotActive} />
-            </View>
-
-            {/* Rider Info */}
-            <View style={styles.riderCard}>
-              <View style={styles.riderAvatar}>
-                <Ionicons name="person" size={24} color={Colors.primary} />
-              </View>
-              <View style={styles.riderInfo}>
-                <Text style={styles.riderName}>{activeRide.riderName}</Text>
-                <Text style={styles.tripStatus}>Trip in progress</Text>
-              </View>
-            </View>
-
-            {/* Destination Location */}
-            <View style={styles.locationCard}>
-              <View style={styles.locationDot} />
-              <View style={styles.locationInfo}>
-                <Text style={styles.locationLabel}>DESTINATION</Text>
-                <Text style={styles.locationAddress} numberOfLines={2}>
+              <View style={styles.minimizedInfo}>
+                <Text style={styles.minimizedLabel}>DESTINATION</Text>
+                <Text style={styles.minimizedAddress} numberOfLines={1}>
                   {activeRide.destination.address}
                 </Text>
               </View>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.addStopButton} onPress={handleAddStop}>
-                <Ionicons name="add" size={20} color={Colors.primary} />
-                <Text style={styles.addStopText}>Add Stop</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.completeButton} onPress={handleComplete}>
-                <Ionicons name="checkmark-circle" size={22} color={Colors.white} />
-                <Text style={styles.completeText}>Complete Ride</Text>
+              <TouchableOpacity style={styles.completeButtonSmall} onPress={handleComplete}>
+                <Text style={styles.completeButtonSmallText}>Complete</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
+          ) : (
+            /* Expanded View */
+            <View style={styles.expandedContent}>
+              {/* Trip Progress Indicator */}
+              <View style={styles.tripProgress}>
+                <View style={styles.progressDot}>
+                  <Ionicons name="checkmark" size={12} color={Colors.white} />
+                </View>
+                <View style={styles.progressLine} />
+                <View style={styles.progressDotActive} />
+              </View>
+
+              {/* Rider Info */}
+              <View style={styles.riderCard}>
+                {(activeRide as any).riderPhoto ? (
+                  <Image
+                    source={{ uri: (activeRide as any).riderPhoto }}
+                    style={styles.riderPhoto}
+                  />
+                ) : (
+                  <View style={styles.riderAvatar}>
+                    <Ionicons name="person" size={24} color={Colors.primary} />
+                  </View>
+                )}
+                <View style={styles.riderInfo}>
+                  <Text style={styles.riderName}>{activeRide.riderName}</Text>
+                  <Text style={styles.tripStatus}>Trip in progress</Text>
+                </View>
+              </View>
+
+              {/* Destination Location */}
+              <View style={styles.locationCard}>
+                <View style={styles.locationDot} />
+                <View style={styles.locationInfo}>
+                  <Text style={styles.locationLabel}>DESTINATION</Text>
+                  <Text style={styles.locationAddress} numberOfLines={2}>
+                    {activeRide.destination.address}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.addStopButton} onPress={handleAddStop}>
+                  <Ionicons name="add" size={20} color={Colors.primary} />
+                  <Text style={styles.addStopText}>Add Stop</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.completeButton} onPress={handleComplete}>
+                  <Ionicons name="checkmark-circle" size={22} color={Colors.white} />
+                  <Text style={styles.completeText}>Complete Ride</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
       </Animated.View>
     </View>
   );
@@ -664,6 +676,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     ...Shadows.xl,
   },
+  bottomSheetSafeArea: {
+    flex: 1,
+  },
   sheetHandle: {
     alignItems: 'center',
     paddingVertical: 12,
@@ -683,7 +698,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 24,
   },
   destinationIconSmall: {
     width: 44,
@@ -724,7 +739,7 @@ const styles = StyleSheet.create({
   // Expanded Content
   expandedContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
   },
 
   // Trip Progress
@@ -771,6 +786,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  riderPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   riderInfo: {
     flex: 1,

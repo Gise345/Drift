@@ -7,17 +7,20 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { startTrip } from '@/src/services/ride-request.service';
 
 export default function StartRide() {
   const router = useRouter();
-  const { activeRide } = useDriverStore();
+  const { activeRide, startRide } = useDriverStore();
   const [verificationCode, setVerificationCode] = useState('');
   const [skipVerification, setSkipVerification] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   if (!activeRide) {
     router.replace('/(driver)/dashboard/home');
@@ -26,14 +29,31 @@ export default function StartRide() {
 
   const correctCode = '1234'; // Mock - should come from activeRide
 
-  const handleStartRide = () => {
+  const handleStartRide = async () => {
     if (!skipVerification && verificationCode !== correctCode) {
       Alert.alert('Invalid Code', 'Please enter the correct 4-digit code from the rider.');
       return;
     }
 
-    // Start the ride
-    router.replace('/(driver)/active-ride/navigate-to-destination');
+    setIsStarting(true);
+
+    try {
+      // Update trip status to IN_PROGRESS in Firebase
+      // This will trigger the rider's screen to navigate to trip-in-progress
+      await startTrip(activeRide.id);
+      console.log('✅ Trip started successfully - Rider should see status change');
+
+      // Update local driver store
+      startRide();
+
+      // Navigate to destination screen
+      router.replace('/(driver)/active-ride/navigate-to-destination');
+    } catch (error) {
+      console.error('❌ Failed to start trip:', error);
+      Alert.alert('Error', 'Failed to start the ride. Please try again.');
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   return (
@@ -122,13 +142,19 @@ export default function StartRide() {
         <TouchableOpacity
           style={[
             styles.startButton,
-            (!skipVerification && verificationCode.length !== 4) && styles.startButtonDisabled,
+            ((!skipVerification && verificationCode.length !== 4) || isStarting) && styles.startButtonDisabled,
           ]}
           onPress={handleStartRide}
-          disabled={!skipVerification && verificationCode.length !== 4}
+          disabled={(!skipVerification && verificationCode.length !== 4) || isStarting}
         >
-          <Ionicons name="car" size={24} color={Colors.white} />
-          <Text style={styles.startButtonText}>Start Trip</Text>
+          {isStarting ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <>
+              <Ionicons name="car" size={24} color={Colors.white} />
+              <Text style={styles.startButtonText}>Start Trip</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

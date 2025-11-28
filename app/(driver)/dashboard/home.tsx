@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
-import { useDriverStore } from '@/src/stores/driver-store';
+import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
+import { getActiveDriverTrip } from '@/src/services/ride-request.service';
 
 export default function DriverHome() {
   const router = useRouter();
@@ -25,10 +26,115 @@ export default function DriverHome() {
     incomingRequests,
     activeRide,
     updateLocation,
+    setActiveRide,
   } = useDriverStore();
 
   const [onlineTime, setOnlineTime] = useState(0);
   const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
+  const [hasCheckedActiveTrip, setHasCheckedActiveTrip] = useState(false);
+
+  // Check for active trip on mount (persists across app restart/logout)
+  useEffect(() => {
+    if (!hasCheckedActiveTrip && driver?.id) {
+      checkForActiveTrip();
+    }
+  }, [driver?.id, hasCheckedActiveTrip]);
+
+  /**
+   * Check if driver has an active trip and restore it
+   */
+  const checkForActiveTrip = async () => {
+    if (!driver?.id) return;
+
+    try {
+      console.log('🔍 Checking for active trip for driver:', driver.id);
+      const activeTrip = await getActiveDriverTrip(driver.id);
+
+      if (activeTrip) {
+        console.log('✅ Found active trip, restoring:', activeTrip.id, 'Status:', activeTrip.status);
+
+        // Get rider name from the trip data (stored when trip was created)
+        const riderName = (activeTrip as any).riderName || 'Rider';
+        const riderRating = (activeTrip as any).riderRating || 4.5;
+        const riderPhoto = (activeTrip as any).riderPhoto;
+
+        // Convert to ActiveRide format
+        const restoredRide: ActiveRide = {
+          id: activeTrip.id,
+          riderId: activeTrip.riderId,
+          riderName: riderName,
+          riderRating: riderRating,
+          riderPhoto: riderPhoto,
+          pickup: {
+            lat: activeTrip.pickup.coordinates.latitude,
+            lng: activeTrip.pickup.coordinates.longitude,
+            address: activeTrip.pickup.address,
+          },
+          destination: {
+            lat: activeTrip.destination.coordinates.latitude,
+            lng: activeTrip.destination.coordinates.longitude,
+            address: activeTrip.destination.address,
+          },
+          distance: activeTrip.distance || 0,
+          estimatedDuration: activeTrip.duration || 0,
+          estimatedEarnings: activeTrip.estimatedCost || 0,
+          requestedAt: activeTrip.requestedAt || new Date(),
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          status: mapTripStatusToRideStatus(activeTrip.status),
+          acceptedAt: activeTrip.acceptedAt || new Date(),
+          arrivedAt: activeTrip.status === 'DRIVER_ARRIVED' ? new Date() : undefined,
+          startedAt: activeTrip.startedAt,
+        };
+
+        setActiveRide(restoredRide);
+      }
+
+      setHasCheckedActiveTrip(true);
+    } catch (error) {
+      console.error('❌ Error checking for active trip:', error);
+      setHasCheckedActiveTrip(true);
+    }
+  };
+
+  /**
+   * Map trip status to driver ride status
+   */
+  const mapTripStatusToRideStatus = (status: string): ActiveRide['status'] => {
+    switch (status) {
+      case 'ACCEPTED':
+      case 'DRIVER_ARRIVING':
+        return 'navigating_to_pickup';
+      case 'DRIVER_ARRIVED':
+        return 'arrived';
+      case 'IN_PROGRESS':
+        return 'started';
+      default:
+        return 'accepted';
+    }
+  };
+
+  /**
+   * Navigate to the appropriate screen based on active ride status
+   */
+  const navigateToActiveRide = () => {
+    if (!activeRide) return;
+
+    switch (activeRide.status) {
+      case 'accepted':
+      case 'navigating_to_pickup':
+        router.push('/(driver)/active-ride/navigate-to-pickup');
+        break;
+      case 'arrived':
+        router.push('/(driver)/active-ride/arrived-at-pickup');
+        break;
+      case 'started':
+      case 'in_progress':
+        router.push('/(driver)/active-ride/navigate-to-destination');
+        break;
+      default:
+        router.push('/(driver)/active-ride/navigate-to-pickup');
+    }
+  };
 
   // Track online time
   useEffect(() => {
@@ -165,7 +271,7 @@ export default function DriverHome() {
         {activeRide && (
           <TouchableOpacity
             style={styles.activeRideCard}
-            onPress={() => router.push('/(driver)/active-ride/navigate-to-pickup')}
+            onPress={navigateToActiveRide}
           >
             <View style={styles.activeRideHeader}>
               <Ionicons name="car" size={24} color={Colors.primary} />
@@ -176,7 +282,11 @@ export default function DriverHome() {
             </Text>
             <View style={styles.activeRideFooter}>
               <Text style={styles.activeRideStatus}>
-                {activeRide.status === 'accepted' ? 'Navigate to pickup' : 'In progress'}
+                {activeRide.status === 'accepted' && 'Navigate to pickup'}
+                {activeRide.status === 'navigating_to_pickup' && 'Navigate to pickup'}
+                {activeRide.status === 'arrived' && 'Waiting for rider'}
+                {activeRide.status === 'started' && 'Trip in progress'}
+                {activeRide.status === 'in_progress' && 'Trip in progress'}
               </Text>
               <Ionicons name="chevron-forward" size={20} color={Colors.gray[600]} />
             </View>
