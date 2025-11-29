@@ -3,13 +3,16 @@
  * Shows when driver completes trip to allow rider to add a tip
  *
  * Features:
+ * - Safety check for incomplete trips (more than 0.25 miles from destination)
+ * - SOS button for emergencies
  * - Suggested tip amounts
  * - Custom tip input
+ * - Driver rating
  * - Firebase integration for tip submission
  * - Real-time updates
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +23,8 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Linking,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -45,6 +50,33 @@ const Colors = {
   },
   success: '#10B981',
   error: '#EF4444',
+  warning: '#F59E0B',
+};
+
+// Quarter mile in meters (0.25 miles = ~402 meters)
+const SAFETY_DISTANCE_THRESHOLD = 402;
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @returns Distance in meters
+ */
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
 export default function AddTipScreen() {
@@ -54,6 +86,35 @@ export default function AddTipScreen() {
   const [selectedTip, setSelectedTip] = useState<number | null>(null);
   const [customTip, setCustomTip] = useState('');
   const [loading, setLoading] = useState(false);
+  const [driverRating, setDriverRating] = useState<number>(5);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [safetyConfirmed, setSafetyConfirmed] = useState(false);
+
+  // Check if trip was completed far from destination (safety concern)
+  const tripIncomplete = useMemo(() => {
+    if (!currentTrip?.destination?.coordinates) return false;
+
+    // Get driver's final location when they completed the trip
+    const driverFinalLocation = (currentTrip as any).driverFinalLocation;
+    if (!driverFinalLocation) return false;
+
+    const distanceToDestination = calculateDistance(
+      driverFinalLocation.latitude,
+      driverFinalLocation.longitude,
+      currentTrip.destination.coordinates.latitude,
+      currentTrip.destination.coordinates.longitude
+    );
+
+    // If more than 0.25 miles (402m) from destination, show safety check
+    return distanceToDestination > SAFETY_DISTANCE_THRESHOLD;
+  }, [currentTrip]);
+
+  // Show safety modal when trip appears incomplete
+  useEffect(() => {
+    if (tripIncomplete && !safetyConfirmed) {
+      setShowSafetyModal(true);
+    }
+  }, [tripIncomplete, safetyConfirmed]);
 
   // Subscribe to trip updates
   useEffect(() => {
@@ -169,12 +230,96 @@ export default function AddTipScreen() {
     }
   };
 
+  // Emergency call function - directly opens phone dialer with 911
+  const handleEmergencyCall = () => {
+    Linking.openURL('tel:911');
+  };
+
+  // Handle safety confirmation - user says they're OK
+  const handleSafetyConfirmOk = () => {
+    setSafetyConfirmed(true);
+    setShowSafetyModal(false);
+  };
+
+  // Render star rating
+  const renderStarRating = () => {
+    return (
+      <View style={styles.ratingContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <TouchableOpacity
+            key={star}
+            onPress={() => setDriverRating(star)}
+            disabled={loading}
+          >
+            <Ionicons
+              name={star <= driverRating ? 'star' : 'star-outline'}
+              size={36}
+              color={star <= driverRating ? '#f39c12' : Colors.gray[300]}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.container}>
+        {/* Safety Modal for Incomplete Trips */}
+        <Modal
+          visible={showSafetyModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {}}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.safetyModal}>
+              <View style={styles.safetyIconContainer}>
+                <Ionicons name="shield-checkmark" size={60} color={Colors.primary} />
+              </View>
+
+              <Text style={styles.safetyTitle}>Drift Cares About Your Safety</Text>
+              <Text style={styles.safetyMessage}>
+                We noticed your trip ended before reaching your destination. Is everything okay?
+              </Text>
+
+              <TouchableOpacity
+                style={styles.safetyOkButton}
+                onPress={handleSafetyConfirmOk}
+              >
+                <Ionicons name="checkmark-circle" size={22} color={Colors.white} />
+                <Text style={styles.safetyOkText}>Yes, I'm okay</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.sosButton}
+                onPress={handleEmergencyCall}
+              >
+                <Ionicons name="warning" size={22} color={Colors.white} />
+                <Text style={styles.sosButtonText}>Call Emergency (911)</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.safetyNote}>
+                If you feel unsafe, please call emergency services immediately.
+              </Text>
+            </View>
+          </View>
+        </Modal>
+
         {/* Header */}
         <View style={styles.header}>
-          <View style={{ width: 40 }} />
+          {/* SOS Button - Always visible when trip was incomplete */}
+          {tripIncomplete ? (
+            <TouchableOpacity
+              style={styles.sosHeaderButton}
+              onPress={handleEmergencyCall}
+            >
+              <Ionicons name="warning" size={20} color={Colors.white} />
+              <Text style={styles.sosHeaderText}>SOS</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 60 }} />
+          )}
 
           <Text style={styles.title}>Add a Tip</Text>
 
@@ -198,7 +343,7 @@ export default function AddTipScreen() {
             <Text style={styles.successText}>Trip Completed!</Text>
           </View>
 
-          {/* Driver Info */}
+          {/* Driver Info and Rating */}
           <View style={styles.driverContainer}>
             {driver?.photo ? (
               <Image source={{ uri: driver.photo }} style={styles.driverPhoto} />
@@ -208,12 +353,11 @@ export default function AddTipScreen() {
               </View>
             )}
             <Text style={styles.driverName}>{driver?.name || 'Your Driver'}</Text>
-            {driver?.rating && (
-              <View style={styles.ratingContainer}>
-                <Ionicons name="star" size={16} color="#f39c12" />
-                <Text style={styles.ratingText}>{driver.rating.toFixed(1)}</Text>
-              </View>
-            )}
+
+            {/* Star Rating */}
+            <Text style={styles.rateDriverLabel}>Rate your driver</Text>
+            {renderStarRating()}
+
             <Text style={styles.subtitle}>
               Show your appreciation with a tip
             </Text>
@@ -575,5 +719,110 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.gray[500],
+  },
+
+  // Safety Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  safetyModal: {
+    backgroundColor: Colors.white,
+    borderRadius: 24,
+    padding: 32,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  safetyIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  safetyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.black,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  safetyMessage: {
+    fontSize: 16,
+    color: Colors.gray[600],
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  safetyOkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.success,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 12,
+  },
+  safetyOkText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  sosButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.error,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  sosButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  safetyNote: {
+    fontSize: 13,
+    color: Colors.gray[500],
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // SOS Header Button
+  sosHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: Colors.error,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  sosHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+
+  // Rating Styles
+  rateDriverLabel: {
+    fontSize: 14,
+    color: Colors.gray[600],
+    marginTop: 12,
+    marginBottom: 8,
   },
 });

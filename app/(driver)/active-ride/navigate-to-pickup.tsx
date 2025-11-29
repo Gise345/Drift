@@ -21,15 +21,16 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
+import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
@@ -55,6 +56,7 @@ interface NavigationStep {
 export default function NavigateToPickup() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   const { activeRide, updateLocation, arrivedAtPickup } = useDriverStore();
   const { updateDriverLocation } = useTripStore();
 
@@ -67,9 +69,40 @@ export default function NavigateToPickup() {
   const [currentLocation, setCurrentLocation] = useState<RouteCoordinate | null>(null);
   const [isSheetMinimized, setIsSheetMinimized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
+  const lastRouteRecalculation = useRef<number>(0);
+  const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
   // Animation
   const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+
+  // Handle route deviation - recalculate route when driver goes off route
+  const handleRouteDeviation = async (distanceFromRoute: number) => {
+    const now = Date.now();
+
+    // Check cooldown to prevent excessive API calls
+    if (now - lastRouteRecalculation.current < ROUTE_RECALC_COOLDOWN) {
+      return;
+    }
+
+    // Only recalculate if significantly off route (more than 100 meters)
+    if (distanceFromRoute > 100 && currentLocation && activeRide && !isRecalculatingRoute) {
+      console.log(`🔄 Driver deviated ${distanceFromRoute.toFixed(0)}m from route, recalculating...`);
+      lastRouteRecalculation.current = now;
+      setIsRecalculatingRoute(true);
+
+      try {
+        await fetchRoute(currentLocation, {
+          latitude: activeRide.pickup.lat,
+          longitude: activeRide.pickup.lng,
+        });
+      } catch (error) {
+        console.error('Failed to recalculate route:', error);
+      } finally {
+        setIsRecalculatingRoute(false);
+      }
+    }
+  };
 
   // Fetch route from Google Directions API
   const fetchRoute = async (
@@ -414,13 +447,16 @@ export default function NavigateToPickup() {
           </View>
         </Marker>
 
-        {/* Route Polyline */}
+        {/* Route Polyline with Progress Tracking */}
         {routeCoordinates.length > 0 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor={Colors.primary}
+          <ProgressivePolyline
+            routeCoordinates={routeCoordinates}
+            currentLocation={currentLocation}
+            remainingColor={Colors.primary}
+            traveledColor={Colors.gray[400]}
             strokeWidth={5}
-            lineDashPattern={[0]}
+            onRouteDeviation={handleRouteDeviation}
+            deviationThreshold={100}
           />
         )}
       </MapView>
@@ -465,7 +501,7 @@ export default function NavigateToPickup() {
       </View>
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 20) }]}>
         {/* Handle */}
         <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
           <View style={styles.handleBar} />
@@ -692,7 +728,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 20,
   },
   riderAvatarSmall: {
     width: 44,
@@ -731,7 +766,6 @@ const styles = StyleSheet.create({
   // Expanded Content
   expandedContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   riderCard: {
     flexDirection: 'row',

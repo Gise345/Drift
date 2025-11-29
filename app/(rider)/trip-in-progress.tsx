@@ -22,19 +22,74 @@ import {
   Animated,
   Dimensions,
   Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
+import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
 const BOTTOM_SHEET_MIN_HEIGHT = 100;
 // Extra padding for Android navigation bar
 const ANDROID_NAV_BAR_HEIGHT = Platform.OS === 'android' ? 48 : 0;
+
+// Route deviation threshold in meters (200m = ~0.12 miles)
+const ROUTE_DEVIATION_THRESHOLD = 200;
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @returns Distance in meters
+ */
+const calculateDistanceMeters = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/**
+ * Calculate minimum distance from a point to a polyline route
+ * @returns Minimum distance in meters
+ */
+const getDistanceFromRoute = (
+  point: RouteCoordinate,
+  route: RouteCoordinate[]
+): number => {
+  if (route.length === 0) return 0;
+
+  let minDistance = Infinity;
+
+  for (const routePoint of route) {
+    const dist = calculateDistanceMeters(
+      point.latitude,
+      point.longitude,
+      routePoint.latitude,
+      routePoint.longitude
+    );
+    if (dist < minDistance) {
+      minDistance = dist;
+    }
+  }
+
+  return minDistance;
+};
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -56,10 +111,13 @@ export default function TripInProgressScreen() {
   const [eta, setEta] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
+  const [originalRoute, setOriginalRoute] = useState<RouteCoordinate[]>([]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isSheetMinimized, setIsSheetMinimized] = useState(false);
   const [tripStartTime] = useState(new Date());
   const [elapsed, setElapsed] = useState(0);
+  const [showRouteDeviationModal, setShowRouteDeviationModal] = useState(false);
+  const [routeDeviationConfirmed, setRouteDeviationConfirmed] = useState(false);
 
   // Animation
   const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
@@ -120,9 +178,20 @@ export default function TripInProgressScreen() {
     return () => clearInterval(interval);
   }, [tripStartTime]);
 
-  // Fetch route when driver location updates
+  // Fetch initial route when trip starts (only once)
+  useEffect(() => {
+    if (currentTrip?.pickup && currentTrip?.destination && originalRoute.length === 0) {
+      fetchInitialRoute(
+        currentTrip.pickup.coordinates,
+        currentTrip.destination.coordinates
+      );
+    }
+  }, [currentTrip?.pickup, currentTrip?.destination]);
+
+  // Check for route deviation and update ETA when driver location updates
   useEffect(() => {
     if (currentTrip?.driverLocation && currentTrip?.destination) {
+      // Update route display from driver's current position
       fetchRoute(
         {
           latitude: currentTrip.driverLocation.latitude,
@@ -133,8 +202,21 @@ export default function TripInProgressScreen() {
 
       // Calculate ETA
       calculateETA(currentTrip.driverLocation, currentTrip.destination.coordinates);
+
+      // Check for route deviation
+      if (originalRoute.length > 0 && !routeDeviationConfirmed) {
+        const driverPoint = {
+          latitude: currentTrip.driverLocation.latitude,
+          longitude: currentTrip.driverLocation.longitude,
+        };
+        const distanceFromRoute = getDistanceFromRoute(driverPoint, originalRoute);
+
+        if (distanceFromRoute > ROUTE_DEVIATION_THRESHOLD) {
+          setShowRouteDeviationModal(true);
+        }
+      }
     }
-  }, [currentTrip?.driverLocation]);
+  }, [currentTrip?.driverLocation, originalRoute, routeDeviationConfirmed]);
 
   // Calculate ETA based on driver location
   const calculateETA = (
@@ -171,7 +253,28 @@ export default function TripInProgressScreen() {
     return R * c;
   };
 
-  // Fetch route from Google Directions API
+  // Fetch initial route from pickup to destination (saved for deviation detection)
+  const fetchInitialRoute = async (origin: RouteCoordinate, destination: RouteCoordinate) => {
+    if (!GOOGLE_DIRECTIONS_API_KEY) return;
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const points = decodePolyline(route.overview_polyline.points);
+        setOriginalRoute(points);
+        setRouteCoordinates(points);
+      }
+    } catch (error) {
+      console.error('Failed to fetch initial route:', error);
+    }
+  };
+
+  // Fetch route from Google Directions API (for display updates)
   const fetchRoute = async (origin: RouteCoordinate, destination: RouteCoordinate) => {
     if (!GOOGLE_DIRECTIONS_API_KEY) return;
 
@@ -269,15 +372,15 @@ export default function TripInProgressScreen() {
     setShowShareModal(true);
   };
 
-  const handleEmergency = () => {
-    Alert.alert(
-      'Emergency',
-      'Do you need emergency assistance?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call 911', style: 'destructive', onPress: () => Linking.openURL('tel:911') },
-      ]
-    );
+  // Emergency call - directly opens phone dialer with 911
+  const handleEmergencyCall = () => {
+    Linking.openURL('tel:911');
+  };
+
+  // Route deviation safety confirmation - user says they're OK
+  const handleRouteDeviationConfirmOk = () => {
+    setRouteDeviationConfirmed(true);
+    setShowRouteDeviationModal(false);
   };
 
   // Calculate map region
@@ -340,21 +443,72 @@ export default function TripInProgressScreen() {
           </View>
         </Marker>
 
-        {/* Route Line */}
+        {/* Route Line with Progress Tracking */}
         {routeCoordinates.length > 0 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="#5d1289"
+          <ProgressivePolyline
+            routeCoordinates={routeCoordinates}
+            currentLocation={
+              currentTrip?.driverLocation
+                ? {
+                    latitude: currentTrip.driverLocation.latitude,
+                    longitude: currentTrip.driverLocation.longitude,
+                  }
+                : null
+            }
+            remainingColor="#5d1289"
+            traveledColor="#9CA3AF"
             strokeWidth={4}
           />
         )}
       </MapView>
 
+      {/* Route Deviation Safety Modal */}
+      <Modal
+        visible={showRouteDeviationModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.safetyModal}>
+            <View style={styles.safetyIconContainer}>
+              <Ionicons name="navigate" size={60} color="#EF4444" />
+            </View>
+
+            <Text style={styles.safetyTitle}>Route Change Detected</Text>
+            <Text style={styles.safetyMessage}>
+              Your driver appears to be taking a different route than expected. Is everything okay?
+            </Text>
+
+            <TouchableOpacity
+              style={styles.safetyOkButton}
+              onPress={handleRouteDeviationConfirmOk}
+            >
+              <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+              <Text style={styles.safetyOkText}>Yes, I'm okay</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sosButton}
+              onPress={handleEmergencyCall}
+            >
+              <Ionicons name="warning" size={22} color="#FFFFFF" />
+              <Text style={styles.sosButtonText}>Call Emergency (911)</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.safetyNote}>
+              If you feel unsafe, please call emergency services immediately.
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
       {/* Header */}
       <SafeAreaView edges={['top']} style={styles.headerContainer}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={handleEmergency}>
-            <Ionicons name="shield" size={22} color="#EF4444" />
+          <TouchableOpacity style={styles.sosHeaderButton} onPress={handleEmergencyCall}>
+            <Ionicons name="warning" size={18} color="#FFFFFF" />
+            <Text style={styles.sosHeaderText}>SOS</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Trip in Progress</Text>
           <TouchableOpacity style={styles.headerButton} onPress={handleShareTrip}>
@@ -809,5 +963,102 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+
+  // Safety Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  safetyModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  safetyIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  safetyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  safetyMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  safetyOkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 12,
+  },
+  safetyOkText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  sosButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EF4444',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  sosButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  safetyNote: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // SOS Header Button
+  sosHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#EF4444',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  sosHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

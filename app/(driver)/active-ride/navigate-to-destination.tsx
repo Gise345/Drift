@@ -23,20 +23,19 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
+import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.40;
 const BOTTOM_SHEET_MIN_HEIGHT = 100;
-// Extra padding for Android navigation bar
-const ANDROID_NAV_BAR_HEIGHT = Platform.OS === 'android' ? 48 : 0;
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -58,6 +57,7 @@ interface NavigationStep {
 export default function NavigateToDestination() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   const { activeRide, updateLocation } = useDriverStore();
   const { updateDriverLocation } = useTripStore();
 
@@ -70,9 +70,40 @@ export default function NavigateToDestination() {
   const [isSheetMinimized, setIsSheetMinimized] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [tripStartTime] = useState(new Date());
+  const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
+  const lastRouteRecalculation = useRef<number>(0);
+  const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
   // Animation
   const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+
+  // Handle route deviation - recalculate route when driver goes off route
+  const handleRouteDeviation = async (distanceFromRoute: number) => {
+    const now = Date.now();
+
+    // Check cooldown to prevent excessive API calls
+    if (now - lastRouteRecalculation.current < ROUTE_RECALC_COOLDOWN) {
+      return;
+    }
+
+    // Only recalculate if significantly off route (more than 100 meters)
+    if (distanceFromRoute > 100 && currentLocation && activeRide && !isRecalculatingRoute) {
+      console.log(`🔄 Driver deviated ${distanceFromRoute.toFixed(0)}m from route, recalculating...`);
+      lastRouteRecalculation.current = now;
+      setIsRecalculatingRoute(true);
+
+      try {
+        await fetchRoute(currentLocation, {
+          latitude: activeRide.destination.lat,
+          longitude: activeRide.destination.lng,
+        });
+      } catch (error) {
+        console.error('Failed to recalculate route:', error);
+      } finally {
+        setIsRecalculatingRoute(false);
+      }
+    }
+  };
 
   // Trip timer
   useEffect(() => {
@@ -396,13 +427,16 @@ export default function NavigateToDestination() {
           </View>
         </Marker>
 
-        {/* Route Polyline */}
+        {/* Route Polyline with Progress Tracking */}
         {routeCoordinates.length > 0 && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor={Colors.primary}
+          <ProgressivePolyline
+            routeCoordinates={routeCoordinates}
+            currentLocation={currentLocation}
+            remainingColor={Colors.primary}
+            traveledColor={Colors.gray[400]}
             strokeWidth={5}
-            lineDashPattern={[0]}
+            onRouteDeviation={handleRouteDeviation}
+            deviationThreshold={100}
           />
         )}
       </MapView>
@@ -455,7 +489,7 @@ export default function NavigateToDestination() {
       </View>
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: ANDROID_NAV_BAR_HEIGHT }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 20) }]}>
         <View style={styles.bottomSheetSafeArea}>
           {/* Handle */}
           <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
@@ -698,7 +732,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 24,
   },
   destinationIconSmall: {
     width: 44,
@@ -739,7 +772,6 @@ const styles = StyleSheet.create({
   // Expanded Content
   expandedContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
   },
 
   // Trip Progress

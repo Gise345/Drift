@@ -105,6 +105,7 @@ export interface Trip {
   driverLocation?: TripLocation;
   riderLocation?: TripLocation;
   route?: Array<{ latitude: number; longitude: number }>;
+  driverFinalLocation?: { latitude: number; longitude: number }; // Driver's location when trip completed
 
   // Timestamps
   requestedAt: Date;
@@ -220,14 +221,31 @@ export const useTripStore = create<TripStore>((set, get) => ({
   createTrip: async (tripData) => {
     try {
       const tripsRef = collection(firebaseDb, 'trips');
+
+      // Recursively remove undefined values - Firestore doesn't accept them
+      const removeUndefined = (obj: any): any => {
+        if (obj === null || obj === undefined) return null;
+        if (typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) {
+          return obj.map(removeUndefined).filter(item => item !== undefined);
+        }
+        return Object.fromEntries(
+          Object.entries(obj)
+            .filter(([_, value]) => value !== undefined)
+            .map(([key, value]) => [key, removeUndefined(value)])
+        );
+      };
+
+      const cleanTripData = removeUndefined(tripData);
+
       const newTrip = {
-        ...tripData,
+        ...cleanTripData,
         status: 'REQUESTED',
         requestedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
-      
+
       const docRef = await addDoc(tripsRef, newTrip);
 
       // Set as current trip

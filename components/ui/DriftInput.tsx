@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   
   label: {
     fontSize: Typography.fontSize.base,
-    color: Colors.black,
+    color: Colors.white,
     marginBottom: Spacing.sm,
     fontWeight: '500',
   },
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: Typography.fontSize.lg,
-    color: Colors.black,
+    color: Colors.white,
     paddingVertical: Spacing.md,
     paddingRight: 40, // Space for icons
   },
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
   
   countryCodeText: {
     fontSize: Typography.fontSize.lg,
-    color: Colors.black,
+    color: Colors.white,
     marginRight: Spacing.xs,
   },
   
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   phoneInput: {
     flex: 1,
     fontSize: Typography.fontSize.lg,
-    color: Colors.black,
+    color: Colors.white,
     paddingVertical: Spacing.md,
   },
 });

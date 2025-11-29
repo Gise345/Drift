@@ -31,7 +31,8 @@
       "Bash(taskkill:*)",
       "Bash(ping:*)",
       "Bash(powershell -Command \"Get-ChildItem ''C:\\Drift\\app\\(driver\\)'' -Recurse -Include *.tsx | Select-Object FullName\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

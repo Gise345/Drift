@@ -1064,10 +1064,7 @@ const HomeScreen = () => {
                   </View>
                   <View style={styles.activeTripInfo}>
                     <Text style={styles.activeTripTitle}>
-                      {currentTrip.status === 'REQUESTED' && 'Finding a driver...'}
-                      {currentTrip.status === 'ACCEPTED' && 'Driver on the way'}
-                      {currentTrip.status === 'DRIVER_ARRIVING' && 'Driver arriving'}
-                      {currentTrip.status === 'DRIVER_ARRIVED' && 'Driver has arrived'}
+                     
                       {currentTrip.status === 'IN_PROGRESS' && 'Trip in progress'}
                     </Text>
                     <Text style={styles.activeTripDestination} numberOfLines={1}>

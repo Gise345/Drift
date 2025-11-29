@@ -329,16 +329,24 @@ export async function startTrip(tripId: string): Promise<void> {
 /**
  * Complete the trip - marks as AWAITING_TIP first to allow rider to add tip
  * Driver should call this when they arrive at destination
+ *
+ * @param tripId - The trip ID
+ * @param finalCost - The final cost of the trip
+ * @param actualDistance - The actual distance traveled (optional)
+ * @param actualDuration - The actual duration of the trip (optional)
+ * @param driverFinalLocation - The driver's final location for safety check (optional)
  */
 export async function completeTrip(
   tripId: string,
   finalCost: number,
   actualDistance?: number,
-  actualDuration?: number
+  actualDuration?: number,
+  driverFinalLocation?: { latitude: number; longitude: number } | null
 ): Promise<void> {
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
-    await updateDoc(tripRef, {
+
+    const updateData: any = {
       status: 'AWAITING_TIP',
       finalCost,
       actualDistance,
@@ -346,7 +354,14 @@ export async function completeTrip(
       completedAt: serverTimestamp(),
       paymentStatus: 'PENDING',
       updatedAt: serverTimestamp(),
-    });
+    };
+
+    // Include driver's final location for safety check on rider side
+    if (driverFinalLocation) {
+      updateData.driverFinalLocation = driverFinalLocation;
+    }
+
+    await updateDoc(tripRef, updateData);
     console.log('✅ Trip marked as AWAITING_TIP:', tripId);
   } catch (error) {
     console.error('Failed to complete trip:', error);
@@ -524,6 +539,108 @@ export async function cancelTrip(
 }
 
 /**
+ * Cancel the trip with cancellation fee
+ * Used when rider cancels AFTER driver has arrived
+ * Driver receives 50% of the estimated fare as compensation
+ *
+ * @param tripId - The trip ID
+ * @param cancelledBy - Who cancelled ('DRIVER' | 'RIDER')
+ * @param reason - Cancellation reason
+ * @param driverId - The driver's ID (to credit earnings)
+ * @returns Object with cancellation fee amount
+ */
+export async function cancelTripWithFee(
+  tripId: string,
+  cancelledBy: 'DRIVER' | 'RIDER',
+  reason: string,
+  driverId: string
+): Promise<{ cancellationFee: number; refundAmount: number }> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!documentExists(tripDoc)) {
+      throw new Error('Trip not found');
+    }
+
+    const tripData = tripDoc.data();
+    const estimatedCost = tripData?.estimatedCost || tripData?.pricing?.suggestedContribution || 0;
+
+    // Calculate 50% cancellation fee for driver
+    const cancellationFee = Math.round((estimatedCost * 0.5) * 100) / 100;
+    const refundAmount = Math.round((estimatedCost - cancellationFee) * 100) / 100;
+
+    console.log('💰 Processing cancellation with fee:', {
+      tripId,
+      estimatedCost,
+      cancellationFee,
+      refundAmount,
+      cancelledBy,
+    });
+
+    // Update trip with cancellation details
+    await updateDoc(tripRef, {
+      status: 'CANCELLED',
+      cancelledBy,
+      cancellationReason: reason,
+      cancellationFee,
+      refundAmount,
+      cancelledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // Credit cancellation fee to driver's earnings
+    if (driverId && cancellationFee > 0) {
+      await updateDriverCancellationEarnings(driverId, cancellationFee);
+    }
+
+    console.log('✅ Trip cancelled with fee:', {
+      tripId,
+      cancellationFee,
+      refundAmount,
+    });
+
+    return { cancellationFee, refundAmount };
+  } catch (error) {
+    console.error('Failed to cancel trip with fee:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update driver's earnings for cancellation fee
+ */
+async function updateDriverCancellationEarnings(
+  driverId: string,
+  cancellationFee: number
+): Promise<void> {
+  try {
+    const driverRef = doc(firebaseDb, 'drivers', driverId);
+    const driverDoc = await getDoc(driverRef);
+
+    if (documentExists(driverDoc)) {
+      const driverData = driverDoc.data();
+      const currentTodayEarnings = driverData?.todayEarnings || 0;
+      const currentTotalEarnings = driverData?.totalEarnings || 0;
+      const currentCancellationEarnings = driverData?.cancellationEarnings || 0;
+
+      await updateDoc(driverRef, {
+        todayEarnings: currentTodayEarnings + cancellationFee,
+        totalEarnings: currentTotalEarnings + cancellationFee,
+        cancellationEarnings: currentCancellationEarnings + cancellationFee,
+        lastCancellationFeeAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log('✅ Driver cancellation earnings updated:', driverId, 'Fee:', cancellationFee);
+    }
+  } catch (error) {
+    console.error('Failed to update driver cancellation earnings:', error);
+    // Don't throw - earnings update failure shouldn't block cancellation
+  }
+}
+
+/**
  * Calculate distance between two coordinates using Haversine formula
  * Returns distance in meters
  */
@@ -570,19 +687,15 @@ export function formatTime(minutes: number): string {
 /**
  * Get active trip for a rider
  * Returns the most recent trip that is in an active state (not completed or cancelled)
+ * Also cleans up stale REQUESTED trips that were never accepted
  */
 export async function getActiveRiderTrip(riderId: string): Promise<RideRequest | null> {
   try {
-    const tripsRef = collection(firebaseDb, 'trips');
-
-    // Query for active trips for this rider
-    // Active statuses: REQUESTED, ACCEPTED, DRIVER_ARRIVING, DRIVER_ARRIVED, IN_PROGRESS
-    const q = query(
-      tripsRef,
-      where('riderId', '==', riderId),
-      orderBy('requestedAt', 'desc'),
-      limit(5) // Get recent trips to check
-    );
+    // First, clean up any stale REQUESTED trips (older than 30 minutes)
+    // This runs in the background and doesn't block the main query
+    cleanupStaleRiderTripsInternal(riderId, 30).catch(err => {
+      console.warn('Background cleanup failed:', err);
+    });
 
     const snapshot = await firestore().collection('trips')
       .where('riderId', '==', riderId)
@@ -590,16 +703,52 @@ export async function getActiveRiderTrip(riderId: string): Promise<RideRequest |
       .limit(5)
       .get();
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    for (const tripDoc of snapshot.docs) {
+      const data = tripDoc.data();
       const status = data.status;
+
+      // Skip trips that have been completed (have completedAt timestamp)
+      if (data.completedAt) {
+        console.log('⏭️ Skipping completed trip:', tripDoc.id, 'completedAt:', data.completedAt);
+        continue;
+      }
+
+      // Skip trips that have been cancelled
+      if (data.cancelledAt || status === 'CANCELLED') {
+        console.log('⏭️ Skipping cancelled trip:', tripDoc.id);
+        continue;
+      }
+
+      // Skip expired trips
+      if (status === 'EXPIRED') {
+        console.log('⏭️ Skipping expired trip:', tripDoc.id);
+        continue;
+      }
+
+      // Skip trips awaiting tip or already completed (these are finished trips)
+      if (status === 'AWAITING_TIP' || status === 'COMPLETED') {
+        console.log('⏭️ Skipping finished trip:', tripDoc.id, 'Status:', status);
+        continue;
+      }
+
+      // For REQUESTED status, check if it's too old (stale)
+      if (status === 'REQUESTED') {
+        const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+        if (requestedAt) {
+          const ageMinutes = (Date.now() - new Date(requestedAt).getTime()) / (1000 * 60);
+          if (ageMinutes > 30) {
+            console.log('⏭️ Skipping stale REQUESTED trip:', tripDoc.id, 'Age:', Math.round(ageMinutes), 'min');
+            continue;
+          }
+        }
+      }
 
       // Check if trip is in an active state
       if (['REQUESTED', 'ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
-        console.log('✅ Found active rider trip:', doc.id, 'Status:', status);
+        console.log('✅ Found active rider trip:', tripDoc.id, 'Status:', status);
 
         return {
-          id: doc.id,
+          id: tripDoc.id,
           ...data,
           requestedAt: data.requestedAt?.toDate(),
           createdAt: data.createdAt?.toDate(),
@@ -616,6 +765,62 @@ export async function getActiveRiderTrip(riderId: string): Promise<RideRequest |
   } catch (error) {
     console.error('❌ Error fetching active rider trip:', error);
     return null;
+  }
+}
+
+/**
+ * Internal cleanup function - same as cleanupStaleRiderTrips but doesn't log as much
+ * Used for background cleanup during getActiveRiderTrip
+ */
+async function cleanupStaleRiderTripsInternal(
+  riderId: string,
+  maxAgeMinutes: number
+): Promise<number> {
+  try {
+    const snapshot = await firestore().collection('trips')
+      .where('riderId', '==', riderId)
+      .where('status', '==', 'REQUESTED')
+      .orderBy('requestedAt', 'desc')
+      .limit(10)
+      .get();
+
+    let cleanedCount = 0;
+    const now = Date.now();
+    const maxAgeMs = maxAgeMinutes * 60 * 1000;
+
+    for (const tripDoc of snapshot.docs) {
+      const data = tripDoc.data();
+      const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+
+      if (!requestedAt) {
+        await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
+          status: 'EXPIRED',
+          expiredAt: serverTimestamp(),
+          expiredReason: 'No requestedAt timestamp',
+          updatedAt: serverTimestamp(),
+        });
+        cleanedCount++;
+        continue;
+      }
+
+      const ageMs = now - new Date(requestedAt).getTime();
+
+      if (ageMs > maxAgeMs) {
+        console.log('🧹 Auto-expiring stale trip:', tripDoc.id);
+        await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
+          status: 'EXPIRED',
+          expiredAt: serverTimestamp(),
+          expiredReason: `No driver accepted within ${maxAgeMinutes} minutes`,
+          updatedAt: serverTimestamp(),
+        });
+        cleanedCount++;
+      }
+    }
+
+    return cleanedCount;
+  } catch (error) {
+    // Silently fail - this is background cleanup
+    return 0;
   }
 }
 
@@ -698,5 +903,73 @@ export async function getActiveDriverTrip(driverId: string): Promise<RideRequest
   } catch (error) {
     console.error('❌ Error fetching active driver trip:', error);
     return null;
+  }
+}
+
+/**
+ * Clean up stale/orphaned trips for a rider
+ * Automatically expires old REQUESTED trips that were never accepted
+ * This prevents old ride requests from showing up as "active"
+ *
+ * @param riderId - The rider's ID
+ * @param maxAgeMinutes - Maximum age in minutes before a REQUESTED trip is considered stale (default: 30)
+ */
+export async function cleanupStaleRiderTrips(
+  riderId: string,
+  maxAgeMinutes: number = 30
+): Promise<number> {
+  try {
+    const snapshot = await firestore().collection('trips')
+      .where('riderId', '==', riderId)
+      .where('status', '==', 'REQUESTED')
+      .orderBy('requestedAt', 'desc')
+      .limit(10)
+      .get();
+
+    let cleanedCount = 0;
+    const now = Date.now();
+    const maxAgeMs = maxAgeMinutes * 60 * 1000;
+
+    for (const tripDoc of snapshot.docs) {
+      const data = tripDoc.data();
+      const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+
+      if (!requestedAt) {
+        // No timestamp - mark as expired
+        console.log('🧹 Cleaning up trip without timestamp:', tripDoc.id);
+        await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
+          status: 'EXPIRED',
+          expiredAt: serverTimestamp(),
+          expiredReason: 'No requestedAt timestamp',
+          updatedAt: serverTimestamp(),
+        });
+        cleanedCount++;
+        continue;
+      }
+
+      const ageMs = now - new Date(requestedAt).getTime();
+
+      if (ageMs > maxAgeMs) {
+        console.log('🧹 Cleaning up stale REQUESTED trip:', tripDoc.id,
+          'Age:', Math.round(ageMs / 60000), 'minutes');
+
+        await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
+          status: 'EXPIRED',
+          expiredAt: serverTimestamp(),
+          expiredReason: `No driver accepted within ${maxAgeMinutes} minutes`,
+          updatedAt: serverTimestamp(),
+        });
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} stale trip(s) for rider:`, riderId);
+    }
+
+    return cleanedCount;
+  } catch (error) {
+    console.error('❌ Error cleaning up stale trips:', error);
+    return 0;
   }
 }

@@ -1,15 +1,3 @@
-/**
- * Drift Sign Up Screen - Production Ready
- * Figma: 03_Register.png
- * 
- * Features:
- * - Email/Password registration with Firebase
- * - Google Sign-In integration
- * - Email verification flow
- * - Role selection (Rider/Driver)
- * - Real-time validation
- */
-
 import React, { useState } from 'react';
 import {
   View,
@@ -21,6 +9,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  ImageBackground,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -48,16 +38,12 @@ export default function SignUpScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
+  const validateEmail = (value: string) =>
+    !!value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
-  const validatePassword = (password: string) => {
-    return password.length >= 6;
-  };
+  const validatePassword = (value: string) => value.length >= 6;
 
   const handleSignUp = async () => {
-    // Validation
     if (!fullName.trim()) {
       Alert.alert('Error', 'Please enter your full name');
       return;
@@ -79,7 +65,10 @@ export default function SignUpScreen() {
     }
 
     if (!acceptedTerms) {
-      Alert.alert('Error', 'Please accept the Terms of Service and Privacy Policy to continue');
+      Alert.alert(
+        'Error',
+        'Please accept the Terms of Service and Privacy Policy to continue'
+      );
       return;
     }
 
@@ -95,10 +84,8 @@ export default function SignUpScreen() {
 
       const { user, needsVerification } = await registerWithEmail(registrationData);
 
-      // Update app state
       setUser(user);
 
-      // Show success message
       Alert.alert(
         'Registration Successful! 🎉',
         needsVerification
@@ -114,7 +101,6 @@ export default function SignUpScreen() {
                   params: { email: user.email },
                 });
               } else {
-                // Navigate to role selection or home
                 if (selectedRole === 'DRIVER') {
                   router.replace('/(driver)/registration/legal-consent');
                 } else {
@@ -134,7 +120,10 @@ export default function SignUpScreen() {
 
   const handleGoogleSignIn = async () => {
     if (!acceptedTerms) {
-      Alert.alert('Error', 'Please accept the Terms of Service and Privacy Policy to continue');
+      Alert.alert(
+        'Error',
+        'Please accept the Terms of Service and Privacy Policy to continue'
+      );
       return;
     }
 
@@ -162,221 +151,250 @@ export default function SignUpScreen() {
     }
   };
 
-  const passwordsMatch = password && confirmPassword && password === confirmPassword;
+  const passwordsMatch =
+    password && confirmPassword && password === confirmPassword;
+
   const isFormValid =
     fullName.trim().length > 2 &&
     validateEmail(email) &&
     validatePassword(password) &&
-    passwordsMatch &&
+    !!passwordsMatch &&
     acceptedTerms;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <ImageBackground
+        source={require('@/assets/images/NeonPalms.png')}
+        style={styles.background}
+        resizeMode="cover"
       >
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <Image
+          source={require('@/assets/cayman-flag-faded.png')}
+          style={styles.flag}
+        />
+        <View style={styles.overlay} />
+
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          {/* Back Button */}
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
+            {/* Back */}
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.backIcon}>←</Text>
+            </TouchableOpacity>
 
-          {/* Title */}
-          <Text style={styles.title}>Create Account</Text>
-
-          {/* Role Selection */}
-          <View style={styles.roleSection}>
-            <Text style={styles.roleLabel}>I want to:</Text>
-            <View style={styles.roleButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'RIDER' && styles.roleButtonActive,
-                ]}
-                onPress={() => setSelectedRole('RIDER')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.roleEmoji}>🚗</Text>
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'RIDER' && styles.roleButtonTextActive,
-                  ]}
-                >
-                  Find Rides
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  selectedRole === 'DRIVER' && styles.roleButtonActive,
-                ]}
-                onPress={() => setSelectedRole('DRIVER')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.roleEmoji}>👤</Text>
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    selectedRole === 'DRIVER' && styles.roleButtonTextActive,
-                  ]}
-                >
-                  Share Rides
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Form Fields */}
-          <DriftInput
-            label="Full Name"
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Enter your full name"
-            autoCapitalize="words"
-            autoComplete="name"
-            showValidation
-            isValid={fullName.trim().length > 2}
-          />
-
-          <DriftInput
-            label="Email Address"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="your@email.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            showValidation
-            isValid={validateEmail(email)}
-          />
-
-          <PasswordInput
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Create a password (min 6 characters)"
-          />
-
-          {/* Password Strength Indicator */}
-          {password.length > 0 && (
-            <View style={styles.strengthContainer}>
-              <View style={styles.strengthBar}>
-                <View
-                  style={[
-                    styles.strengthFill,
-                    {
-                      width: `${Math.min((password.length / 8) * 100, 100)}%`,
-                      backgroundColor:
-                        password.length >= 8
-                          ? Colors.success
-                          : password.length >= 6
-                          ? Colors.warning
-                          : Colors.error,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.strengthText}>
-                {password.length >= 8
-                  ? '✓ Strong password'
-                  : password.length >= 6
-                  ? '⚠ Medium strength'
-                  : '✗ Weak password'}
+            {/* Header */}
+            <View style={styles.header}>
+              <Image
+                source={require('@/assets/drift-logo-purple.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
+              <Text style={styles.title}>Create Your Drift Account</Text>
+              <Text style={styles.subtitle}>
+                Join Cayman&apos;s carpool movement as a rider or driver.
               </Text>
             </View>
-          )}
 
-          <PasswordInput
-            label="Confirm Password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Re-enter your password"
-            showValidation={confirmPassword.length > 0}
-            isValid={!!passwordsMatch}
-          />
+            {/* Card */}
+            <View style={styles.card}>
+              {/* Role Selection */}
+              <View style={styles.roleSection}>
+                <Text style={styles.roleLabel}>I want to:</Text>
+                <View style={styles.roleButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.roleButton,
+                      selectedRole === 'RIDER' && styles.roleButtonActive,
+                    ]}
+                    onPress={() => setSelectedRole('RIDER')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.roleEmoji}>🚗</Text>
+                    <Text
+                      style={[
+                        styles.roleButtonText,
+                        selectedRole === 'RIDER' && styles.roleButtonTextActive,
+                      ]}
+                    >
+                      Find Rides
+                    </Text>
+                  </TouchableOpacity>
 
-          {/* Terms Checkbox */}
-          <TouchableOpacity
-            style={styles.termsContainer}
-            onPress={() => setAcceptedTerms(!acceptedTerms)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.checkbox, acceptedTerms && styles.checkboxActive]}>
-              {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+                  <TouchableOpacity
+                    style={[
+                      styles.roleButton,
+                      selectedRole === 'DRIVER' && styles.roleButtonActive,
+                    ]}
+                    onPress={() => setSelectedRole('DRIVER')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.roleEmoji}>👤</Text>
+                    <Text
+                      style={[
+                        styles.roleButtonText,
+                        selectedRole === 'DRIVER' && styles.roleButtonTextActive,
+                      ]}
+                    >
+                      Share Rides
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Fields */}
+              <DriftInput
+                label="Full Name"
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Enter your full name"
+                autoCapitalize="words"
+                autoComplete="name"
+                showValidation
+                isValid={fullName.trim().length > 2}
+              />
+
+              <DriftInput
+                label="Email Address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="your@email.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                showValidation
+                isValid={validateEmail(email)}
+              />
+
+              <PasswordInput
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Create a password (min 6 characters)"
+              />
+
+              {password.length > 0 && (
+                <View style={styles.strengthContainer}>
+                  <View style={styles.strengthBar}>
+                    <View
+                      style={[
+                        styles.strengthFill,
+                        {
+                          width: `${Math.min(
+                            (password.length / 8) * 100,
+                            100
+                          )}%`,
+                          backgroundColor:
+                            password.length >= 8
+                              ? Colors.success
+                              : password.length >= 6
+                              ? Colors.warning
+                              : Colors.error,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.strengthText}>
+                    {password.length >= 8
+                      ? '✓ Strong password'
+                      : password.length >= 6
+                      ? '⚠ Medium strength'
+                      : '✗ Weak password'}
+                  </Text>
+                </View>
+              )}
+
+              <PasswordInput
+                label="Confirm Password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Re-enter your password"
+                showValidation={confirmPassword.length > 0}
+                isValid={!!passwordsMatch}
+              />
+
+              {/* Terms */}
+              <TouchableOpacity
+                style={styles.termsContainer}
+                onPress={() => setAcceptedTerms(!acceptedTerms)}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[styles.checkbox, acceptedTerms && styles.checkboxActive]}
+                >
+                  {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.termsText}>
+                  I agree to Drift&apos;s{' '}
+                  <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+                  <Text style={styles.termsLink}>Privacy Policy</Text>.
+                </Text>
+              </TouchableOpacity>
+
+              <DriftButton
+                title="Create Account"
+                onPress={handleSignUp}
+                variant="black"
+                size="large"
+                icon={<ArrowRight />}
+                loading={loading}
+                disabled={!isFormValid || loading}
+                style={styles.signUpButton}
+              />
+
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Google */}
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={handleGoogleSignIn}
+                disabled={loading || googleLoading}
+                activeOpacity={0.8}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator color={Colors.gray[100]} />
+                ) : (
+                  <>
+                    <Text style={styles.googleIcon}>G</Text>
+                    <Text style={styles.googleButtonText}>Continue with Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
-            <Text style={styles.termsText}>
-              I agree to Drift's{' '}
-              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-              <Text style={styles.termsLink}>Privacy Policy</Text>
-            </Text>
-          </TouchableOpacity>
 
-          {/* Sign Up Button */}
-          <DriftButton
-            title="Create Account"
-            onPress={handleSignUp}
-            variant="black"
-            size="large"
-            icon={<ArrowRight />}
-            loading={loading}
-            disabled={!isFormValid || loading}
-            style={styles.signUpButton}
-          />
+            {/* Footer */}
+            <View style={styles.signInContainer}>
+              <Text style={styles.signInText}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/(auth)/sign-in')}>
+                <Text style={styles.signInLink}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Google Sign-In */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            disabled={loading || googleLoading}
-            activeOpacity={0.8}
-          >
-            {googleLoading ? (
-              <ActivityIndicator color={Colors.gray[600]} />
-            ) : (
-              <>
-                <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Sign In Link */}
-          <View style={styles.signInContainer}>
-            <Text style={styles.signInText}>Already have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/(auth)/sign-in')}>
-              <Text style={styles.signInLink}>Sign In</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Legal Disclaimer */}
-          <View style={styles.legalNotice}>
-            <Text style={styles.legalText}>
-              🔒 <Text style={styles.legalBold}>Peer-to-Peer Platform:</Text> Drift
-              connects independent users for private carpooling. We're not a rideshare
-              or taxi service.
-            </Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            <View style={styles.legalNotice}>
+              <Text style={styles.legalText}>
+                🔒 <Text style={styles.legalBold}>Peer-to-Peer Platform:</Text> Drift
+                connects independent users for private carpooling. Drift is not a
+                rideshare or taxi service.
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </ImageBackground>
     </SafeAreaView>
   );
 }
@@ -384,239 +402,237 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#000',
   },
-
+  background: {
+    flex: 1,
+  },
+  flag: {
+    position: 'absolute',
+    left: -40,
+    top: 60,
+    width: 220,
+    height: 220,
+    opacity: 0.16,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   container: {
     flex: 1,
   },
-
   scroll: {
     flex: 1,
   },
-
   content: {
     padding: Spacing.xl,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing['2xl'],
   },
-
   backButton: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
     alignSelf: 'flex-start',
   },
-
   backIcon: {
-    fontSize: 28,
-    color: Colors.black,
+    fontSize: 26,
+    color: Colors.white,
   },
-
+  header: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  logo: {
+    width: 320,
+    height: 110,
+    marginBottom: Spacing.md,
+  },
   title: {
     fontSize: Typography.fontSize['2xl'],
-    fontWeight: '700',
-    color: Colors.black,
-    marginBottom: Spacing['2xl'],
+    fontWeight: '800',
+    color: Colors.white,
+    marginBottom: Spacing.xs,
   },
-
-  // Role Selection
+  subtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: 'rgba(255,255,255,0.82)',
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: 'rgba(10,10,20,0.9)',
+    borderRadius: 18,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
   roleSection: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
-
   roleLabel: {
     fontSize: Typography.fontSize.base,
     fontWeight: '600',
-    color: Colors.gray[700],
-    marginBottom: Spacing.md,
+    color: Colors.gray[100],
+    marginBottom: Spacing.sm,
   },
-
   roleButtons: {
     flexDirection: 'row',
     gap: 12,
   },
-
   roleButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderWidth: 2,
-    borderColor: Colors.gray[300],
+    borderColor: 'rgba(255,255,255,0.16)',
     borderRadius: 12,
     paddingVertical: Spacing.md,
     gap: 8,
   },
-
   roleButtonActive: {
     borderColor: Colors.purple,
-    backgroundColor: Colors.purple + '10',
+    backgroundColor: Colors.purple + '30',
   },
-
   roleEmoji: {
     fontSize: 20,
   },
-
   roleButtonText: {
     fontSize: Typography.fontSize.base,
-    color: Colors.gray[700],
+    color: Colors.gray[100],
     fontWeight: '600',
   },
-
   roleButtonTextActive: {
-    color: Colors.purple,
+    color: Colors.white,
   },
-
-  // Password Strength
   strengthContainer: {
     marginBottom: Spacing.md,
     marginTop: -Spacing.sm,
   },
-
   strengthBar: {
     height: 4,
-    backgroundColor: Colors.gray[200],
+    backgroundColor: Colors.gray[800],
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: Spacing.xs,
   },
-
   strengthFill: {
     height: '100%',
     borderRadius: 2,
   },
-
   strengthText: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[600],
+    color: Colors.gray[100],
   },
-
-  // Terms Checkbox
   termsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: Spacing.lg,
     gap: Spacing.sm,
   },
-
   checkbox: {
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: Colors.gray[300],
+    borderColor: Colors.gray[500],
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
   },
-
   checkboxActive: {
     backgroundColor: Colors.purple,
     borderColor: Colors.purple,
   },
-
   checkmark: {
     color: Colors.white,
     fontSize: 16,
     fontWeight: '700',
   },
-
   termsText: {
     flex: 1,
     fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+    color: Colors.gray[100],
     lineHeight: 20,
   },
-
   termsLink: {
-    color: Colors.purple,
+    color: Colors.purple[400] || Colors.purple,
     fontWeight: '600',
   },
-
   signUpButton: {
     marginBottom: Spacing.lg,
   },
-
-  // Divider
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: Spacing.lg,
   },
-
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.gray[300],
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
-
   dividerText: {
     marginHorizontal: Spacing.md,
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '600',
   },
-
-  // Google Button
   googleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
-    borderWidth: 1.5,
-    borderColor: Colors.gray[300],
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
     borderRadius: 12,
     paddingVertical: Spacing.md,
     marginBottom: Spacing.xl,
     gap: Spacing.sm,
   },
-
   googleIcon: {
     fontSize: 20,
     fontWeight: '700',
     color: Colors.error,
   },
-
   googleButtonText: {
     fontSize: Typography.fontSize.base,
-    color: Colors.gray[700],
+    color: Colors.gray[50],
     fontWeight: '600',
   },
-
   signInContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginTop: Spacing.lg,
   },
-
   signInText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+    color: Colors.gray[100],
   },
-
   signInLink: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.purple,
+    color: Colors.purple[400] || Colors.purple,
     fontWeight: '700',
   },
-
   legalNotice: {
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.gray[200],
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
-
   legalText: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[600],
+    color: 'rgba(255,255,255,0.78)',
     textAlign: 'center',
     lineHeight: 18,
   },
-
   legalBold: {
     fontWeight: '700',
-    color: Colors.gray[800],
+    color: Colors.gray[50],
   },
 });

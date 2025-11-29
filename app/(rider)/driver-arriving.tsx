@@ -8,7 +8,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
+import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 export default function DriverArrivingScreen() {
   const { currentTrip, subscribeToTrip, startLocationTracking } = useTripStore();
@@ -236,11 +237,20 @@ export default function DriverArrivingScreen() {
           </Marker>
         )}
 
-        {/* Route Line */}
-        {currentTrip?.route && (
-          <Polyline
-            coordinates={currentTrip.route}
-            strokeColor="#5d1289"
+        {/* Route Line with Progress Tracking */}
+        {currentTrip?.route && currentTrip.route.length > 0 && (
+          <ProgressivePolyline
+            routeCoordinates={currentTrip.route}
+            currentLocation={
+              currentTrip.driverLocation
+                ? {
+                    latitude: currentTrip.driverLocation.latitude,
+                    longitude: currentTrip.driverLocation.longitude,
+                  }
+                : null
+            }
+            remainingColor="#5d1289"
+            traveledColor="#9CA3AF"
             strokeWidth={4}
           />
         )}

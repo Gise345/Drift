@@ -1,7 +1,8 @@
 /**
- * Theme Helper for Phase 4 Screens
- * Maps Phase 4 property names to your actual theme structure
- * Add this file to: src/constants/theme-helper.ts
+ * Enhanced Theme Helper
+ * Add these properties to your existing theme-helper.ts
+ * 
+ * Location: src/constants/theme-helper.ts
  */
 
 import { Colors as BaseColors, Typography as BaseTypography, Spacing, Shadows, BorderRadius } from './theme';
@@ -9,20 +10,23 @@ import { Colors as BaseColors, Typography as BaseTypography, Spacing, Shadows, B
 // Export original constants
 export { Spacing, BorderRadius, Shadows };
 
-// Extended Colors with aliases for Phase 4 screens
+// Extended Colors with ALL aliases needed
 export const Colors = {
   ...BaseColors,
+  
   // Text colors
   text: BaseColors.black,
   textSecondary: BaseColors.gray[600],
   textLight: BaseColors.gray[400],
+  dark: BaseColors.gray[900],           // ← ADD THIS for legal docs
   
   // Background colors
   background: BaseColors.gray[50],
   backgroundDark: BaseColors.gray[100],
+  lightGray: BaseColors.gray[50],       // ← ADD THIS for legal docs
   
-  // Border colors
-  border: BaseColors.gray[200],
+  // Border colors  
+  border: BaseColors.border || BaseColors.gray[200],
   borderDark: BaseColors.gray[300],
   
   // Maintain original colors
@@ -38,18 +42,15 @@ export const Colors = {
   white: BaseColors.white,
   black: BaseColors.black,
   gray: BaseColors.gray,
-  mapBackground: BaseColors.mapBackground,
-  markerGreen: BaseColors.markerGreen,
   
-  // Shadow helper (for ...Colors.shadow syntax)
+  // Shadow helper
   shadow: Shadows.md,
 };
 
-// Extended Typography with text style helpers
+// Extended Typography
 export const Typography = {
   ...BaseTypography,
   
-  // Text style helpers for Phase 4 screens
   h1: {
     fontSize: BaseTypography.fontSize['3xl'],
     fontFamily: BaseTypography.fontFamily.bold,
@@ -98,4 +99,12 @@ export const Typography = {
     color: Colors.textSecondary,
     lineHeight: BaseTypography.fontSize.sm * 1.4,
   },
+};
+
+export default {
+  Colors,
+  Typography,
+  Spacing,
+  BorderRadius,
+  Shadows,
 };

@@ -25,7 +25,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -39,6 +39,7 @@ const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.55;
 export default function ArrivedAtPickup() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   const { activeRide, startRide } = useDriverStore();
   const [waitTime, setWaitTime] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
@@ -193,7 +194,7 @@ export default function ArrivedAtPickup() {
       </SafeAreaView>
 
       {/* Bottom Sheet */}
-      <View style={styles.bottomSheet}>
+      <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         {/* Handle */}
         <View style={styles.sheetHandle}>
           <View style={styles.handleBar} />
@@ -623,7 +624,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 20 : 12,
   },
   safetyText: {
     fontSize: 12,

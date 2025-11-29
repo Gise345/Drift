@@ -1,208 +1,203 @@
-/**
- * WELCOME SCREEN - Updated
- * Removed "Continue with Google" button
- * Google Sign-In now only in sign-up and sign-in screens
- * 
- * EXPO SDK 52 Compatible
- */
-
 import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+  TouchableOpacity,
+  ImageBackground,
   Image,
-  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { DriftButton } from '@/components/ui/DriftButton';
-import { Colors, Typography, Spacing, BorderRadius } from '@/src/constants/theme';
-
-const { width, height } = Dimensions.get('window');
+import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function WelcomeScreen() {
   const router = useRouter();
 
-  const handleGetStarted = () => {
-    router.push('/(auth)/sign-up');
-  };
-
-  const handleSignIn = () => {
-    router.push('/(auth)/sign-in');
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={[Colors.primary, Colors.primaryDark]}
-        style={styles.gradient}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <ImageBackground
+        source={require('@/assets/images/NeonPalms.png')}
+        style={styles.background}
+        resizeMode="cover"
       >
-        {/* Logo Section */}
-        <View style={styles.logoSection}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="car-sport" size={60} color={Colors.white} />
-          </View>
-          <Text style={styles.logoText}>Drift</Text>
-          <Text style={styles.tagline}>Cayman Private Carpool Network</Text>
-        </View>
+        {/* Cayman Flag (faded) */}
+        {/* <Image
+          source={require('@/assets/cayman-flag-faded.png')}
+          style={styles.flag}
+        /> */}
 
-        {/* Illustration */}
-        <View style={styles.illustrationContainer}>
+        <View style={styles.overlay} />
+
+        {/* Header */}
+        <View style={styles.header}>
           <Image
-            source={require('@/assets/welcome-illustration.png')}
-            style={styles.illustration}
+            source={require('@/assets/drift-logo-purple.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+
+          {/* Cayman Map Image */}
+        <View style={styles.mapWrapper}>
+          <Image
+            source={require('@/assets/images/cayman-map.png')}
+            style={styles.mapImage}
             resizeMode="contain"
           />
         </View>
 
-        {/* Features */}
-        <View style={styles.featuresContainer}>
-          <View style={styles.feature}>
-            <Ionicons name="shield-checkmark" size={24} color={Colors.white} />
-            <Text style={styles.featureText}>Safe & Verified</Text>
-          </View>
-          <View style={styles.feature}>
-            <Ionicons name="cash" size={24} color={Colors.white} />
-            <Text style={styles.featureText}>Cost Sharing</Text>
-          </View>
-          <View style={styles.feature}>
-            <Ionicons name="people" size={24} color={Colors.white} />
-            <Text style={styles.featureText}>Local Community</Text>
-          </View>
-        </View>
-
-        {/* CTA Buttons */}
-        <View style={styles.ctaContainer}>
-          <DriftButton
-            title="Get Started"
-            onPress={handleGetStarted}
-            variant="secondary"
-            icon="arrow-forward"
-            style={styles.primaryButton}
-          />
-
-          <DriftButton
-            title="Sign In"
-            onPress={handleSignIn}
-            variant="outline"
-            style={styles.secondaryButton}
-          />
-
-          {/* Terms */}
-          <Text style={styles.termsText}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text>
-            {' '}and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
+          <Text style={styles.title}>Cayman's Carpool Movement</Text>
+          <Text style={styles.subtitle}>
+            Created locally by a Caymanian Engineer who wanted a better way to move and make our roads safer.
+            Real people. Real rides. Real change for Cayman!
           </Text>
         </View>
-      </LinearGradient>
+
+        
+        {/* Buttons */}
+        <View style={styles.buttons}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push('/(auth)/sign-up')}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.primaryButtonText}>Join Drift</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.push('/(auth)/sign-in')}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.secondaryButtonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Legal */}
+        <View style={styles.legal}>
+          <Text style={styles.legalText}>
+            Peer-to-peer carpooling. Not a taxi or rideshare service.
+          </Text>
+        </View>
+      </ImageBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: Colors.primary,
+    backgroundColor: '#000',
   },
-  
-  gradient: {
+
+  background: {
     flex: 1,
-    paddingHorizontal: Spacing.xl,
+    justifyContent: 'space-between',
   },
-  
-  logoSection: {
+
+  flag: {
+    position: 'absolute',
+    right: -60,
+    top: 30,
+    width: 260,
+    height: 260,
+    opacity: 0.15,
+  },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+
+  // Top content
+  header: {
+    marginTop: 50,
+    paddingHorizontal: 32,
     alignItems: 'center',
-    marginTop: height * 0.08,
   },
-  
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
+
+  logo: {
+    width: 600,
+    height: 210,
+    marginBottom: -70,
+    marginTop: -50,
   },
-  
-  logoText: {
-    fontSize: Typography.fontSize['4xl'],
-    fontFamily: Typography.fontFamily.bold,
-    color: Colors.white,
-    marginTop: Spacing.md,
-  },
-  
-  tagline: {
-    fontSize: Typography.fontSize.sm,
-    fontFamily: Typography.fontFamily.regular,
-    color: Colors.white,
-    opacity: 0.9,
-    marginTop: Spacing.xs,
+
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
     textAlign: 'center',
+    marginBottom: 10,
+    marginTop: -10,
   },
-  
-  illustrationContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: Spacing.xl,
-  },
-  
-  illustration: {
-    width: width * 0.8,
-    height: height * 0.3,
-  },
-  
-  featuresContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.md,
-  },
-  
-  feature: {
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  
-  featureText: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.medium,
-    color: Colors.white,
+
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.85)',
     textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 60,
   },
-  
-  ctaContainer: {
-    marginBottom: Spacing['2xl'],
-    gap: Spacing.md,
+
+  // Buttons
+  buttons: {
+    paddingHorizontal: 32,
+    marginBottom: -80,
+    gap: 12,
   },
-  
+
   primaryButton: {
-    backgroundColor: Colors.white,
-    borderColor: Colors.white,
+    backgroundColor: '#5d1289ff',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  
+
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
   secondaryButton: {
-    borderColor: Colors.white,
+    borderColor: '#fff',
     borderWidth: 2,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  
-  termsText: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.regular,
-    color: Colors.white,
-    opacity: 0.8,
+
+  secondaryButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  // Cayman Map
+  mapWrapper: {
+    alignItems: 'center',
+    marginTop: 0,
+    marginBottom: 20,
+  },
+
+  mapImage: {
+    width: 350,
+    height: 140,
+    opacity: 0.9,
+  },
+
+  // Legal
+  legal: {
+    paddingBottom: 24,
+    paddingHorizontal: 24,
+  },
+
+  legalText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
     textAlign: 'center',
-    marginTop: Spacing.sm,
-  },
-  
-  termsLink: {
-    fontFamily: Typography.fontFamily.semibold,
-    textDecorationLine: 'underline',
+    lineHeight: 18,
   },
 });

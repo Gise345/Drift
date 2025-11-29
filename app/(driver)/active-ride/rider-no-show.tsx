@@ -3,24 +3,64 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { cancelTripWithFee } from '@/src/services/ride-request.service';
 
 export default function RiderNoShow() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { activeRide, setActiveRide, driver } = useDriverStore();
   const [waitTime] = useState('5:12');
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleConfirmNoShow = () => {
-    router.replace('/(driver)/dashboard/home');
+  // Get driver ID from driver profile
+  const driverId = driver?.id;
+
+  // Calculate the cancellation fee (50% of trip fare)
+  const estimatedCost = activeRide?.estimatedEarnings || 0;
+  const cancellationFee = Math.round((estimatedCost * 0.5) * 100) / 100;
+
+  const handleConfirmNoShow = async () => {
+    if (!activeRide?.id || !driverId) {
+      Alert.alert('Error', 'Unable to process no-show. Please try again.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const { cancellationFee: fee } = await cancelTripWithFee(
+        activeRide.id,
+        'RIDER',
+        'Rider no-show at pickup location',
+        driverId
+      );
+
+      setActiveRide(null);
+
+      Alert.alert(
+        'No-Show Confirmed',
+        `You will receive CI$${fee.toFixed(2)} for waiting at the pickup location.`,
+        [{ text: 'OK', onPress: () => router.replace('/(driver)/dashboard/home') }]
+      );
+    } catch (error) {
+      console.error('Failed to process no-show:', error);
+      Alert.alert('Error', 'Failed to process no-show. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={[styles.content, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <View style={styles.icon}>
           <Ionicons name="time-outline" size={80} color={Colors.warning} />
         </View>
@@ -31,11 +71,11 @@ export default function RiderNoShow() {
         </Text>
 
         <View style={styles.infoCard}>
-          <Ionicons name="information-circle" size={24} color={Colors.primary} />
+          <Ionicons name="information-circle" size={24} color={Colors.success} />
           <View style={styles.infoText}>
-            <Text style={styles.infoTitle}>Cancellation Fee</Text>
+            <Text style={styles.infoTitle}>Cancellation Fee (50%)</Text>
             <Text style={styles.infoDescription}>
-              You'll receive a CI$5.00 cancellation fee for waiting at the pickup location.
+              You'll receive 50% of the trip fare for your time, effort, and gas spent waiting at the pickup location.
             </Text>
           </View>
         </View>
@@ -46,16 +86,28 @@ export default function RiderNoShow() {
             <Text style={styles.statValue}>{waitTime}</Text>
           </View>
           <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Cancellation Fee</Text>
-            <Text style={styles.statValue}>CI$5.00</Text>
+            <Text style={styles.statLabel}>Your Earnings</Text>
+            <Text style={[styles.statValue, styles.earningsValue]}>CI${cancellationFee.toFixed(2)}</Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmNoShow}>
-          <Text style={styles.confirmText}>Confirm No-Show</Text>
+        <TouchableOpacity
+          style={[styles.confirmButton, isProcessing && styles.confirmButtonDisabled]}
+          onPress={handleConfirmNoShow}
+          disabled={isProcessing}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.confirmText}>Confirm No-Show & Receive CI${cancellationFee.toFixed(2)}</Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          disabled={isProcessing}
+        >
           <Text style={styles.backText}>Wait Longer</Text>
         </TouchableOpacity>
       </View>
@@ -116,12 +168,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.black,
   },
+  earningsValue: {
+    color: Colors.success,
+    fontSize: Typography.fontSize.lg,
+  },
   confirmButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
     paddingVertical: Spacing.lg,
     alignItems: 'center',
     marginBottom: Spacing.md,
+  },
+  confirmButtonDisabled: {
+    backgroundColor: Colors.gray[400],
   },
   confirmText: {
     fontSize: Typography.fontSize.base,

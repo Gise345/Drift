@@ -1,13 +1,14 @@
 /**
  * Complete Ride Screen - Driver
- * Shows trip summary and waits for rider to add tip
+ * Immediately completes trip and waits for rider to add tip
  *
  * Flow:
  * 1. Driver clicks "Complete Trip" on navigate-to-destination
- * 2. Trip status changes to AWAITING_TIP
- * 3. Rider sees add-tip screen
- * 4. When rider tips or skips, trip status changes to COMPLETED
- * 5. Driver sees final earnings and can finish
+ * 2. Screen immediately triggers completion (no additional charges)
+ * 3. Trip status changes to AWAITING_TIP
+ * 4. Rider sees add-tip screen with safety check
+ * 5. When rider tips or skips, trip status changes to COMPLETED
+ * 6. Driver sees final earnings and can finish
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -18,12 +19,12 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { completeTrip, finalizeTrip } from '@/src/services/ride-request.service';
@@ -33,13 +34,12 @@ import { doc, onSnapshot } from '@react-native-firebase/firestore';
 export default function CompleteRide() {
   const router = useRouter();
   const { activeRide, completeRide: completeRideInStore, setActiveRide } = useDriverStore();
-  const [additionalCharges, setAdditionalCharges] = useState('');
-  const [notes, setNotes] = useState('');
   const [completing, setCompleting] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
   const [tipReceived, setTipReceived] = useState<number | null>(null);
   const [tripFinalized, setTripFinalized] = useState(false);
   const hasCompletedRef = useRef(false);
+  const hasAutoStartedRef = useRef(false);
 
   // Subscribe to trip updates to detect when rider adds tip
   useEffect(() => {
@@ -71,10 +71,17 @@ export default function CompleteRide() {
   }
 
   const baseFare = activeRide.estimatedEarnings || 0;
-  const additional = parseFloat(additionalCharges) || 0;
-  const totalEarnings = baseFare + additional + (tipReceived || 0);
+  const totalEarnings = baseFare + (tipReceived || 0);
   const actualDistance = activeRide.distance || 0;
   const actualDuration = activeRide.estimatedDuration || 0;
+
+  // Auto-complete trip when screen loads
+  useEffect(() => {
+    if (!activeRide || hasAutoStartedRef.current || hasCompletedRef.current) return;
+
+    hasAutoStartedRef.current = true;
+    handleComplete();
+  }, [activeRide]);
 
   const handleComplete = async () => {
     if (completing || hasCompletedRef.current) return;
@@ -83,14 +90,28 @@ export default function CompleteRide() {
       setCompleting(true);
       hasCompletedRef.current = true;
 
-      const finalCost = baseFare + additional;
+      // Get current driver location for safety check
+      let driverFinalLocation = null;
+      try {
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        driverFinalLocation = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+      } catch (locError) {
+        console.warn('Could not get final location:', locError);
+      }
 
       // Complete trip in Firebase - sets status to AWAITING_TIP
+      // Pass the driver's final location for safety check on rider side
       await completeTrip(
         activeRide.id,
-        finalCost,
+        baseFare,
         actualDistance,
-        actualDuration
+        actualDuration,
+        driverFinalLocation
       );
 
       // Show waiting for tip state
@@ -103,6 +124,7 @@ export default function CompleteRide() {
       Alert.alert('Error', 'Failed to complete ride. Please try again.');
       setCompleting(false);
       hasCompletedRef.current = false;
+      hasAutoStartedRef.current = false;
     }
   };
 
@@ -121,8 +143,8 @@ export default function CompleteRide() {
       // Clear active ride
       setActiveRide(null);
 
-      // Navigate to home
-      router.replace('/(driver)/tabs');
+      // Navigate to rate rider first, then home
+      router.replace('/(driver)/active-ride/rate-rider');
     } catch (error) {
       console.error('Failed to finish trip:', error);
       // Still navigate away
@@ -130,6 +152,23 @@ export default function CompleteRide() {
       router.replace('/(driver)/tabs');
     }
   };
+
+  // Completing screen (shown briefly while completing)
+  if (completing && !waitingForTip) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.waitingContainer}>
+          <View style={styles.waitingIconContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+          </View>
+          <Text style={styles.waitingTitle}>Completing Trip</Text>
+          <Text style={styles.waitingSubtitle}>
+            Please wait while we finalize the trip...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Waiting for tip screen
   if (waitingForTip && !tripFinalized) {
@@ -149,7 +188,7 @@ export default function CompleteRide() {
 
           <View style={styles.earningsPreview}>
             <Text style={styles.previewLabel}>Trip Earnings</Text>
-            <Text style={styles.previewAmount}>CI${(baseFare + additional).toFixed(2)}</Text>
+            <Text style={styles.previewAmount}>CI${baseFare.toFixed(2)}</Text>
           </View>
 
           <TouchableOpacity
@@ -182,7 +221,7 @@ export default function CompleteRide() {
             <View style={styles.earningsBreakdown}>
               <View style={styles.breakdownRow}>
                 <Text style={styles.breakdownLabel}>Trip Fare</Text>
-                <Text style={styles.breakdownValue}>CI${(baseFare + additional).toFixed(2)}</Text>
+                <Text style={styles.breakdownValue}>CI${baseFare.toFixed(2)}</Text>
               </View>
               {tipReceived !== null && tipReceived > 0 && (
                 <View style={styles.breakdownRow}>
@@ -210,117 +249,28 @@ export default function CompleteRide() {
             </View>
           </View>
 
-          {/* Rate Rider */}
-          <TouchableOpacity
-            style={styles.rateButton}
-            onPress={() => router.push('/(driver)/active-ride/rate-rider')}
-          >
+          {/* Finish and Rate Button */}
+          <TouchableOpacity style={styles.rateButton} onPress={handleFinish}>
             <Ionicons name="star" size={20} color={Colors.white} />
-            <Text style={styles.rateText}>Rate {activeRide.riderName || 'Rider'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.finishButton} onPress={handleFinish}>
-            <Text style={styles.finishButtonText}>Finish</Text>
+            <Text style={styles.rateText}>Rate {activeRide.riderName || 'Rider'} & Finish</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // Initial complete ride screen
+  // Fallback loading screen (should rarely be seen due to auto-complete)
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.black} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Complete Ride</Text>
-        <View style={{ width: 24 }} />
+      <View style={styles.waitingContainer}>
+        <View style={styles.waitingIconContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+        <Text style={styles.waitingTitle}>Completing Trip</Text>
+        <Text style={styles.waitingSubtitle}>
+          Please wait while we finalize the trip...
+        </Text>
       </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.successIcon}>
-          <Ionicons name="flag-outline" size={80} color={Colors.primary} />
-        </View>
-        <Text style={styles.title}>Arrived at Destination</Text>
-        <Text style={styles.subtitle}>Review the trip details before completing</Text>
-
-        {/* Trip Summary */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Trip Summary</Text>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Rider</Text>
-            <Text style={styles.summaryValue}>{activeRide.riderName || 'Rider'}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Base Fare</Text>
-            <Text style={styles.summaryValue}>CI${baseFare.toFixed(2)}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Distance</Text>
-            <Text style={styles.summaryValue}>
-              {(actualDistance / 1000).toFixed(1)} km
-            </Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Duration</Text>
-            <Text style={styles.summaryValue}>{Math.round(actualDuration)} min</Text>
-          </View>
-        </View>
-
-        {/* Additional Charges */}
-        <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>Additional Charges (Optional)</Text>
-          <View style={styles.inputContainer}>
-            <Text style={styles.currencyPrefix}>CI$</Text>
-            <TextInput
-              style={styles.input}
-              value={additionalCharges}
-              onChangeText={setAdditionalCharges}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              placeholderTextColor={Colors.gray[400]}
-            />
-          </View>
-          <Text style={styles.inputHint}>For tolls, extra stops, or waiting time</Text>
-        </View>
-
-        {/* Notes */}
-        <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>Trip Notes (Optional)</Text>
-          <TextInput
-            style={[styles.input, styles.notesInput]}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Any special notes about this trip..."
-            multiline
-            numberOfLines={3}
-            placeholderTextColor={Colors.gray[400]}
-          />
-        </View>
-
-        {/* Total */}
-        <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>Trip Earnings</Text>
-          <Text style={styles.totalValue}>CI${(baseFare + additional).toFixed(2)}</Text>
-          <Text style={styles.totalHint}>+ potential tip from rider</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.completeButton, completing && styles.completeButtonDisabled]}
-          onPress={handleComplete}
-          disabled={completing}
-        >
-          {completing ? (
-            <ActivityIndicator color={Colors.white} />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={22} color={Colors.white} />
-              <Text style={styles.completeText}>Complete Trip</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
     </SafeAreaView>
   );
 }
