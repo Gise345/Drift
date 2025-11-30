@@ -69,8 +69,8 @@ export const driverFAQs: FAQItem[] = [
   },
   {
     id: 'earn-3',
-    question: 'How is my fare calculated?',
-    answer: 'Each trip fare includes: (1) Base fare: CI$3.50, (2) Per-kilometer rate: CI$2.00/km, (3) Per-minute rate: CI$0.25/min, (4) Booking fee: CI$1.50. During high demand, surge pricing may apply (1.5x-2.5x). You\'ll see the estimated earnings before accepting a ride. The rider pays the fare, and Drift takes a 20% service fee. Tips go 100% to you.',
+    question: 'How is the cost-sharing contribution calculated?',
+    answer: 'The platform suggests cost-sharing contributions based on: (1) Distance traveled, (2) Estimated time, (3) Current fuel costs. A 19% platform service fee is deducted (4% for transaction processing + 15% for platform maintenance), so you receive 81% of each contribution. Tips go 100% to you.',
     category: 'Earnings',
     keywords: ['fare', 'calculate', 'pricing', 'rate', 'commission'],
   },
@@ -91,7 +91,7 @@ export const driverFAQs: FAQItem[] = [
   {
     id: 'earn-6',
     question: 'What expenses should I expect as a driver?',
-    answer: 'Common expenses include: (1) Fuel: ~CI$40-80/week for active drivers, (2) Vehicle maintenance: oil changes every 3 months, tire rotation, (3) Insurance: ensure your policy covers ride-sharing, (4) Vehicle cleaning: keep it clean for passengers, (5) Annual inspection: CI$30-50. Drift\'s 20% service fee covers platform costs, rider support, payment processing, and insurance coverage during trips.',
+    answer: 'Common expenses include: (1) Fuel: ~CI$40-80/week for active drivers, (2) Vehicle maintenance: oil changes every 3 months, tire rotation, (3) Insurance: ensure your policy covers ride-sharing, (4) Vehicle cleaning: keep it clean for passengers, (5) Annual inspection: CI$30-50. The 19% platform service fee (deducted from rider contributions) covers payment processing (4%), platform maintenance, APIs, servers, and customer support (15%).',
     category: 'Earnings',
     keywords: ['expenses', 'costs', 'fuel', 'maintenance', 'gas'],
   },

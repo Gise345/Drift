@@ -144,8 +144,9 @@ export default function BankDetails() {
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>How payments work:</Text>
             <Text style={styles.infoText}>
-              • Cost contributions from riders are transferred to your account weekly{'\n'}
-              • Platform subscription (CI$25/week) is deducted automatically{'\n'}
+              • You receive 81% of each rider's cost-sharing contribution{'\n'}
+              • 19% platform service fee covers transaction fees (4%) and platform maintenance (15%){'\n'}
+              • Payments are processed through PayPal{'\n'}
               • You'll receive detailed earning statements
             </Text>
           </View>

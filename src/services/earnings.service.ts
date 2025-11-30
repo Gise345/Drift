@@ -20,17 +20,22 @@ export const EarningsService = {
   async getTodayEarnings(driverId: string): Promise<EarningsData> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    
+
     try {
       const snapshot = await firestore()
         .collection('trips')
         .where('driverId', '==', driverId)
         .where('completedAt', '>=', startOfDay)
-        .where('status', '==', 'completed')
+        .where('status', '==', 'COMPLETED')
         .get();
-      
+
+      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
-        return total + (doc.data().driverEarnings || 0);
+        const data = doc.data();
+        // Use finalCost if available, otherwise estimatedCost, also add any tips
+        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tip = data.tip || 0;
+        return total + tripEarnings + tip;
       }, 0);
       
       // Calculate hours (placeholder - implement actual logic)
@@ -58,17 +63,21 @@ export const EarningsService = {
     const startOfWeek = new Date();
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
-    
+
     try {
       const snapshot = await firestore()
         .collection('trips')
         .where('driverId', '==', driverId)
         .where('completedAt', '>=', startOfWeek)
-        .where('status', '==', 'completed')
+        .where('status', '==', 'COMPLETED')
         .get();
-      
+
+      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
-        return total + (doc.data().driverEarnings || 0);
+        const data = doc.data();
+        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tip = data.tip || 0;
+        return total + tripEarnings + tip;
       }, 0);
       
       const hours = snapshot.size * 0.5;
@@ -95,17 +104,21 @@ export const EarningsService = {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
-    
+
     try {
       const snapshot = await firestore()
         .collection('trips')
         .where('driverId', '==', driverId)
         .where('completedAt', '>=', startOfMonth)
-        .where('status', '==', 'completed')
+        .where('status', '==', 'COMPLETED')
         .get();
-      
+
+      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
-        return total + (doc.data().driverEarnings || 0);
+        const data = doc.data();
+        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tip = data.tip || 0;
+        return total + tripEarnings + tip;
       }, 0);
       
       const hours = snapshot.size * 0.5;

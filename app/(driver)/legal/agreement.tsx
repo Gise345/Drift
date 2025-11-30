@@ -189,15 +189,15 @@ export default function DriverAgreementScreen() {
           <Text style={styles.bulletPoint}>• Drift is NOT a taxi, for-hire, or commercial transport service</Text>
 
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>2.3 Platform Access Fee</Text>
+            <Text style={styles.bold}>2.3 Platform Service Fee</Text>
           </Text>
           <Text style={styles.paragraph}>
-            Driver agrees to pay CI$25 per week for access to Platform technology and services. This fee is:
+            A 19% platform service fee is applied to all cost-sharing contributions processed through the Platform. This fee covers:
           </Text>
-          <Text style={styles.bulletPoint}>• A technology service fee, not a commission or percentage</Text>
-          <Text style={styles.bulletPoint}>• Charged weekly in advance</Text>
-          <Text style={styles.bulletPoint}>• Non-refundable for unused portions</Text>
-          <Text style={styles.bulletPoint}>• Subject to change with 30 days notice</Text>
+          <Text style={styles.bulletPoint}>• Payment processing costs (~4%): PayPal fees, transaction security, fraud prevention</Text>
+          <Text style={styles.bulletPoint}>• Platform maintenance (~15%): Software engineering, server hosting, Google Maps API, customer support, safety features</Text>
+          <Text style={styles.paragraph}>
+            Driver receives 81% of each cost-sharing contribution. This fee structure is transparent and deducted automatically from each transaction.
         </View>
 
         {/* 3. Driver Obligations */}
@@ -268,18 +268,19 @@ export default function DriverAgreementScreen() {
           <Text style={styles.bulletPoint}>• Voluntary payments between private individuals</Text>
           <Text style={styles.bulletPoint}>• NOT commercial fares or taxi rates</Text>
           <Text style={styles.bulletPoint}>• Based on suggested amounts (subject to mutual agreement)</Text>
-          <Text style={styles.bulletPoint}>• Retained entirely by Driver (no commission to Drift)</Text>
+          <Text style={styles.bulletPoint}>• Subject to 19% platform service fee (Driver receives 81%)</Text>
 
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>4.2 Payment Processing</Text>
+            <Text style={styles.bold}>4.2 Payment Processing & Fee Structure</Text>
           </Text>
           <Text style={styles.paragraph}>
-            If Driver chooses to accept payments through the Platform:
+            All cost-sharing contributions are processed through the Platform's secure payment system:
           </Text>
           <Text style={styles.bulletPoint}>• Payments are processed by PayPal (third-party)</Text>
-          <Text style={styles.bulletPoint}>• Funds are transferred directly to Driver's account</Text>
-          <Text style={styles.bulletPoint}>• PayPal fees may apply</Text>
-          <Text style={styles.bulletPoint}>• Driver is responsible for PayPal account compliance</Text>
+          <Text style={styles.bulletPoint}>• 19% platform service fee is deducted (4% transaction fees + 15% platform maintenance)</Text>
+          <Text style={styles.bulletPoint}>• Driver receives 81% of rider's contribution</Text>
+          <Text style={styles.bulletPoint}>• Funds are transferred to Driver's registered PayPal account</Text>
+          <Text style={styles.bulletPoint}>• All payments must be processed through the in-app system for safety</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>4.3 No Guaranteed Earnings</Text>
@@ -399,13 +400,11 @@ export default function DriverAgreementScreen() {
           <Text style={styles.bulletPoint}>• Poses a safety risk</Text>
           <Text style={styles.bulletPoint}>• Fails to maintain required insurance</Text>
           <Text style={styles.bulletPoint}>• License or registration expires/revoked</Text>
-          <Text style={styles.bulletPoint}>• Fails to pay Platform Access Fees</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>7.4 Effect of Termination</Text>
           </Text>
           <Text style={styles.bulletPoint}>• Platform access immediately revoked</Text>
-          <Text style={styles.bulletPoint}>• No refund of Platform Access Fees</Text>
           <Text style={styles.bulletPoint}>• Outstanding payments processed</Text>
           <Text style={styles.bulletPoint}>• Surviving provisions remain in effect</Text>
         </View>

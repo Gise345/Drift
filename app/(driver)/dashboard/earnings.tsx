@@ -99,16 +99,16 @@ export default function EarningsDashboard() {
         {/* Earnings Summary */}
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Total Earnings</Text>
+            <Text style={styles.summaryLabel}>Total Rider Contributions</Text>
             <Text style={styles.summaryValue}>CI${currentEarnings.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Platform Fee (18% for banking & maintenance)</Text>
-            <Text style={styles.summaryFee}>-CI${(currentEarnings * 0.18).toFixed(2)}</Text>
+            <Text style={styles.summaryLabel}>Platform Fee (19%: 4% transaction + 15% maintenance)</Text>
+            <Text style={styles.summaryFee}>-CI${(currentEarnings * 0.19).toFixed(2)}</Text>
           </View>
           <View style={[styles.summaryRow, styles.summaryTotal]}>
-            <Text style={styles.totalLabel}>Net Earnings</Text>
-            <Text style={styles.totalValue}>CI${(currentEarnings * 0.82).toFixed(2)}</Text>
+            <Text style={styles.totalLabel}>Your Earnings (81%)</Text>
+            <Text style={styles.totalValue}>CI${(currentEarnings * 0.81).toFixed(2)}</Text>
           </View>
         </View>
 

@@ -8,7 +8,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -17,6 +17,7 @@ import { cancelTrip } from '@/src/services/ride-request.service';
 
 export default function PickupPointScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { currentTrip, subscribeToTrip } = useTripStore();
   const [waitTime, setWaitTime] = useState(0); // Track wait time in seconds
   const hasNavigatedRef = useRef(false);
@@ -204,7 +205,7 @@ export default function PickupPointScreen() {
       </View>
 
       {/* Driver Info Card */}
-      <View style={styles.driverCard}>
+      <View style={[styles.driverCard, { paddingBottom: Math.max(insets.bottom, 24) + 16 }]}>
         <View style={styles.driverHeader}>
           {driver.photo ? (
             <Image

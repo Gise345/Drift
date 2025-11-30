@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,53 +7,223 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Dimensions,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import firestore from '@react-native-firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
+interface TripData {
+  id: string;
+  riderName: string;
+  riderPhoto?: string;
+  riderRating: number;
+  riderTrips: number;
+  pickup: {
+    address: string;
+    fullAddress: string;
+    coords: { latitude: number; longitude: number };
+  };
+  destination: {
+    address: string;
+    fullAddress: string;
+    coords: { latitude: number; longitude: number };
+  };
+  date: string;
+  time: string;
+  duration: number;
+  distance: number;
+  earnings: {
+    base: number;
+    tip: number;
+    total: number;
+  };
+  rating: number;
+  feedback?: string;
+  status: string;
+  paymentMethod: string;
+}
+
+// Helper functions
+const formatDate = (date: Date | undefined): string => {
+  if (!date) return 'N/A';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (date: Date | undefined): string => {
+  if (!date) return 'N/A';
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
 export default function TripDetailScreen() {
   const { tripId } = useLocalSearchParams();
+  const [trip, setTrip] = useState<TripData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock trip data
-  const trip = {
-    id: tripId,
-    riderName: 'Sarah Johnson',
-    riderPhoto: '👩‍💼',
-    riderRating: 4.9,
-    riderTrips: 127,
-    pickup: {
-      address: 'Grand Cayman Marriott Beach Resort',
-      fullAddress: '389 West Bay Road, Seven Mile Beach',
-      coords: { latitude: 19.3362, longitude: -81.4003 },
-    },
-    destination: {
-      address: 'Owen Roberts International Airport',
-      fullAddress: 'Roberts Drive, George Town',
-      coords: { latitude: 19.2928, longitude: -81.3578 },
-    },
-    date: 'Nov 4, 2024',
-    time: '2:30 PM',
-    duration: 25,
-    distance: 12.5,
-    earnings: {
-      base: 38.00,
-      tip: 7.00,
-      total: 45.00,
-    },
-    rating: 5,
-    feedback: 'Great driver! Very friendly and professional.',
-    status: 'completed',
-    paymentMethod: 'Credit Card',
+  useEffect(() => {
+    if (tripId) {
+      loadTripDetails(tripId as string);
+    } else {
+      setError('No trip ID provided');
+      setLoading(false);
+    }
+  }, [tripId]);
+
+  const loadTripDetails = async (id: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('📋 Loading driver trip details for:', id);
+
+      const tripDoc = await firestore().collection('trips').doc(id).get();
+
+      if (!tripDoc.exists) {
+        setError('Trip not found');
+        setLoading(false);
+        return;
+      }
+
+      const data = tripDoc.data();
+      if (!data) {
+        setError('Trip data is empty');
+        setLoading(false);
+        return;
+      }
+
+      console.log('📋 Trip data loaded:', data.status);
+
+      // Parse timestamps
+      const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+      const completedAt = data.completedAt?.toDate?.() || data.completedAt;
+
+      // Get rider info - check multiple possible fields
+      let riderName = 'Rider';
+      let riderRating = 5.0;
+      let riderPhoto: string | undefined;
+
+      if (data.riderInfo?.name) {
+        riderName = data.riderInfo.name;
+        riderRating = data.riderInfo.rating || 5.0;
+        riderPhoto = data.riderInfo.photoUrl || data.riderInfo.photo;
+      } else if (data.riderName) {
+        riderName = data.riderName;
+        riderRating = data.riderRating || data.riderProfileRating || 5.0;
+        riderPhoto = data.riderPhoto;
+      } else if (data.riderId) {
+        // Fetch from users collection
+        try {
+          const userDoc = await firestore().collection('users').doc(data.riderId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            riderName = userData?.name || userData?.firstName || 'Rider';
+            riderRating = userData?.rating || 5.0;
+            riderPhoto = userData?.profilePhotoUrl || userData?.photoUrl;
+          }
+        } catch (err) {
+          console.warn('Could not fetch rider info:', err);
+        }
+      }
+
+      // Calculate earnings
+      const baseFare = data.finalCost || data.estimatedCost || 0;
+      const tip = data.tip || 0;
+      const totalEarnings = baseFare + tip;
+
+      // Build trip object
+      const tripData: TripData = {
+        id: tripDoc.id,
+        riderName,
+        riderPhoto,
+        riderRating,
+        riderTrips: data.riderInfo?.totalTrips || 0,
+        pickup: {
+          address: data.pickup?.placeName || 'Pickup',
+          fullAddress: data.pickup?.address || 'Unknown location',
+          coords: {
+            latitude: data.pickup?.coordinates?.latitude || 19.2866,
+            longitude: data.pickup?.coordinates?.longitude || -81.3744,
+          },
+        },
+        destination: {
+          address: data.destination?.placeName || 'Destination',
+          fullAddress: data.destination?.address || 'Unknown location',
+          coords: {
+            latitude: data.destination?.coordinates?.latitude || 19.3133,
+            longitude: data.destination?.coordinates?.longitude || -81.2546,
+          },
+        },
+        date: formatDate(completedAt || requestedAt),
+        time: formatTime(completedAt || requestedAt),
+        duration: data.actualDuration || data.duration || 0,
+        distance: (data.actualDistance || data.distance || 0) / 1000, // Convert to km
+        earnings: {
+          base: baseFare,
+          tip: tip,
+          total: totalEarnings,
+        },
+        rating: data.driverRating || 0,
+        feedback: data.driverFeedback || data.feedback,
+        status: data.status || 'UNKNOWN',
+        paymentMethod: data.paymentMethod || 'Card',
+      };
+
+      setTrip(tripData);
+    } catch (err) {
+      console.error('❌ Error loading trip details:', err);
+      setError('Failed to load trip details');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trip Details</Text>
+          <View style={styles.moreButton} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading trip details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !trip) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trip Details</Text>
+          <View style={styles.moreButton} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
+          <Text style={styles.errorText}>{error || 'Trip not found'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+            <Text style={styles.retryText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const routeCoords = [
     trip.pickup.coords,
-    { latitude: 19.32, longitude: -81.39 },
-    { latitude: 19.30, longitude: -81.37 },
     trip.destination.coords,
   ];
 
@@ -95,7 +265,7 @@ export default function TripDetailScreen() {
               strokeColor={Colors.primary}
               strokeWidth={4}
             />
-            
+
             {/* Pickup marker */}
             <Marker coordinate={trip.pickup.coords}>
               <View style={styles.markerContainer}>
@@ -120,28 +290,35 @@ export default function TripDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Rider Information</Text>
           <View style={styles.riderCard}>
-            <Text style={styles.riderPhoto}>{trip.riderPhoto}</Text>
+            {trip.riderPhoto ? (
+              <Image source={{ uri: trip.riderPhoto }} style={styles.riderPhotoImage} />
+            ) : (
+              <View style={styles.riderPhotoPlaceholder}>
+                <Ionicons name="person" size={28} color={Colors.textSecondary} />
+              </View>
+            )}
             <View style={styles.riderInfo}>
               <Text style={styles.riderName}>{trip.riderName}</Text>
               <View style={styles.riderStats}>
                 <View style={styles.statBadge}>
                   <Ionicons name="star" size={14} color={Colors.warning} />
-                  <Text style={styles.statText}>{trip.riderRating}</Text>
+                  <Text style={styles.statText}>{trip.riderRating.toFixed(1)}</Text>
                 </View>
-                <Text style={styles.statDivider}>•</Text>
-                <Text style={styles.statText}>{trip.riderTrips} trips</Text>
+                {trip.riderTrips > 0 && (
+                  <>
+                    <Text style={styles.statDivider}>•</Text>
+                    <Text style={styles.statText}>{trip.riderTrips} trips</Text>
+                  </>
+                )}
               </View>
             </View>
-            <TouchableOpacity style={styles.contactButton}>
-              <Ionicons name="chatbubble-outline" size={20} color={Colors.primary} />
-            </TouchableOpacity>
           </View>
         </View>
 
         {/* Trip Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Trip Details</Text>
-          
+
           {/* Route */}
           <View style={styles.routeCard}>
             <View style={styles.routeItem}>
@@ -149,7 +326,7 @@ export default function TripDetailScreen() {
               <View style={styles.routeTextContainer}>
                 <Text style={styles.routeLabel}>Pickup</Text>
                 <Text style={styles.routeAddress}>{trip.pickup.address}</Text>
-                <Text style={styles.routeFullAddress}>{trip.pickup.fullAddress}</Text>
+                <Text style={styles.routeFullAddress} numberOfLines={2}>{trip.pickup.fullAddress}</Text>
               </View>
             </View>
             <View style={styles.routeLine} />
@@ -158,7 +335,7 @@ export default function TripDetailScreen() {
               <View style={styles.routeTextContainer}>
                 <Text style={styles.routeLabel}>Destination</Text>
                 <Text style={styles.routeAddress}>{trip.destination.address}</Text>
-                <Text style={styles.routeFullAddress}>{trip.destination.fullAddress}</Text>
+                <Text style={styles.routeFullAddress} numberOfLines={2}>{trip.destination.fullAddress}</Text>
               </View>
             </View>
           </View>
@@ -177,7 +354,7 @@ export default function TripDetailScreen() {
             </View>
             <View style={styles.statCard}>
               <Ionicons name="location-outline" size={20} color={Colors.primary} />
-              <Text style={styles.statValue}>{trip.distance} km</Text>
+              <Text style={styles.statValue}>{trip.distance.toFixed(1)} km</Text>
               <Text style={styles.statLabel}>Distance</Text>
             </View>
           </View>
@@ -220,7 +397,7 @@ export default function TripDetailScreen() {
         {/* Rating & Feedback */}
         {trip.rating > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Rating</Text>
+            <Text style={styles.sectionTitle}>Rider's Rating</Text>
             <View style={styles.ratingCard}>
               <View style={styles.starsContainer}>
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -296,6 +473,41 @@ const styles = StyleSheet.create({
   },
   moreButton: {
     padding: Spacing.xs,
+    width: 40,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    ...Typography.body,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: 8,
+  },
+  retryText: {
+    ...Typography.body,
+    color: Colors.white,
+    fontWeight: '600',
   },
   mapContainer: {
     height: 250,
@@ -333,8 +545,19 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     ...Colors.shadow,
   },
-  riderPhoto: {
-    fontSize: 48,
+  riderPhotoImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: Spacing.md,
+  },
+  riderPhotoPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: Spacing.md,
   },
   riderInfo: {

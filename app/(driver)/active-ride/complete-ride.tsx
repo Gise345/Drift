@@ -41,6 +41,13 @@ export default function CompleteRide() {
   const hasCompletedRef = useRef(false);
   const hasAutoStartedRef = useRef(false);
 
+  // Redirect to tabs if no active ride
+  useEffect(() => {
+    if (!activeRide) {
+      router.replace('/(driver)/tabs');
+    }
+  }, [activeRide, router]);
+
   // Subscribe to trip updates to detect when rider adds tip
   useEffect(() => {
     if (!activeRide?.id || !waitingForTip) return;
@@ -65,9 +72,15 @@ export default function CompleteRide() {
     return () => unsubscribe();
   }, [activeRide?.id, waitingForTip]);
 
+  // Show loading while redirecting (if no active ride)
   if (!activeRide) {
-    router.replace('/(driver)/tabs');
-    return null;
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.waitingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   const baseFare = activeRide.estimatedEarnings || 0;

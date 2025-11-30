@@ -103,7 +103,7 @@ export default function DriverTermsScreen() {
             <Text style={styles.bold}>"Cost-Sharing Contribution"</Text> means a voluntary payment from Riders to offset travel expenses.
           </Text>
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>"Platform Access Fee"</Text> means CI$25 per week paid by you for access to Platform technology.
+            <Text style={styles.bold}>"Platform Service Fee"</Text> means the 19% fee deducted from each cost-sharing contribution (4% for transaction processing + 15% for platform maintenance).
           </Text>
         </View>
 
@@ -209,43 +209,39 @@ export default function DriverTermsScreen() {
           <Text style={styles.bulletPoint}>• Ongoing monitoring for compliance</Text>
         </View>
 
-        {/* 4. Platform Access Fee */}
+        {/* 4. Platform Service Fee */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>4. Platform Access Fee</Text>
+          <Text style={styles.sectionTitle}>4. Platform Service Fee</Text>
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>4.1 Weekly Access Fee</Text>
+            <Text style={styles.bold}>4.1 Fee Structure</Text>
           </Text>
           <Text style={styles.paragraph}>
-            You agree to pay a Platform Access Fee of CI$25 per week for access to the Platform's technology and services.
+            A 19% platform service fee is applied to all cost-sharing contributions processed through the Platform. You receive 81% of each rider's contribution.
           </Text>
 
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>4.2 What the Fee Covers</Text>
+            <Text style={styles.bold}>4.2 Fee Breakdown</Text>
           </Text>
           <Text style={styles.paragraph}>
-            The Platform Access Fee covers:
+            The 19% platform service fee covers:
           </Text>
-          <Text style={styles.bulletPoint}>• Technology infrastructure and servers</Text>
-          <Text style={styles.bulletPoint}>• Matching algorithm and software</Text>
-          <Text style={styles.bulletPoint}>• Payment processing system access</Text>
-          <Text style={styles.bulletPoint}>• Customer support</Text>
-          <Text style={styles.bulletPoint}>• Platform maintenance and updates</Text>
-          <Text style={styles.bulletPoint}>• Safety features and tools</Text>
+          <Text style={styles.bulletPoint}>• Payment Processing (~4%): PayPal fees, transaction security, fraud prevention, PCI compliance</Text>
+          <Text style={styles.bulletPoint}>• Platform Maintenance (~15%): Software engineering, server hosting, Google Maps API, database maintenance, customer support, safety features</Text>
 
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>4.3 Payment Terms</Text>
+            <Text style={styles.bold}>4.3 Example Transaction</Text>
           </Text>
-          <Text style={styles.bulletPoint}>• Fee is charged weekly in advance</Text>
-          <Text style={styles.bulletPoint}>• Charged automatically from registered payment method</Text>
-          <Text style={styles.bulletPoint}>• Non-refundable for any unused portion</Text>
-          <Text style={styles.bulletPoint}>• Account suspended if payment fails</Text>
-          <Text style={styles.bulletPoint}>• Pro-rated for new accounts</Text>
+          <Text style={styles.paragraph}>
+            For a CI$20 cost-sharing contribution:
+          </Text>
+          <Text style={styles.bulletPoint}>• Driver receives: CI$16.20 (81%)</Text>
+          <Text style={styles.bulletPoint}>• Platform service fee: CI$3.80 (19%)</Text>
 
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>4.4 Not a Fare or Commission</Text>
+            <Text style={styles.bold}>4.4 Transparent Deduction</Text>
           </Text>
           <Text style={styles.paragraph}>
-            The Platform Access Fee is a technology service fee—NOT a percentage of fares, commission, or payment for transportation. All cost-sharing contributions from Riders are yours to keep.
+            The platform service fee is automatically deducted from each transaction. You will see your net earnings (81% of rider contribution) in your earnings dashboard.
           </Text>
         </View>
 
@@ -291,8 +287,8 @@ export default function DriverTermsScreen() {
             Cost-sharing contributions processed through the Platform:
           </Text>
           <Text style={styles.bulletPoint}>• Are processed by PayPal (third-party processor)</Text>
-          <Text style={styles.bulletPoint}>• Are transferred directly to your PayPal account</Text>
-          <Text style={styles.bulletPoint}>• May be subject to PayPal fees</Text>
+          <Text style={styles.bulletPoint}>• Have 19% platform service fee automatically deducted</Text>
+          <Text style={styles.bulletPoint}>• Net amount (81%) is transferred to your PayPal account</Text>
           <Text style={styles.bulletPoint}>• Typically arrive within 1-3 business days</Text>
 
           <Text style={styles.paragraph}>
@@ -519,7 +515,7 @@ export default function DriverTermsScreen() {
             <Text style={styles.bold}>10.1 Termination by You</Text>
           </Text>
           <Text style={styles.paragraph}>
-            You may terminate your driver account at any time. Termination is effective immediately. Platform Access Fees are non-refundable for any unused portion of the week.
+            You may terminate your driver account at any time. Termination is effective immediately.
           </Text>
 
           <Text style={styles.paragraph}>
@@ -533,14 +529,12 @@ export default function DriverTermsScreen() {
           <Text style={styles.bulletPoint}>• You receive multiple safety complaints</Text>
           <Text style={styles.bulletPoint}>• Your rating falls below acceptable standards</Text>
           <Text style={styles.bulletPoint}>• You engage in fraudulent or illegal activity</Text>
-          <Text style={styles.bulletPoint}>• You fail to pay Platform Access Fees</Text>
           <Text style={styles.bulletPoint}>• Required by law or regulatory authority</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>10.3 Effect of Termination</Text>
           </Text>
           <Text style={styles.bulletPoint}>• Immediate loss of Platform access</Text>
-          <Text style={styles.bulletPoint}>• No refund of Platform Access Fees</Text>
           <Text style={styles.bulletPoint}>• Outstanding cost-sharing contributions will be processed</Text>
           <Text style={styles.bulletPoint}>• Personal data handled per Privacy Policy</Text>
         </View>

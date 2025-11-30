@@ -323,29 +323,47 @@ export const useTripStore = create<TripStore>((set, get) => ({
   getTripHistory: async (userId) => {
     try {
       set({ loading: true });
-      
+
+      console.log('📋 Fetching trip history for user:', userId);
+
       const tripsRef = collection(firebaseDb, 'trips');
       const q = query(
         tripsRef,
         where('riderId', '==', userId),
         orderBy('createdAt', 'desc')
       );
-      
+
       const querySnapshot = await getDocs(q);
       const trips: Trip[] = [];
-      
-      querySnapshot.forEach((doc) => {
-        trips.push({ id: doc.id, ...doc.data() } as Trip);
+
+      querySnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        // Convert Firestore timestamps to Dates
+        const trip: Trip = {
+          id: docSnapshot.id,
+          ...data,
+          requestedAt: data.requestedAt?.toDate?.() || data.requestedAt,
+          acceptedAt: data.acceptedAt?.toDate?.() || data.acceptedAt,
+          startedAt: data.startedAt?.toDate?.() || data.startedAt,
+          completedAt: data.completedAt?.toDate?.() || data.completedAt,
+          createdAt: data.createdAt?.toDate?.() || data.createdAt,
+          updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
+        } as Trip;
+        trips.push(trip);
       });
-      
+
+      console.log('📋 Found', trips.length, 'total trips');
+
       // Separate past and upcoming trips
-      const pastTrips = trips.filter(trip => 
+      const pastTrips = trips.filter(trip =>
         trip.status === 'COMPLETED' || trip.status === 'CANCELLED'
       );
-      const upcomingTrips = trips.filter(trip => 
-        trip.status === 'REQUESTED' || trip.status === 'ACCEPTED' || trip.status === 'DRIVER_ARRIVING'
+      const upcomingTrips = trips.filter(trip =>
+        trip.status === 'REQUESTED' || trip.status === 'ACCEPTED' || trip.status === 'DRIVER_ARRIVING' || trip.status === 'DRIVER_ARRIVED' || trip.status === 'IN_PROGRESS'
       );
-      
+
+      console.log('📋 Past trips:', pastTrips.length, 'Upcoming trips:', upcomingTrips.length);
+
       set({ pastTrips, upcomingTrips, loading: false });
     } catch (error) {
       console.error('Failed to get trip history:', error);

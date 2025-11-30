@@ -19,6 +19,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
@@ -42,6 +43,7 @@ export default function RideRequestModal({
   onDecline,
   autoExpireSeconds = 30,
 }: RideRequestModalProps) {
+  const insets = useSafeAreaInsets();
   const [timeLeft, setTimeLeft] = useState(autoExpireSeconds);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -278,7 +280,7 @@ export default function RideRequestModal({
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.actions}>
+          <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, Spacing.xl) + Spacing.md }]}>
             <TouchableOpacity
               style={[styles.declineButton, isProcessing && styles.buttonDisabled]}
               onPress={handleDecline}
@@ -499,7 +501,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: Colors.gray[200],
-    paddingBottom: Platform.OS === 'ios' ? Spacing['2xl'] : Spacing.xl,
+    // paddingBottom set dynamically with safe area insets
   },
 
   declineButton: {

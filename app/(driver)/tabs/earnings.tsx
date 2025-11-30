@@ -113,18 +113,21 @@ export default function DriverEarningsScreen() {
       const tripsSnapshot = await firestore()
         .collection('trips')
         .where('driverId', '==', driver.id)
-        .where('status', '==', 'completed')
+        .where('status', '==', 'COMPLETED')
         .orderBy('completedAt', 'desc')
         .limit(3)
         .get();
 
       const trips = tripsSnapshot.docs.map((doc: any) => {
         const data = doc.data();
+        // Use finalCost or estimatedCost, plus any tip
+        const tripFare = data.finalCost || data.estimatedCost || 0;
+        const tip = data.tip || 0;
         return {
           id: doc.id,
           pickup: data.pickup?.address || 'Unknown',
           destination: data.destination?.address || 'Unknown',
-          fare: data.fare || 0,
+          fare: tripFare + tip,
           completedAt: data.completedAt?.toDate() || new Date(),
         };
       });

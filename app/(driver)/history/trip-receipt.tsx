@@ -1,36 +1,184 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Share } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
+  Share,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
+import firestore from '@react-native-firebase/firestore';
+
+interface TripReceipt {
+  id: string;
+  date: string;
+  time: string;
+  riderName: string;
+  pickup: string;
+  destination: string;
+  distance: number;
+  duration: number;
+  baseFare: number;
+  tip: number;
+  total: number;
+  paymentMethod: string;
+}
+
+// Helper functions
+const formatDate = (date: Date | undefined): string => {
+  if (!date) return 'N/A';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (date: Date | undefined): string => {
+  if (!date) return 'N/A';
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+};
 
 export default function TripReceiptScreen() {
   const { tripId } = useLocalSearchParams();
+  const [trip, setTrip] = useState<TripReceipt | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const trip = {
-    id: tripId,
-    date: 'Nov 4, 2024',
-    time: '2:30 PM',
-    riderName: 'Sarah Johnson',
-    pickup: 'Grand Cayman Marriott Beach Resort',
-    destination: 'Owen Roberts International Airport',
-    distance: 12.5,
-    duration: 25,
-    baseFare: 38.00,
-    tip: 7.00,
-    total: 45.00,
-    paymentMethod: 'Credit Card',
+  useEffect(() => {
+    if (tripId) {
+      loadTripReceipt(tripId as string);
+    } else {
+      setError('No trip ID provided');
+      setLoading(false);
+    }
+  }, [tripId]);
+
+  const loadTripReceipt = async (id: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('📋 Loading trip receipt for:', id);
+
+      const tripDoc = await firestore().collection('trips').doc(id).get();
+
+      if (!tripDoc.exists) {
+        setError('Trip not found');
+        setLoading(false);
+        return;
+      }
+
+      const data = tripDoc.data();
+      if (!data) {
+        setError('Trip data is empty');
+        setLoading(false);
+        return;
+      }
+
+      // Parse timestamps
+      const completedAt = data.completedAt?.toDate?.() || data.completedAt;
+      const requestedAt = data.requestedAt?.toDate?.() || data.requestedAt;
+
+      // Get rider name
+      let riderName = 'Rider';
+      if (data.riderInfo?.name) {
+        riderName = data.riderInfo.name;
+      } else if (data.riderName) {
+        riderName = data.riderName;
+      } else if (data.riderId) {
+        try {
+          const userDoc = await firestore().collection('users').doc(data.riderId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            riderName = userData?.name || userData?.firstName || 'Rider';
+          }
+        } catch (err) {
+          console.warn('Could not fetch rider name:', err);
+        }
+      }
+
+      // Calculate earnings
+      const baseFare = data.finalCost || data.estimatedCost || 0;
+      const tip = data.tip || 0;
+      const total = baseFare + tip;
+
+      const tripReceipt: TripReceipt = {
+        id: tripDoc.id,
+        date: formatDate(completedAt || requestedAt),
+        time: formatTime(completedAt || requestedAt),
+        riderName,
+        pickup: data.pickup?.address || 'Unknown pickup',
+        destination: data.destination?.address || 'Unknown destination',
+        distance: (data.actualDistance || data.distance || 0) / 1000, // Convert to km
+        duration: data.actualDuration || data.duration || 0,
+        baseFare,
+        tip,
+        total,
+        paymentMethod: data.paymentMethod || 'Card',
+      };
+
+      setTrip(tripReceipt);
+    } catch (err) {
+      console.error('❌ Error loading trip receipt:', err);
+      setError('Failed to load trip receipt');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleShare = async () => {
+    if (!trip) return;
+
     try {
       await Share.share({
-        message: `Drift Trip Receipt\n\nTrip #${trip.id}\nDate: ${trip.date}\nRider: ${trip.riderName}\n\nFrom: ${trip.pickup}\nTo: ${trip.destination}\n\nTotal Earned: CI$${trip.total.toFixed(2)}\n\nThank you for using Drift!`,
+        message: `Drift Trip Receipt\n\nTrip #${trip.id.substring(0, 8).toUpperCase()}\nDate: ${trip.date}\nRider: ${trip.riderName}\n\nFrom: ${trip.pickup}\nTo: ${trip.destination}\n\nTotal Earned: CI$${trip.total.toFixed(2)}\n\nThank you for driving with Drift!`,
       });
     } catch (error) {
       console.error(error);
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="close" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trip Receipt</Text>
+          <View style={styles.shareButton} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading receipt...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !trip) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="close" size={24} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Trip Receipt</Text>
+          <View style={styles.shareButton} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
+          <Text style={styles.errorText}>{error || 'Receipt not found'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+            <Text style={styles.retryText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -47,13 +195,16 @@ export default function TripReceiptScreen() {
 
         <View style={styles.receipt}>
           <View style={styles.logo}>
-            <Text style={styles.logoText}>🚗</Text>
-            <Text style={styles.brandName}>Drift</Text>
+            <Image
+              source={require('@/assets/images/drift-logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
-          
+
           <Text style={styles.receiptTitle}>Trip Receipt</Text>
-          <Text style={styles.tripId}>Trip #{trip.id}</Text>
-          
+          <Text style={styles.tripId}>Trip #{trip.id.substring(0, 8).toUpperCase()}</Text>
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trip Information</Text>
             <View style={styles.row}>
@@ -75,17 +226,17 @@ export default function TripReceiptScreen() {
             <View style={styles.routeContainer}>
               <View style={styles.routePoint}>
                 <View style={[styles.routeDot, { backgroundColor: Colors.primary }]} />
-                <Text style={styles.routeText}>{trip.pickup}</Text>
+                <Text style={styles.routeText} numberOfLines={2}>{trip.pickup}</Text>
               </View>
               <View style={styles.routeLine} />
               <View style={styles.routePoint}>
                 <View style={[styles.routeDot, { backgroundColor: Colors.success }]} />
-                <Text style={styles.routeText}>{trip.destination}</Text>
+                <Text style={styles.routeText} numberOfLines={2}>{trip.destination}</Text>
               </View>
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>Distance</Text>
-              <Text style={styles.value}>{trip.distance} km</Text>
+              <Text style={styles.value}>{trip.distance.toFixed(1)} km</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>Duration</Text>
@@ -117,7 +268,7 @@ export default function TripReceiptScreen() {
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Thank you for using Drift!</Text>
+            <Text style={styles.footerText}>Thank you for driving with Drift!</Text>
             <Text style={styles.footerSubtext}>Questions? Contact support@drift.ky</Text>
           </View>
         </View>
@@ -142,7 +293,41 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: Spacing.xs },
   headerTitle: { ...Typography.h2, color: Colors.text },
-  shareButton: { padding: Spacing.xs },
+  shareButton: { padding: Spacing.xs, width: 40 },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  errorText: {
+    marginTop: Spacing.md,
+    ...Typography.body,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: 8,
+  },
+  retryText: {
+    ...Typography.body,
+    color: Colors.white,
+    fontWeight: '600',
+  },
   receipt: {
     backgroundColor: Colors.white,
     borderRadius: 16,
@@ -150,8 +335,10 @@ const styles = StyleSheet.create({
     ...Colors.shadow,
   },
   logo: { alignItems: 'center', marginBottom: Spacing.md },
-  logoText: { fontSize: 48, marginBottom: Spacing.xs },
-  brandName: { ...Typography.h2, color: Colors.primary, fontWeight: '700' },
+  logoImage: {
+    width: 120,
+    height: 60,
+  },
   receiptTitle: {
     ...Typography.h2,
     color: Colors.text,
@@ -176,10 +363,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   label: { ...Typography.body, color: Colors.textSecondary },
-  value: { ...Typography.body, color: Colors.text, fontWeight: '600' },
+  value: { ...Typography.body, color: Colors.text, fontWeight: '600', flex: 1, textAlign: 'right' },
   routeContainer: { marginBottom: Spacing.sm },
-  routePoint: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.xs },
-  routeDot: { width: 12, height: 12, borderRadius: 6, marginRight: Spacing.sm },
+  routePoint: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: Spacing.xs },
+  routeDot: { width: 12, height: 12, borderRadius: 6, marginRight: Spacing.sm, marginTop: 4 },
   routeText: { ...Typography.body, color: Colors.text, flex: 1 },
   routeLine: { width: 2, height: 20, backgroundColor: Colors.border, marginLeft: 5, marginBottom: Spacing.xs },
   divider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.sm },

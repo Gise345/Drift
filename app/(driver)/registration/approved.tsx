@@ -100,13 +100,13 @@ export default function Approved() {
           </View>
         </View>
 
-        {/* Subscription Info */}
+        {/* Fee Structure Info */}
         <View style={styles.subscriptionCard}>
           <Ionicons name="card-outline" size={24} color={Colors.primary} />
           <View style={styles.subscriptionContent}>
-            <Text style={styles.subscriptionTitle}>Weekly Subscription</Text>
+            <Text style={styles.subscriptionTitle}>How You Earn</Text>
             <Text style={styles.subscriptionText}>
-              CI$25/week will be automatically deducted from your earnings
+              You receive 81% of each rider's contribution. The 19% platform fee covers transaction processing (4%) and platform maintenance (15%).
             </Text>
           </View>
         </View>

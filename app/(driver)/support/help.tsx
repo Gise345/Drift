@@ -119,8 +119,8 @@ export default function HelpCenterScreen() {
     },
     {
       id: 'earn-3',
-      question: 'How is my fare calculated?',
-      answer: 'Each trip fare includes: (1) Base fare: CI$3.50, (2) Per-kilometer rate: CI$2.00/km, (3) Per-minute rate: CI$0.25/min, (4) Booking fee: CI$1.50. During high demand, surge pricing may apply (1.5x-2.5x). You\'ll see the estimated earnings before accepting a ride.',
+      question: 'How is the cost-sharing contribution calculated?',
+      answer: 'The platform suggests cost-sharing contributions based on: (1) Distance traveled, (2) Estimated time, (3) Current fuel costs. A 19% platform service fee is deducted (4% for transaction processing + 15% for platform maintenance), so you receive 81% of each contribution.',
       category: 'Earnings',
     },
     {

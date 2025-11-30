@@ -120,9 +120,7 @@ export default function DriverPrivacyScreen() {
 
           <Text style={styles.subSectionTitle}>2.6 Payment and Financial Information</Text>
           <Text style={styles.bulletPoint}>• PayPal account information</Text>
-          <Text style={styles.bulletPoint}>• Payment card details (for Platform Access Fee)</Text>
-          <Text style={styles.bulletPoint}>• Last 4 digits of card</Text>
-          <Text style={styles.bulletPoint}>• Transaction history (fees paid, contributions received)</Text>
+          <Text style={styles.bulletPoint}>• Transaction history (contributions received, platform fees deducted)</Text>
           <Text style={styles.bulletPoint}>• Payout preferences</Text>
 
           <Text style={styles.subSectionTitle}>2.7 Location and Trip Data</Text>
@@ -173,11 +171,11 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>• Processing carpool requests</Text>
           <Text style={styles.bulletPoint}>• Providing navigation and routing</Text>
           <Text style={styles.bulletPoint}>• Facilitating communication with riders</Text>
-          <Text style={styles.bulletPoint}>• Processing Platform Access Fee payments</Text>
+          <Text style={styles.bulletPoint}>• Processing cost-sharing contributions and platform fees</Text>
 
           <Text style={styles.subSectionTitle}>3.3 Payment Processing</Text>
-          <Text style={styles.bulletPoint}>• Processing cost-sharing contributions to you</Text>
-          <Text style={styles.bulletPoint}>• Charging weekly Platform Access Fees</Text>
+          <Text style={styles.bulletPoint}>• Processing cost-sharing contributions (81% to driver, 19% platform fee)</Text>
+          <Text style={styles.bulletPoint}>• Deducting platform service fees (4% transaction + 15% maintenance)</Text>
           <Text style={styles.bulletPoint}>• Maintaining transaction records</Text>
           <Text style={styles.bulletPoint}>• Detecting and preventing fraud</Text>
 

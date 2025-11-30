@@ -157,9 +157,9 @@ not commercial transport.
   Subscription**    access premium features and unlimited   
                     connections.                            
 
-  **Transaction Fee Small processing fee for in-app         10--15% per
-  (Optional)**      cost-sharing payments (when             transaction
-                    applicable).                            
+  **Platform        19% platform service fee applied to     4% transaction
+  Service Fee**     all cost-sharing contributions          + 15% platform
+                    (mandatory for safety & transparency)   maintenance                            
 
   **Advertising**   In-app ads for local restaurants,       Variable
                     events, and services.                   

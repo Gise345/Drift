@@ -124,13 +124,9 @@ export default function AddTipScreen() {
     return () => unsubscribe();
   }, [currentTrip?.id]);
 
-  // If trip becomes fully completed (driver finalized), navigate away
-  useEffect(() => {
-    if (currentTrip?.status === 'COMPLETED') {
-      console.log('Trip fully completed, navigating to trip-complete');
-      router.replace('/(rider)/trip-complete');
-    }
-  }, [currentTrip?.status]);
+  // Note: We no longer auto-redirect when status is COMPLETED
+  // This allows the rider to still add a tip even if the driver clicked "Finish Without Waiting"
+  // The rider will navigate away after they add a tip or click skip
 
   // If no trip, go home
   if (!currentTrip) {

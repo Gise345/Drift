@@ -8,7 +8,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,15 +35,16 @@ const GOOGLE_DIRECTIONS_API_KEY =
 
 const SelectDestinationScreen = () => {
   const params = useLocalSearchParams();
-  const { 
-    pickupLocation, 
-    destination, 
+  const insets = useSafeAreaInsets();
+  const {
+    pickupLocation,
+    destination,
     stops,
-    setPickupLocation, 
+    setPickupLocation,
     setDestination,
     setStops,
     route: cachedRoute,
-    setRoute 
+    setRoute
   } = useCarpoolStore();
 
   const [loading, setLoading] = useState(false);
@@ -603,7 +604,7 @@ const SelectDestinationScreen = () => {
 
       {/* Route Info Card */}
       {!loading && routeCoordinates.length > 0 && (
-        <View style={styles.infoCard}>
+        <View style={[styles.infoCard, { bottom: insets.bottom + 16 }]}>
           {/* Stops List */}
           {stops && stops.length > 0 && (
             <View style={styles.stopsContainer}>
@@ -755,19 +756,17 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 0, // Will be overridden by inline style with safe area insets
     left: 16,
     right: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
-    marginBottom: Platform.OS === 'ios' ? 0 : 16,
   },
   stopsContainer: {
     marginBottom: 12,

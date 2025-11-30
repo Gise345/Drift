@@ -144,9 +144,11 @@ export async function loadDriverProfile(userId: string): Promise<{
 
 /**
  * Load driver earnings from Firebase
+ * First tries to load from summary doc, then calculates from trips if not available
  */
 export async function loadDriverEarnings(userId: string) {
   try {
+    // First, try to get the summary document
     const earningsDoc = await db
       .collection('drivers')
       .doc(userId)
@@ -154,19 +156,75 @@ export async function loadDriverEarnings(userId: string) {
       .doc('summary')
       .get();
 
-    if (!earningsDoc.exists) {
-      return {
-        today: 0,
-        yesterday: 0,
-        thisWeek: 0,
-        lastWeek: 0,
-        thisMonth: 0,
-        lastMonth: 0,
-        allTime: 0,
-      };
+    if (earningsDoc.exists) {
+      const data = earningsDoc.data();
+      console.log('📊 Loaded earnings from summary:', data);
+      return data;
     }
 
-    return earningsDoc.data();
+    // If no summary exists, calculate from completed trips
+    console.log('📊 No earnings summary, calculating from trips...');
+
+    // Get date boundaries
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Query all completed trips for this driver
+    const tripsSnapshot = await db
+      .collection('trips')
+      .where('driverId', '==', userId)
+      .where('status', '==', 'COMPLETED')
+      .get();
+
+    let today = 0;
+    let yesterday = 0;
+    let thisWeek = 0;
+    let thisMonth = 0;
+    let allTime = 0;
+
+    tripsSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      const completedAt = data.completedAt?.toDate?.() || data.completedAt;
+      const tripEarnings = (data.finalCost || data.estimatedCost || 0) + (data.tip || 0);
+
+      if (!completedAt) return;
+
+      const completedDate = new Date(completedAt);
+      allTime += tripEarnings;
+
+      if (completedDate >= startOfToday) {
+        today += tripEarnings;
+      } else if (completedDate >= startOfYesterday && completedDate < startOfToday) {
+        yesterday += tripEarnings;
+      }
+
+      if (completedDate >= startOfWeek) {
+        thisWeek += tripEarnings;
+      }
+
+      if (completedDate >= startOfMonth) {
+        thisMonth += tripEarnings;
+      }
+    });
+
+    const earnings = {
+      today,
+      yesterday,
+      thisWeek,
+      lastWeek: 0, // Would need additional query for last week
+      thisMonth,
+      lastMonth: 0, // Would need additional query for last month
+      allTime,
+    };
+
+    console.log('📊 Calculated earnings from trips:', earnings);
+    return earnings;
   } catch (error) {
     console.error('❌ Error loading driver earnings:', error);
     return {
@@ -183,9 +241,11 @@ export async function loadDriverEarnings(userId: string) {
 
 /**
  * Load driver stats from Firebase
+ * First tries to load from summary doc, then calculates from driver doc and trips
  */
 export async function loadDriverStats(userId: string) {
   try {
+    // First, try to get the summary document
     const statsDoc = await db
       .collection('drivers')
       .doc(userId)
@@ -193,19 +253,55 @@ export async function loadDriverStats(userId: string) {
       .doc('summary')
       .get();
 
-    if (!statsDoc.exists) {
-      return {
-        totalTrips: 0,
-        acceptanceRate: 0,
-        cancellationRate: 0,
-        rating: 5.0,
-        totalRatings: 0,
-        onlineHours: 0,
-        totalDistance: 0,
-      };
+    if (statsDoc.exists) {
+      const data = statsDoc.data();
+      console.log('📈 Loaded stats from summary:', data);
+      return data;
     }
 
-    return statsDoc.data();
+    // If no summary exists, calculate from driver doc and trips
+    console.log('📈 No stats summary, calculating from driver doc and trips...');
+
+    // Get driver document for rating and totalTrips
+    const driverDoc = await db.collection('drivers').doc(userId).get();
+    const driverData = driverDoc.data();
+
+    // Count completed and cancelled trips
+    const completedTripsSnapshot = await db
+      .collection('trips')
+      .where('driverId', '==', userId)
+      .where('status', '==', 'COMPLETED')
+      .get();
+
+    const cancelledTripsSnapshot = await db
+      .collection('trips')
+      .where('driverId', '==', userId)
+      .where('status', '==', 'CANCELLED')
+      .get();
+
+    const totalTrips = completedTripsSnapshot.size;
+    const cancelledTrips = cancelledTripsSnapshot.size;
+    const allTrips = totalTrips + cancelledTrips;
+
+    // Calculate total distance from completed trips
+    let totalDistance = 0;
+    completedTripsSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      totalDistance += data.distance || data.actualDistance || 0;
+    });
+
+    const stats = {
+      totalTrips,
+      acceptanceRate: allTrips > 0 ? Math.round((totalTrips / allTrips) * 100) : 100,
+      cancellationRate: allTrips > 0 ? Math.round((cancelledTrips / allTrips) * 100) : 0,
+      rating: driverData?.rating || 5.0,
+      totalRatings: driverData?.totalRatings || 0,
+      onlineHours: driverData?.onlineHours || 0,
+      totalDistance: totalDistance / 1000, // Convert to km
+    };
+
+    console.log('📈 Calculated stats from trips:', stats);
+    return stats;
   } catch (error) {
     console.error('❌ Error loading driver stats:', error);
     return {
@@ -222,30 +318,91 @@ export async function loadDriverStats(userId: string) {
 
 /**
  * Load driver's trip history from Firebase
+ * Also fetches rider names from users collection if not stored in trip
  */
-export async function loadDriverTripHistory(userId: string, limit: number = 50) {
+export async function loadDriverTripHistory(userId: string, limitCount: number = 50) {
   try {
     const tripsSnapshot = await db
       .collection('trips')
       .where('driverId', '==', userId)
       .where('status', 'in', ['COMPLETED', 'CANCELLED'])
       .orderBy('completedAt', 'desc')
-      .limit(limit)
+      .limit(limitCount)
       .get();
 
-    const trips = tripsSnapshot.docs.map((doc) => {
+    // Collect unique rider IDs that need name lookup
+    const riderIdsToFetch = new Set<string>();
+    const tripsData: any[] = [];
+
+    tripsSnapshot.docs.forEach((doc) => {
       const data = doc.data();
+      tripsData.push({ id: doc.id, ...data });
+
+      // Check if we need to fetch rider info
+      if (data.riderId && !data.riderName && !data.riderInfo?.name) {
+        riderIdsToFetch.add(data.riderId);
+      }
+    });
+
+    // Fetch rider names in batch
+    const riderNames: Map<string, { name: string; rating: number; photo?: string }> = new Map();
+    if (riderIdsToFetch.size > 0) {
+      console.log('📋 Fetching rider names for', riderIdsToFetch.size, 'riders');
+
+      // Fetch in batches of 10 (Firestore in-query limit)
+      const riderIds = Array.from(riderIdsToFetch);
+      for (let i = 0; i < riderIds.length; i += 10) {
+        const batch = riderIds.slice(i, i + 10);
+        const usersSnapshot = await db
+          .collection('users')
+          .where('__name__', 'in', batch)
+          .get();
+
+        usersSnapshot.docs.forEach((userDoc) => {
+          const userData = userDoc.data();
+          riderNames.set(userDoc.id, {
+            name: userData.name || userData.firstName || 'Rider',
+            rating: userData.rating || 5.0,
+            photo: userData.profilePhotoUrl || userData.photoUrl,
+          });
+        });
+      }
+    }
+
+    // Map trips with rider info
+    const trips = tripsData.map((data) => {
+      // Get rider info from trip data or from fetched users
+      let riderInfo = data.riderInfo;
+      if (!riderInfo?.name && data.riderId && riderNames.has(data.riderId)) {
+        const fetchedRider = riderNames.get(data.riderId)!;
+        riderInfo = {
+          name: fetchedRider.name,
+          rating: fetchedRider.rating,
+          photoUrl: fetchedRider.photo,
+        };
+      }
+
+      // Also check for riderName field directly
+      if (!riderInfo?.name && data.riderName) {
+        riderInfo = {
+          ...riderInfo,
+          name: data.riderName,
+        };
+      }
+
       return {
-        id: doc.id,
+        id: data.id,
         ...data,
-        requestedAt: data.requestedAt?.toDate(),
-        acceptedAt: data.acceptedAt?.toDate(),
-        startedAt: data.startedAt?.toDate(),
-        completedAt: data.completedAt?.toDate(),
-        cancelledAt: data.cancelledAt?.toDate(),
+        riderInfo: riderInfo || { name: 'Rider', rating: 5.0 },
+        requestedAt: data.requestedAt?.toDate?.() || data.requestedAt,
+        acceptedAt: data.acceptedAt?.toDate?.() || data.acceptedAt,
+        startedAt: data.startedAt?.toDate?.() || data.startedAt,
+        completedAt: data.completedAt?.toDate?.() || data.completedAt,
+        cancelledAt: data.cancelledAt?.toDate?.() || data.cancelledAt,
       };
     });
 
+    console.log('📋 Loaded', trips.length, 'trips with rider info');
     return trips;
   } catch (error) {
     console.error('❌ Error loading trip history:', error);

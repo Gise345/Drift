@@ -151,11 +151,12 @@ export default function TripInProgressScreen() {
       return;
     }
 
-    // When trip is fully completed (after tip or skip), navigate to trip-complete
+    // When trip is fully completed - still let rider add tip/rating
+    // Driver may have clicked "Finish Without Waiting", but rider should still be able to tip
     if (currentTrip.status === 'COMPLETED') {
-      console.log('Trip fully completed! Navigating to trip-complete...');
+      console.log('Trip completed! Navigating to add-tip so rider can still tip/rate...');
       hasNavigatedRef.current = true;
-      router.replace('/(rider)/trip-complete');
+      router.replace('/(rider)/add-tip');
       return;
     }
 

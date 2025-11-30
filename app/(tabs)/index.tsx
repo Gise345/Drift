@@ -172,7 +172,7 @@ const HomeScreen = () => {
 
   /**
    * Check if rider has an active trip and restore it
-   * Only restore trips that are genuinely active (IN_PROGRESS) or recently requested (within 30 min)
+   * Only restore trips that are IN_PROGRESS (paid and actively happening)
    */
   const checkForActiveTrip = async () => {
     try {
@@ -188,24 +188,16 @@ const HomeScreen = () => {
       if (activeTrip) {
         console.log('🔍 Found trip:', activeTrip.id, 'Status:', activeTrip.status);
 
-        // Only restore trips that are genuinely active:
-        // 1. IN_PROGRESS trips should always be restored (rider is mid-ride)
-        // 2. For other statuses (REQUESTED, DRIVER_ARRIVING, etc.), only restore if recently created (within 30 min)
-        const isInProgress = activeTrip.status === 'IN_PROGRESS';
-        const requestedAt = activeTrip.requestedAt;
-        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        const isRecentlyRequested = requestedAt && new Date(requestedAt) > thirtyMinutesAgo;
-
-        if (!isInProgress && !isRecentlyRequested) {
-          console.log('⏭️ Skipping stale trip (not in progress and older than 30 min):', activeTrip.id);
-          // Clear any stale trip from the store
+        // Only restore trips that are IN_PROGRESS (paid and active)
+        // Other statuses (REQUESTED, DRIVER_ARRIVING, etc.) are handled by their respective screens
+        if (activeTrip.status === 'IN_PROGRESS') {
+          console.log('✅ Restoring IN_PROGRESS trip:', activeTrip.id);
+          setCurrentTrip(activeTrip as Trip);
+        } else {
+          console.log('ℹ️ Trip found but not IN_PROGRESS, status:', activeTrip.status);
+          // Don't show on home screen - user will be on the appropriate screen already
           setCurrentTrip(null);
-          return;
         }
-
-        console.log('✅ Restoring active trip:', activeTrip.id, 'Status:', activeTrip.status);
-        // Set the trip in the store
-        setCurrentTrip(activeTrip as Trip);
       } else {
         // No active trip found - clear any stale state
         console.log('ℹ️ No active trip found for rider');
@@ -218,26 +210,16 @@ const HomeScreen = () => {
 
   /**
    * Navigate to the appropriate screen based on trip status
+   * Only for trips that are IN_PROGRESS (paid and actively happening)
    */
   const navigateToActiveTrip = () => {
     if (!currentTrip) return;
 
-    switch (currentTrip.status) {
-      case 'REQUESTED':
-        router.push('/(rider)/searching-driver');
-        break;
-      case 'ACCEPTED':
-      case 'DRIVER_ARRIVING':
-        router.push('/(rider)/driver-arriving');
-        break;
-      case 'DRIVER_ARRIVED':
-        router.push('/(rider)/pickup-point');
-        break;
-      case 'IN_PROGRESS':
-        router.push('/(rider)/trip-in-progress');
-        break;
-      default:
-        console.log('Unknown trip status:', currentTrip.status);
+    // Only navigate for trips that are in progress (paid)
+    if (currentTrip.status === 'IN_PROGRESS') {
+      router.push('/(rider)/trip-in-progress');
+    } else {
+      console.log('Trip status not navigable from home:', currentTrip.status);
     }
   };
 
@@ -1047,8 +1029,8 @@ const HomeScreen = () => {
               </View>
             </TouchableOpacity>
 
-            {/* Active Trip Card - Shows if rider has an ongoing trip */}
-            {currentTrip && ['REQUESTED', 'ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(currentTrip.status) && (
+            {/* Active Trip Card - Shows only if rider has a trip IN_PROGRESS (paid and active) */}
+            {currentTrip && currentTrip.status === 'IN_PROGRESS' && (
               <TouchableOpacity
                 style={styles.activeTripCard}
                 onPress={navigateToActiveTrip}
@@ -1056,17 +1038,10 @@ const HomeScreen = () => {
               >
                 <View style={styles.activeTripHeader}>
                   <View style={styles.activeTripIconContainer}>
-                    <Ionicons
-                      name={currentTrip.status === 'IN_PROGRESS' ? 'car' : 'navigate'}
-                      size={24}
-                      color="#5d1289"
-                    />
+                    <Ionicons name="car" size={24} color="#5d1289" />
                   </View>
                   <View style={styles.activeTripInfo}>
-                    <Text style={styles.activeTripTitle}>
-                     
-                      {currentTrip.status === 'IN_PROGRESS' && 'Trip in progress'}
-                    </Text>
+                    <Text style={styles.activeTripTitle}>Trip in progress</Text>
                     <Text style={styles.activeTripDestination} numberOfLines={1}>
                       To: {currentTrip.destination?.address || 'Destination'}
                     </Text>
