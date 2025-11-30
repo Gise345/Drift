@@ -1,8 +1,8 @@
 /**
  * SELECT PAYMENT SCREEN
- * Production implementation with real PayPal integration
- * 
- * EXPO SDK 52 - Firebase + PayPal
+ * Production implementation with Stripe integration
+ *
+ * EXPO SDK 52 - Firebase + Stripe
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -21,8 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
-import { PayPalCheckout } from '@/components/PayPalCheckout';
-import { PayPalService, PayPalPaymentMethod } from '@/src/services/paypal.service';
+import { StripeCheckout } from '@/components/StripeCheckout';
+import { StripeService, StripePaymentMethod } from '@/src/services/stripe.service';
 import { firebaseAuth } from '@/src/config/firebase';
 
 const Colors = {
@@ -44,11 +44,12 @@ const Colors = {
   },
   success: '#10B981',
   error: '#EF4444',
+  stripe: '#635BFF',
 };
 
 interface PaymentMethod {
   id: string;
-  type: 'paypal' | 'credit_card' | 'apple_pay' | 'google_pay';
+  type: 'stripe' | 'credit_card' | 'apple_pay' | 'google_pay';
   name: string;
   icon: string;
   details?: string;
@@ -64,13 +65,13 @@ export default function SelectPaymentScreen() {
 
   const [selectedPayment, setSelectedPayment] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [paypalMethods, setPaypalMethods] = useState<PayPalPaymentMethod[]>([]);
+  const [stripeMethods, setStripeMethods] = useState<StripePaymentMethod[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
-  const [showPayPalCheckout, setShowPayPalCheckout] = useState(false);
-  const [paymentProcessed, setPaymentProcessed] = useState(false); // Prevent double processing
-  const paymentProcessedRef = useRef(false); // Ref for immediate check
+  const [showStripeCheckout, setShowStripeCheckout] = useState(false);
+  const [paymentProcessed, setPaymentProcessed] = useState(false);
+  const paymentProcessedRef = useRef(false);
 
-  // Load saved PayPal payment methods
+  // Load saved Stripe payment methods
   useEffect(() => {
     loadPaymentMethods();
   }, [user]);
@@ -80,13 +81,13 @@ export default function SelectPaymentScreen() {
 
     try {
       setLoadingMethods(true);
-      const methods = await PayPalService.getPaymentMethods(user.id);
-      setPaypalMethods(methods);
+      const methods = await StripeService.getPaymentMethods(user.id);
+      setStripeMethods(methods);
 
       // Auto-select default method
       const defaultMethod = methods.find(m => m.isDefault);
       if (defaultMethod) {
-        setSelectedPayment(`paypal-${defaultMethod.id}`);
+        setSelectedPayment(`card-${defaultMethod.id}`);
       }
     } catch (error) {
       console.error('Error loading payment methods:', error);
@@ -96,30 +97,31 @@ export default function SelectPaymentScreen() {
   };
 
   // Production payment methods
+  // Google Pay and Apple Pay are available through Stripe Payment Sheet
   const paymentMethods: PaymentMethod[] = [
     {
-      id: 'paypal-new',
-      type: 'paypal',
-      name: 'PayPal',
-      details: 'Pay with your PayPal account',
-      icon: 'logo-paypal',
+      id: 'stripe-new',
+      type: 'stripe',
+      name: 'Credit / Debit Card',
+      details: 'Pay securely with Stripe',
+      icon: 'card',
       connected: true,
     },
     {
       id: 'apple-pay',
       type: 'apple_pay',
       name: 'Apple Pay',
-      details: 'Quick and secure',
+      details: 'Quick and secure via Stripe',
       icon: 'logo-apple',
-      connected: false,
+      connected: true, // Available through Stripe Payment Sheet
     },
     {
       id: 'google-pay',
       type: 'google_pay',
       name: 'Google Pay',
-      details: 'Fast checkout',
+      details: 'Fast checkout via Stripe',
       icon: 'logo-google',
-      connected: false,
+      connected: true, // Available through Stripe Payment Sheet
     },
   ];
 
@@ -128,25 +130,22 @@ export default function SelectPaymentScreen() {
   };
 
   const handleConfirmPayment = async () => {
+    // Debug auth state
+    console.log('Checking auth state...');
+    const currentUser = firebaseAuth.currentUser;
+    console.log('User:', currentUser?.uid);
+    console.log('Email:', currentUser?.email);
 
-      // ADD THIS DEBUG CODE
-  console.log('🔍 Checking auth state...');
-  const user = firebaseAuth.currentUser;
-  console.log('🔍 User:', user?.uid);
-  console.log('🔍 Email:', user?.email);
-  
-  if (user) {
-    try {
-      const token = await user.getIdToken();
-      console.log('🔍 Token length:', token.length);
-      console.log('🔍 Token preview:', token.substring(0, 50) + '...');
-    } catch (error) {
-      console.error('🔍 Failed to get token:', error);
+    if (currentUser) {
+      try {
+        const token = await currentUser.getIdToken();
+        console.log('Token length:', token.length);
+      } catch (error) {
+        console.error('Failed to get token:', error);
+      }
+    } else {
+      console.error('NO USER LOGGED IN!');
     }
-  } else {
-    console.error('🔍 NO USER LOGGED IN!');
-  }
-  // END DEBUG CODE
 
     if (!selectedPayment) {
       Alert.alert('Select Payment', 'Please select a payment method');
@@ -160,14 +159,18 @@ export default function SelectPaymentScreen() {
 
     // For non-connected methods, show coming soon
     const method = paymentMethods.find(m => m.id === selectedPayment);
-    if (method && !method.connected && !selectedPayment.startsWith('paypal-')) {
+    if (method && !method.connected && !selectedPayment.startsWith('card-') && !selectedPayment.startsWith('stripe-')) {
       Alert.alert('Coming Soon', `${method.name} integration coming soon!`);
       return;
     }
 
-    // If PayPal is selected, show checkout
-    if (selectedPayment === 'paypal-new' || selectedPayment.startsWith('paypal-')) {
-      setShowPayPalCheckout(true);
+    // If any Stripe-based payment is selected (card, Google Pay, Apple Pay), show checkout
+    // The Stripe Payment Sheet automatically shows all available payment methods
+    if (selectedPayment === 'stripe-new' ||
+        selectedPayment === 'apple-pay' ||
+        selectedPayment === 'google-pay' ||
+        selectedPayment.startsWith('card-')) {
+      setShowStripeCheckout(true);
       return;
     }
 
@@ -176,8 +179,8 @@ export default function SelectPaymentScreen() {
   };
 
   const createTripRequest = async (paymentDetails?: {
-    orderId?: string;
-    payerId?: string;
+    paymentIntentId?: string;
+    status?: string;
     paymentMethod?: string;
   }) => {
     if (!user || !pickupLocation || !destination || !estimatedCost) return;
@@ -189,7 +192,6 @@ export default function SelectPaymentScreen() {
       setSelectedPaymentMethod(paymentDetails?.paymentMethod || selectedPayment);
 
       // Create trip in Firebase with status "REQUESTED"
-      // Include rider info so driver can see the rider's name
       const tripId = await createTrip({
         riderId: user.id,
         riderName: user.name || 'Rider',
@@ -202,7 +204,7 @@ export default function SelectPaymentScreen() {
             latitude: pickupLocation.latitude,
             longitude: pickupLocation.longitude,
           },
-          placeName: (pickupLocation as any).placeName || pickupLocation.address || '',
+          placeName: (pickupLocation as any)?.placeName || pickupLocation.address || '',
         },
         destination: {
           address: destination.address || '',
@@ -210,7 +212,7 @@ export default function SelectPaymentScreen() {
             latitude: destination.latitude,
             longitude: destination.longitude,
           },
-          placeName: (destination as any).placeName || destination.address || '',
+          placeName: (destination as any)?.placeName || destination.address || '',
         },
         vehicleType: vehicleType || 'standard',
         distance: (pickupLocation as any).distance || 0,
@@ -218,70 +220,67 @@ export default function SelectPaymentScreen() {
         estimatedCost: estimatedCost.max || 0,
         paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
         ...(paymentDetails ? {
-          paymentMethod: paymentDetails 
-          ? `paypal:${paymentDetails.orderId}:${paymentDetails.payerId}`
-          : selectedPayment,
-        paymentStatus: paymentDetails ? 'COMPLETED' : 'PENDING',
+          paymentMethod: `stripe:${paymentDetails.paymentIntentId}`,
+          paymentStatus: paymentDetails.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
         } : {}),
         requestedAt: new Date(),
       });
 
-      console.log('✅ Trip created in Firebase:', tripId);
+      console.log('Trip created in Firebase:', tripId);
 
-      // Navigate to finding driver screen - use replace to avoid stacking
+      // Navigate to finding driver screen
       router.replace('/(rider)/finding-driver');
     } catch (error) {
-      console.error('❌ Failed to create trip:', error);
+      console.error('Failed to create trip:', error);
       Alert.alert('Error', 'Failed to request ride. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePayPalSuccess = async (orderId: string, payerId: string, details: any) => {
-    // Prevent double processing - use ref for immediate check
+  const handleStripeSuccess = async (paymentIntentId: string, status: string, details: any) => {
+    // Prevent double processing
     if (paymentProcessedRef.current || paymentProcessed) {
-      console.log('⚠️ Payment already processed, ignoring duplicate callback');
+      console.log('Payment already processed, ignoring duplicate callback');
       return;
     }
     paymentProcessedRef.current = true;
     setPaymentProcessed(true);
 
-    console.log('✅ PayPal payment successful:', { orderId, payerId });
+    console.log('Stripe payment successful:', { paymentIntentId, status });
 
-    setShowPayPalCheckout(false);
-
-    // Save PayPal account if new
-    if (user && details.payer?.email_address) {
-      try {
-        await PayPalService.addPaymentMethod(
-          user.id,
-          details.payer.email_address,
-          paypalMethods.length === 0 // Set as default if first method
-        );
-        await loadPaymentMethods();
-      } catch (error) {
-        console.error('Error saving PayPal method:', error);
-      }
-    }
+    setShowStripeCheckout(false);
 
     // Create trip with payment details
     await createTripRequest({
-      orderId,
-      payerId,
-      paymentMethod: 'paypal',
+      paymentIntentId,
+      status,
+      paymentMethod: 'stripe',
     });
   };
 
-  const handlePayPalCancel = () => {
-    console.log('❌ PayPal payment cancelled');
-    setShowPayPalCheckout(false);
+  const handleStripeCancel = () => {
+    console.log('Stripe payment cancelled');
+    setShowStripeCheckout(false);
   };
 
-  const handlePayPalError = (error: Error) => {
-    console.error('❌ PayPal error:', error);
-    setShowPayPalCheckout(false);
+  const handleStripeError = (error: Error) => {
+    console.error('Stripe error:', error);
+    setShowStripeCheckout(false);
     Alert.alert('Payment Error', error.message || 'Failed to process payment');
+  };
+
+  const getCardIcon = (brand: string) => {
+    switch (brand.toLowerCase()) {
+      case 'visa':
+        return 'card';
+      case 'mastercard':
+        return 'card';
+      case 'amex':
+        return 'card';
+      default:
+        return 'card';
+    }
   };
 
   if (loadingMethods) {
@@ -331,27 +330,29 @@ export default function SelectPaymentScreen() {
             </Text>
           </View>
 
-          {/* Saved PayPal Methods */}
-          {paypalMethods.length > 0 && (
+          {/* Saved Cards */}
+          {stripeMethods.length > 0 && (
             <>
-              <Text style={styles.sectionTitle}>Saved PayPal Accounts</Text>
-              {paypalMethods.map((method) => (
+              <Text style={styles.sectionTitle}>Saved Cards</Text>
+              {stripeMethods.map((method) => (
                 <TouchableOpacity
                   key={method.id}
                   style={[
                     styles.paymentCard,
-                    selectedPayment === `paypal-${method.id}` && styles.paymentCardSelected,
+                    selectedPayment === `card-${method.id}` && styles.paymentCardSelected,
                   ]}
-                  onPress={() => handleSelectPayment(`paypal-${method.id}`)}
+                  onPress={() => handleSelectPayment(`card-${method.id}`)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.paymentLeft}>
-                    <View style={[styles.iconContainer, styles.paypalBg]}>
-                      <Ionicons name="logo-paypal" size={24} color={Colors.white} />
+                    <View style={[styles.iconContainer, styles.stripeBg]}>
+                      <Ionicons name={getCardIcon(method.brand)} size={24} color={Colors.white} />
                     </View>
                     <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentName}>PayPal</Text>
-                      <Text style={styles.paymentDetails}>{method.email}</Text>
+                      <Text style={styles.paymentName}>
+                        {method.brand.charAt(0).toUpperCase() + method.brand.slice(1)}
+                      </Text>
+                      <Text style={styles.paymentDetails}>•••• {method.last4}</Text>
                       {method.isDefault && (
                         <View style={styles.defaultBadge}>
                           <Text style={styles.defaultText}>Default</Text>
@@ -359,7 +360,7 @@ export default function SelectPaymentScreen() {
                       )}
                     </View>
                   </View>
-                  {selectedPayment === `paypal-${method.id}` && (
+                  {selectedPayment === `card-${method.id}` && (
                     <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
                   )}
                 </TouchableOpacity>
@@ -384,14 +385,14 @@ export default function SelectPaymentScreen() {
               <View style={styles.paymentLeft}>
                 <View style={[
                   styles.iconContainer,
-                  method.type === 'paypal' && styles.paypalBg,
+                  method.type === 'stripe' && styles.stripeBg,
                   method.type === 'apple_pay' && styles.appleBg,
                   method.type === 'google_pay' && styles.googleBg,
                 ]}>
-                  <Ionicons 
-                    name={method.icon as any} 
-                    size={24} 
-                    color={method.type === 'apple_pay' ? Colors.black : Colors.white} 
+                  <Ionicons
+                    name={method.icon as any}
+                    size={24}
+                    color={method.type === 'apple_pay' ? Colors.black : Colors.white}
                   />
                 </View>
                 <View style={styles.paymentInfo}>
@@ -440,18 +441,16 @@ export default function SelectPaymentScreen() {
           </TouchableOpacity>
         </View>
 
-       {/* PayPal Hosted Checkout Modal - Opens in Browser */}
-        {showPayPalCheckout && estimatedCost && (
-          <PayPalCheckout
-            visible={showPayPalCheckout}
+        {/* Stripe Checkout Modal */}
+        {showStripeCheckout && estimatedCost && (
+          <StripeCheckout
+            visible={showStripeCheckout}
             amount={estimatedCost.max}
             currency="USD"
             description={`Drift Carpool: ${(pickupLocation as any)?.placeName || pickupLocation?.address || 'Pickup'} to ${(destination as any)?.placeName || destination?.address || 'Destination'}`}
-            onSuccess={(orderId, captureId) => {
-              handlePayPalSuccess(orderId, captureId, {});
-            }}
-            onCancel={handlePayPalCancel}
-            onError={handlePayPalError}
+            onSuccess={handleStripeSuccess}
+            onCancel={handleStripeCancel}
+            onError={handleStripeError}
             metadata={{
               userId: user?.id,
               pickup: (pickupLocation as any)?.placeName || pickupLocation?.address,
@@ -573,8 +572,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  paypalBg: {
-    backgroundColor: '#0070BA',
+  stripeBg: {
+    backgroundColor: Colors.stripe,
   },
   appleBg: {
     backgroundColor: Colors.white,

@@ -19,19 +19,19 @@ module.exports = {
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
         NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
-        // ✅ ADDED: PayPal deep link URL types
+        // Deep link URL types for Stripe callbacks
         CFBundleURLTypes: [
           {
             CFBundleURLSchemes: ["drift"]
           }
         ],
-        // ✅ ADDED: Allow opening PayPal URLs
+        // Allow opening external URLs
         LSApplicationQueriesSchemes: ["https", "http"]
       },
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
       },
-      // ✅ UPDATED: Deep linking for PayPal return (iOS Universal Links - optional)
+      // Deep linking for Stripe callbacks (iOS Universal Links - optional)
       associatedDomains: [
         // Uncomment if you want to use Universal Links:
         // "applinks:drift.ky"
@@ -56,20 +56,20 @@ module.exports = {
           apiKey: "AIzaSyDjk96AyKGgPJRhzBRH7VY2qTsEsuvIq0g"
         }
       },
-      // ✅ UPDATED: Deep linking for PayPal return with specific host
+      // Deep linking for Stripe callbacks
       intentFilters: [
         {
           action: "VIEW",
-          autoVerify: true, // ✅ ADDED: Enable Android App Links
+          autoVerify: true,
           data: [
             {
               scheme: "drift",
-              host: "paypal" // ✅ ADDED: Specific host for PayPal callbacks
+              host: "stripe"
             }
           ],
           category: ["BROWSABLE", "DEFAULT"]
         },
-        // ✅ ADDED: General deep link fallback (for other features)
+        // General deep link fallback
         {
           action: "VIEW",
           data: [
@@ -126,8 +126,15 @@ module.exports = {
       ],
       "@react-native-firebase/app",
       "@react-native-google-signin/google-signin",
+      [
+        "@stripe/stripe-react-native",
+        {
+          merchantIdentifier: "merchant.com.drift.app",
+          enableGooglePay: true
+        }
+      ],
     ],
-    // ✅ CONFIRMED: Deep linking scheme for PayPal return
+    // Deep linking scheme for Stripe callbacks
     scheme: "drift",
     web: {
       favicon: "./assets/favicon.png"

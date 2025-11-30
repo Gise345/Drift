@@ -3,10 +3,16 @@ import * as admin from 'firebase-admin';
 // Initialize Firebase Admin
 admin.initializeApp();
 
-// Export PayPal functions
+// Export Stripe functions
 export {
-  createPayPalHostedCheckout,
-  capturePayPalOrder,
-  getPayPalOrderStatus,
-  refundPayPalPayment
-} from './paypal';
+  getOrCreateStripeCustomer,
+  createStripePaymentIntent,
+  confirmStripePayment,
+  getStripePaymentStatus,
+  refundStripePayment,
+  getStripePaymentMethods,
+  removeStripePaymentMethod,
+  setDefaultStripePaymentMethod,
+  createStripeSetupIntent,
+  confirmStripeSetupIntent
+} from './stripe';

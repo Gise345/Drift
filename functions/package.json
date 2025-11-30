@@ -1,31 +1,36 @@
 {
   "name": "drift-firebase-functions",
-  "version": "2.0.0",
-  "description": "Firebase Cloud Functions for Drift PayPal integration (v2 - future-proof)",
-  "main": "index.js",
+  "version": "3.0.0",
+  "description": "Firebase Cloud Functions for Drift Stripe integration",
+  "main": "lib/index.js",
   "scripts": {
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "build:clean": "rm -rf lib && tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "lint": "echo 'No linting configured'",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "lint": "eslint . --ext .ts"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "dependencies": {
-    "firebase-admin": "^12.0.0",
-    "firebase-functions": "^5.0.0",
-    "node-fetch": "^2.7.0",
-    "expo": "~52.0.47",
-    "react": "18.3.1",
-    "react-native": "0.76.9"
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.6.0",
+    "stripe": "^20.0.0"
   },
   "devDependencies": {
-    "firebase-functions-test": "^3.1.0"
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.25.4",
+    "firebase-functions-test": "^3.1.0",
+    "typescript": "^5.0.0"
   },
   "private": true
 }

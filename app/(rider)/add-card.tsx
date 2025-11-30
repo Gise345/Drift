@@ -3,16 +3,17 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 
 const Colors = {
   primary: '#D4E700',
@@ -35,85 +36,200 @@ const Colors = {
   error: '#EF4444',
 };
 
-export default function AddCardScreen() {
+// Check if running in Expo Go (Stripe native modules not available)
+// In EAS dev builds, appOwnership is 'standalone' or undefined
+const isExpoGo = Constants.appOwnership === 'expo';
+
+// Only import Stripe components in development builds
+let CardField: any = null;
+let useConfirmSetupIntent: any = null;
+let stripeAvailable = false;
+
+// Always try to load Stripe in non-Expo Go builds
+if (!isExpoGo) {
+  try {
+    const StripeModule = require('@stripe/stripe-react-native');
+    if (StripeModule && StripeModule.CardField) {
+      CardField = StripeModule.CardField;
+      useConfirmSetupIntent = StripeModule.useConfirmSetupIntent;
+      stripeAvailable = true;
+      console.log('✅ Stripe CardField loaded successfully');
+    }
+  } catch (e) {
+    console.log('Stripe native module not available:', e);
+  }
+}
+
+console.log('📱 Add Card - App ownership:', Constants.appOwnership, '| Stripe available:', stripeAvailable);
+
+// Expo Go version of the screen
+function ExpoGoAddCardScreen() {
   const router = useRouter();
-  
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardHolder, setCardHolder] = useState('');
-  const [expiryDate, setExpiryDate] = useState('');
-  const [cvv, setCvv] = useState('');
   const [setAsDefault, setSetAsDefault] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Format card number (add spaces every 4 digits)
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\s/g, '');
-    const formatted = cleaned.match(/.{1,4}/g)?.join(' ') || cleaned;
-    return formatted.slice(0, 19); // Max 16 digits + 3 spaces
+  const handleAddCard = async () => {
+    Alert.alert(
+      'Development Mode',
+      'Stripe CardField is not available in Expo Go. Please use a development build to test card saving.\n\nSimulating success...',
+      [{ text: 'OK', onPress: () => router.back() }]
+    );
   };
 
-  // Format expiry date (MM/YY)
-  const formatExpiryDate = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length >= 2) {
-      return `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}`;
-    }
-    return cleaned;
-  };
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.backIcon}>←</Text>
+          </TouchableOpacity>
 
-  const handleCardNumberChange = (text: string) => {
-    const formatted = formatCardNumber(text.replace(/\s/g, ''));
-    setCardNumber(formatted);
-  };
+          <Text style={styles.title}>Add Card</Text>
 
-  const handleExpiryChange = (text: string) => {
-    const formatted = formatExpiryDate(text);
-    setExpiryDate(formatted);
-  };
+          <View style={styles.headerSpacer} />
+        </View>
 
-  const handleCvvChange = (text: string) => {
-    // Only allow numbers, max 4 digits
-    const cleaned = text.replace(/\D/g, '');
-    setCvv(cleaned.slice(0, 4));
-  };
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Expo Go Notice */}
+          <View style={styles.expoGoNotice}>
+            <Text style={styles.expoGoIcon}>⚠️</Text>
+            <Text style={styles.expoGoTitle}>Development Mode</Text>
+            <Text style={styles.expoGoText}>
+              Stripe CardField requires a development build. In Expo Go, card entry is simulated.
+            </Text>
+            <Text style={styles.expoGoText}>
+              To test real card functionality, run:{'\n'}
+              <Text style={styles.codeText}>npx expo prebuild && npx expo run:android</Text>
+            </Text>
+          </View>
 
-  const validateForm = (): boolean => {
-    if (cardNumber.replace(/\s/g, '').length < 13) {
-      Alert.alert('Invalid Card', 'Please enter a valid card number');
-      return false;
-    }
-    if (cardHolder.trim().length < 3) {
-      Alert.alert('Invalid Name', 'Please enter card holder name');
-      return false;
-    }
-    if (expiryDate.length !== 5) {
-      Alert.alert('Invalid Expiry', 'Please enter expiry date (MM/YY)');
-      return false;
-    }
-    if (cvv.length < 3) {
-      Alert.alert('Invalid CVV', 'Please enter CVV (3-4 digits)');
-      return false;
-    }
-    return true;
-  };
+          {/* Simulated Card Preview */}
+          <View style={styles.cardPreview}>
+            <View style={styles.card}>
+              <Text style={styles.cardType}>VISA</Text>
+              <Text style={styles.cardNumberPreview}>•••• •••• •••• 4242</Text>
+              <View style={styles.cardFooter}>
+                <View>
+                  <Text style={styles.cardLabel}>CARD HOLDER</Text>
+                  <Text style={styles.cardValue}>TEST USER</Text>
+                </View>
+                <View>
+                  <Text style={styles.cardLabel}>EXPIRES</Text>
+                  <Text style={styles.cardValue}>12/25</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Set as Default */}
+          <View style={styles.form}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setSetAsDefault(!setAsDefault)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, setAsDefault && styles.checkboxChecked]}>
+                {setAsDefault && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                Set as default payment method
+              </Text>
+            </TouchableOpacity>
+
+            {/* Security Notice */}
+            <View style={styles.securityNotice}>
+              <Text style={styles.securityIcon}>🔒</Text>
+              <Text style={styles.securityText}>
+                Your card information is encrypted and secure. We use Stripe for payment processing.
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Add Card Button */}
+        <View style={styles.bottomContainer}>
+          <TouchableOpacity
+            style={[styles.addButton, loading && styles.addButtonDisabled]}
+            onPress={handleAddCard}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <>
+                <Text style={styles.addButtonText}>Simulate Add Card</Text>
+                <Text style={styles.addButtonArrow}>→</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+// Development build version with real Stripe
+function StripeAddCardScreen() {
+  const router = useRouter();
+  const { confirmSetupIntent } = useConfirmSetupIntent();
+
+  const [cardDetails, setCardDetails] = useState<any>(null);
+  const [setAsDefault, setSetAsDefault] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [cardComplete, setCardComplete] = useState(false);
 
   const handleAddCard = async () => {
-    if (!validateForm()) return;
+    if (!cardComplete) {
+      Alert.alert('Invalid Card', 'Please enter valid card details');
+      return;
+    }
 
     setLoading(true);
 
     try {
-      // Simulate API call to add card (integrate with PayPal)
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Dynamic import for dev builds only
+      const { createStripeSetupIntent, confirmStripeSetupIntent } = require('@/src/services/stripe.service');
 
-      Alert.alert('Success', 'Card added successfully', [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
-      ]);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add card. Please try again.');
+      // Step 1: Create setup intent on backend
+      const setupData = await createStripeSetupIntent();
+
+      // Step 2: Confirm the setup intent with card details
+      const { setupIntent, error } = await confirmSetupIntent(setupData.clientSecret, {
+        paymentMethodType: 'Card',
+      });
+
+      if (error) {
+        console.error('Setup intent confirmation error:', error);
+        Alert.alert('Error', error.message || 'Failed to save card');
+        return;
+      }
+
+      if (setupIntent?.status === 'Succeeded') {
+        // Step 3: Confirm on backend and optionally set as default
+        await confirmStripeSetupIntent(setupData.setupIntentId, setAsDefault);
+
+        Alert.alert('Success', 'Card added successfully!', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } else {
+        Alert.alert('Error', `Card setup status: ${setupIntent?.status}`);
+      }
+    } catch (error: any) {
+      console.error('Add card error:', error);
+      Alert.alert('Error', error.message || 'Failed to add card. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -134,9 +250,9 @@ export default function AddCardScreen() {
           >
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
-          
+
           <Text style={styles.title}>Add Card</Text>
-          
+
           <View style={styles.headerSpacer} />
         </View>
 
@@ -149,84 +265,60 @@ export default function AddCardScreen() {
           {/* Card Preview */}
           <View style={styles.cardPreview}>
             <View style={styles.card}>
-              <Text style={styles.cardType}>💳 VISA</Text>
+              <Text style={styles.cardType}>
+                {cardDetails?.brand ? cardDetails.brand.toUpperCase() : 'CARD'}
+              </Text>
               <Text style={styles.cardNumberPreview}>
-                {cardNumber || '•••• •••• •••• ••••'}
+                •••• •••• •••• {cardDetails?.last4 || '••••'}
               </Text>
               <View style={styles.cardFooter}>
                 <View>
-                  <Text style={styles.cardLabel}>CARD HOLDER</Text>
+                  <Text style={styles.cardLabel}>VALID</Text>
                   <Text style={styles.cardValue}>
-                    {cardHolder || 'FULL NAME'}
+                    {cardDetails?.expiryMonth && cardDetails?.expiryYear
+                      ? `${String(cardDetails.expiryMonth).padStart(2, '0')}/${String(cardDetails.expiryYear).slice(-2)}`
+                      : 'MM/YY'}
                   </Text>
                 </View>
                 <View>
-                  <Text style={styles.cardLabel}>EXPIRES</Text>
-                  <Text style={styles.cardValue}>
-                    {expiryDate || 'MM/YY'}
+                  <Text style={styles.cardLabel}>STATUS</Text>
+                  <Text style={[styles.cardValue, cardComplete ? styles.statusValid : styles.statusInvalid]}>
+                    {cardComplete ? 'VALID' : 'INCOMPLETE'}
                   </Text>
                 </View>
               </View>
             </View>
           </View>
 
-          {/* Form */}
+          {/* Stripe CardField */}
           <View style={styles.form}>
-            {/* Card Number */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Card Number</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="1234 5678 9012 3456"
-                placeholderTextColor={Colors.gray[400]}
-                value={cardNumber}
-                onChangeText={handleCardNumberChange}
-                keyboardType="number-pad"
-                maxLength={19}
-              />
-            </View>
-
-            {/* Card Holder Name */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Card Holder Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="John Doe"
-                placeholderTextColor={Colors.gray[400]}
-                value={cardHolder}
-                onChangeText={setCardHolder}
-                autoCapitalize="words"
-              />
-            </View>
-
-            {/* Expiry & CVV Row */}
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Expiry Date</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="MM/YY"
-                  placeholderTextColor={Colors.gray[400]}
-                  value={expiryDate}
-                  onChangeText={handleExpiryChange}
-                  keyboardType="number-pad"
-                  maxLength={5}
+              <Text style={styles.label}>Card Details</Text>
+              {CardField && (
+                <CardField
+                  postalCodeEnabled={false}
+                  placeholders={{
+                    number: '4242 4242 4242 4242',
+                  }}
+                  cardStyle={{
+                    backgroundColor: Colors.white,
+                    textColor: Colors.black,
+                    borderColor: Colors.gray[300],
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    fontSize: 16,
+                    placeholderColor: Colors.gray[400],
+                  }}
+                  style={styles.cardField}
+                  onCardChange={(details: any) => {
+                    setCardDetails(details);
+                    setCardComplete(details.complete);
+                  }}
                 />
-              </View>
-
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>CVV</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="123"
-                  placeholderTextColor={Colors.gray[400]}
-                  value={cvv}
-                  onChangeText={handleCvvChange}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  secureTextEntry
-                />
-              </View>
+              )}
+              <Text style={styles.cardHint}>
+                Enter your card number, expiry date, and CVC
+              </Text>
             </View>
 
             {/* Set as Default */}
@@ -247,7 +339,7 @@ export default function AddCardScreen() {
             <View style={styles.securityNotice}>
               <Text style={styles.securityIcon}>🔒</Text>
               <Text style={styles.securityText}>
-                Your card information is encrypted and secure. We use PayPal for payment processing.
+                Your card information is encrypted and secure. Card data is handled directly by Stripe and never touches our servers.
               </Text>
             </View>
           </View>
@@ -256,9 +348,12 @@ export default function AddCardScreen() {
         {/* Add Card Button */}
         <View style={styles.bottomContainer}>
           <TouchableOpacity
-            style={[styles.addButton, loading && styles.addButtonDisabled]}
+            style={[
+              styles.addButton,
+              (loading || !cardComplete) && styles.addButtonDisabled
+            ]}
             onPress={handleAddCard}
-            disabled={loading}
+            disabled={loading || !cardComplete}
           >
             {loading ? (
               <ActivityIndicator color={Colors.white} />
@@ -273,6 +368,16 @@ export default function AddCardScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+// Export the correct component based on environment
+export default function AddCardScreen() {
+  // Always show Expo Go version if in Expo Go or if Stripe modules failed to load
+  if (isExpoGo || !stripeAvailable || !CardField || !useConfirmSetupIntent) {
+    return <ExpoGoAddCardScreen />;
+  }
+
+  return <StripeAddCardScreen />;
 }
 
 const styles = StyleSheet.create({
@@ -317,13 +422,42 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 120,
   },
+  expoGoNotice: {
+    margin: 16,
+    padding: 20,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  expoGoIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  expoGoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 8,
+  },
+  expoGoText: {
+    fontSize: 14,
+    color: '#92400E',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    backgroundColor: '#FDE68A',
+    padding: 4,
+  },
   cardPreview: {
     padding: 24,
     alignItems: 'center',
   },
   card: {
     width: '100%',
-    aspectRatio: 1.586, // Standard credit card ratio
+    aspectRatio: 1.586,
     backgroundColor: Colors.purple,
     borderRadius: 16,
     padding: 24,
@@ -361,6 +495,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.white,
   },
+  statusValid: {
+    color: Colors.primary,
+  },
+  statusInvalid: {
+    color: '#FFA500',
+  },
   form: {
     paddingHorizontal: 16,
   },
@@ -373,22 +513,15 @@ const styles = StyleSheet.create({
     color: Colors.gray[700],
     marginBottom: 8,
   },
-  input: {
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.gray[300],
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: Colors.black,
+  cardField: {
+    width: '100%',
+    height: 50,
+    marginVertical: 8,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfWidth: {
-    flex: 1,
+  cardHint: {
+    fontSize: 12,
+    color: Colors.gray[500],
+    marginTop: 4,
   },
   checkboxRow: {
     flexDirection: 'row',

@@ -198,6 +198,7 @@ export default function DriverAgreementScreen() {
           <Text style={styles.bulletPoint}>• Platform maintenance (~15%): Software engineering, server hosting, Google Maps API, customer support, safety features</Text>
           <Text style={styles.paragraph}>
             Driver receives 81% of each cost-sharing contribution. This fee structure is transparent and deducted automatically from each transaction.
+          </Text>
         </View>
 
         {/* 3. Driver Obligations */}

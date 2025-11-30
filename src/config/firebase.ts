@@ -28,6 +28,9 @@ export const firebaseAuth = auth();
 // Firestore instance - call firestore() directly, don't use getFirestore()
 export const firebaseDb = firestore();
 export const db = firebaseDb; // Alias for consistency
+
+// Functions instance - explicitly set region to match deployed functions
+// Gen 2 functions deploy to us-central1 by default
 export const firebaseFunctions = functions();
 
 // Storage instance
