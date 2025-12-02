@@ -6,14 +6,19 @@ import {
   ScrollView,
   SafeAreaView,
   TouchableOpacity,
+  Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { DriftInput } from '@/components/ui/DriftInput';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+
+const WISE_WEBSITE = 'https://wise.com';
+const WISE_IOS_APP = 'https://apps.apple.com/app/wise-ex-transferwise/id612261027';
+const WISE_ANDROID_APP = 'https://play.google.com/store/apps/details?id=com.transferwise.android';
 
 export default function BankDetails() {
   const router = useRouter();
@@ -22,150 +27,246 @@ export default function BankDetails() {
   // Initialize from saved data
   const savedBankDetails = registrationData?.bankDetails;
 
-  const [accountHolderName, setAccountHolderName] = useState(savedBankDetails?.accountHolderName || '');
-  const [bankName, setBankName] = useState(savedBankDetails?.bankName || '');
-  const [accountNumber, setAccountNumber] = useState(savedBankDetails?.accountNumber || '');
-  const [routingNumber, setRoutingNumber] = useState(savedBankDetails?.routingNumber || '');
-  const [accountType, setAccountType] = useState('checking');
-
+  const [wiseEmail, setWiseEmail] = useState(savedBankDetails?.accountHolderName || '');
+  const [hasWiseAccount, setHasWiseAccount] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const handleOpenWise = () => {
+    Linking.openURL(WISE_WEBSITE);
+  };
+
+  const handleOpenAppStore = () => {
+    const url = Platform.OS === 'ios' ? WISE_IOS_APP : WISE_ANDROID_APP;
+    Linking.openURL(url);
+  };
 
   const handleContinue = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!accountHolderName.trim()) newErrors.accountHolderName = 'Account holder name is required';
-    if (!bankName.trim()) newErrors.bankName = 'Bank name is required';
-    if (!accountNumber.trim()) newErrors.accountNumber = 'Account number is required';
-    if (accountNumber.length < 8) newErrors.accountNumber = 'Account number must be at least 8 digits';
+    if (!wiseEmail.trim()) {
+      newErrors.wiseEmail = 'Wise email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wiseEmail)) {
+      newErrors.wiseEmail = 'Please enter a valid email';
+    }
 
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
       updateRegistrationData({
         bankDetails: {
-          accountHolderName: accountHolderName.trim(),
-          bankName: bankName.trim(),
-          accountNumber: accountNumber.trim(),
-          routingNumber: routingNumber.trim(),
+          accountHolderName: wiseEmail.trim(),
+          bankName: 'Wise',
+          accountNumber: '',
+          routingNumber: '',
         },
       });
-      setRegistrationStep(12); // Moving to step 12 (review-application)
+      setRegistrationStep(11); // Moving to step 11 (review-application)
       router.push('/(driver)/registration/review-application');
+    }
+  };
+
+  const handleSkip = () => {
+    updateRegistrationData({
+      bankDetails: {
+        accountHolderName: '',
+        bankName: '',
+        accountNumber: '',
+        routingNumber: '',
+      },
+    });
+    setRegistrationStep(11); // Moving to step 11 (review-application)
+    router.push('/(driver)/registration/review-application');
+  };
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/registration/inspection');
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Bank Details</Text>
+        <Text style={styles.headerTitle}>Payment Setup</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: '71%' }]} />
+          <View style={[styles.progressFill, { width: '82%' }]} />
         </View>
-        <Text style={styles.progressText}>Step 10 of 14</Text>
+        <Text style={styles.progressText}>Step 10 of 11</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Bank Account</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.title}>Get Paid with Wise</Text>
         <Text style={styles.subtitle}>
-          Add your bank account to receive your earnings
+          We use Wise (formerly TransferWise) to send your earnings quickly and securely.
         </Text>
 
-        {/* Security Badge */}
-        <View style={styles.securityBadge}>
-          <Ionicons name="shield-checkmark" size={24} color={Colors.success} />
-          <View style={styles.securityContent}>
-            <Text style={styles.securityTitle}>Bank-level security</Text>
-            <Text style={styles.securityText}>
-              Your banking information is encrypted and stored securely
+        {/* Why Wise Card */}
+        <View style={styles.wiseCard}>
+          <View style={styles.wiseHeader}>
+            <View style={styles.wiseLogo}>
+              <Text style={styles.wiseLogoText}>wise</Text>
+            </View>
+            <Text style={styles.wiseTagline}>Fast, low-cost payments</Text>
+          </View>
+          <View style={styles.wiseBenefits}>
+            <View style={styles.benefitRow}>
+              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Text style={styles.benefitText}>Receive payments in USD or KYD</Text>
+            </View>
+            <View style={styles.benefitRow}>
+              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Text style={styles.benefitText}>Low transfer fees</Text>
+            </View>
+            <View style={styles.benefitRow}>
+              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Text style={styles.benefitText}>Withdraw to any local bank</Text>
+            </View>
+            <View style={styles.benefitRow}>
+              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Text style={styles.benefitText}>Free Wise debit card available</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Important Notice */}
+        <View style={styles.importantCard}>
+          <Ionicons name="wallet-outline" size={24} color={Colors.primary} />
+          <View style={styles.importantContent}>
+            <Text style={styles.importantTitle}>This is how you'll get paid</Text>
+            <Text style={styles.importantText}>
+              All driver earnings are sent to your Wise account. You can then transfer to your local bank or use the Wise card directly.
             </Text>
           </View>
         </View>
 
-        {/* Account Holder Name */}
-        <DriftInput
-          label="Account Holder Name *"
-          placeholder="John Smith"
-          value={accountHolderName}
-          onChangeText={setAccountHolderName}
-          error={errors.accountHolderName}
-        />
+        {/* Registration Steps */}
+        {!hasWiseAccount && (
+          <View style={styles.stepsSection}>
+            <Text style={styles.stepsTitle}>Don't have a Wise account?</Text>
+            <Text style={styles.stepsSubtitle}>It only takes about 5 minutes to set up:</Text>
 
-        {/* Bank Name */}
-        <DriftInput
-          label="Bank Name *"
-          placeholder="Cayman National Bank"
-          value={bankName}
-          onChangeText={setBankName}
-          error={errors.bankName}
-        />
+            <View style={styles.stepsList}>
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>1</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepText}>Download the Wise app or visit wise.com</Text>
+                </View>
+              </View>
 
-        {/* Account Number */}
-        <DriftInput
-          label="Account Number *"
-          placeholder="Enter account number"
-          value={accountNumber}
-          onChangeText={setAccountNumber}
-          keyboardType="number-pad"
-          secureTextEntry
-          error={errors.accountNumber}
-        />
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>2</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepText}>Create a personal account with your email</Text>
+                </View>
+              </View>
 
-        {/* Routing Number */}
-        <DriftInput
-          label="Routing Number (if applicable)"
-          placeholder="Optional"
-          value={routingNumber}
-          onChangeText={setRoutingNumber}
-          keyboardType="number-pad"
-        />
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>3</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepText}>Verify your identity (photo ID required)</Text>
+                </View>
+              </View>
 
-        {/* Account Type */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Account Type *</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={accountType}
-              onValueChange={setAccountType}
-              style={styles.picker}
+              <View style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>4</Text>
+                </View>
+                <View style={styles.stepContent}>
+                  <Text style={styles.stepText}>Come back and enter your Wise email below</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtons}>
+              <TouchableOpacity style={styles.linkButton} onPress={handleOpenWise}>
+                <Ionicons name="globe-outline" size={20} color={Colors.primary} />
+                <Text style={styles.linkButtonText}>Open wise.com</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.linkButton} onPress={handleOpenAppStore}>
+                <Ionicons name="phone-portrait-outline" size={20} color={Colors.primary} />
+                <Text style={styles.linkButtonText}>Get the App</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.haveAccountButton}
+              onPress={() => setHasWiseAccount(true)}
             >
-              <Picker.Item label="Checking" value="checking" />
-              <Picker.Item label="Savings" value="savings" />
-            </Picker>
+              <Text style={styles.haveAccountText}>I already have a Wise account</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        )}
 
-        {/* Payment Info */}
-        <View style={styles.infoCard}>
-          <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
-          <View style={styles.infoContent}>
-            <Text style={styles.infoTitle}>How payments work:</Text>
-            <Text style={styles.infoText}>
-              • You receive 81% of each rider's cost-sharing contribution{'\n'}
-              • 19% platform service fee covers transaction fees (4%) and platform maintenance (15%){'\n'}
-              • Payments are processed through Stripe{'\n'}
-              • You'll receive detailed earning statements
-            </Text>
+        {/* Email Input - Show when they have account */}
+        {hasWiseAccount && (
+          <View style={styles.emailSection}>
+            <Text style={styles.emailLabel}>Enter your Wise account email</Text>
+            <DriftInput
+              label="Wise Email Address"
+              placeholder="your.email@example.com"
+              value={wiseEmail}
+              onChangeText={setWiseEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              error={errors.wiseEmail}
+            />
+
+            <View style={styles.emailNote}>
+              <Ionicons name="information-circle-outline" size={16} color={Colors.gray[500]} />
+              <Text style={styles.emailNoteText}>
+                This must match the email on your Wise account
+              </Text>
+            </View>
+
+            <DriftButton
+              title="Continue"
+              onPress={handleContinue}
+              variant="black"
+              icon={<Ionicons name="arrow-forward" size={20} color="white" />}
+            />
+
+            <TouchableOpacity
+              style={styles.backToStepsButton}
+              onPress={() => setHasWiseAccount(false)}
+            >
+              <Text style={styles.backToStepsText}>I need to create a Wise account first</Text>
+            </TouchableOpacity>
           </View>
+        )}
+
+        {/* Skip Option */}
+        <View style={styles.skipSection}>
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+            <Text style={styles.skipButtonText}>Add bank details later</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.skipWarning}>
+            Note: You won't be able to receive earnings until you add your Wise account details.
+          </Text>
         </View>
-
-        <DriftButton
-          title="Continue"
-          onPress={handleContinue}
-          variant="black"
-          icon={<Ionicons name="arrow-forward" size={20} color="white" />}
-        />
-
-        {/* Footer Note */}
-        <Text style={styles.footerText}>
-          By providing your bank details, you authorize Drift to deposit funds into this account.
-        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -229,76 +330,210 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
     lineHeight: 24,
   },
-  securityBadge: {
+  wiseCard: {
+    backgroundColor: '#9FE870',
+    borderRadius: 16,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  wiseHeader: {
     flexDirection: 'row',
-    backgroundColor: Colors.success + '10',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  wiseLogo: {
+    backgroundColor: '#000',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: 6,
+    marginRight: Spacing.md,
+  },
+  wiseLogoText: {
+    color: '#9FE870',
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '700',
+  },
+  wiseTagline: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: '#000',
+  },
+  wiseBenefits: {
+    gap: Spacing.sm,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  benefitText: {
+    fontSize: Typography.fontSize.sm,
+    color: '#000',
+    fontWeight: '500',
+  },
+  importantCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.primary + '15',
     borderRadius: 12,
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.success + '30',
+    borderColor: Colors.primary + '30',
     gap: Spacing.md,
   },
-  securityContent: {
+  importantContent: {
     flex: 1,
   },
-  securityTitle: {
+  importantTitle: {
     fontSize: Typography.fontSize.base,
     fontWeight: '600',
     color: Colors.black,
     marginBottom: Spacing.xs,
   },
-  securityText: {
+  importantText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[700],
     lineHeight: 20,
   },
-  inputContainer: {
-    marginBottom: Spacing.lg,
+  stepsSection: {
+    marginBottom: Spacing.xl,
   },
-  label: {
-    fontSize: Typography.fontSize.sm,
+  stepsTitle: {
+    fontSize: Typography.fontSize.lg,
     fontWeight: '600',
     color: Colors.black,
     marginBottom: Spacing.xs,
   },
-  pickerContainer: {
+  stepsSubtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    marginBottom: Spacing.lg,
+  },
+  stepsList: {
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  stepContent: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  stepText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.black,
+    lineHeight: 22,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  linkButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '15',
+    paddingVertical: Spacing.md,
+    borderRadius: 12,
+    gap: Spacing.sm,
+  },
+  linkButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  haveAccountButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+  },
+  haveAccountText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.primary,
+    textDecorationLine: 'underline',
+  },
+  emailSection: {
+    marginBottom: Spacing.xl,
+  },
+  emailLabel: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: Spacing.md,
+  },
+  emailNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.lg,
+  },
+  emailNoteText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[500],
+  },
+  backToStepsButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  backToStepsText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    textDecorationLine: 'underline',
+  },
+  skipSection: {
+    marginTop: Spacing.lg,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.gray[200],
+  },
+  dividerText: {
+    paddingHorizontal: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[500],
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.gray[300],
     borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: Colors.white,
+    marginBottom: Spacing.md,
   },
-  picker: {
-    height: 50,
+  skipButtonText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '500',
+    color: Colors.gray[600],
   },
-  infoCard: {
-    flexDirection: 'row',
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: Spacing.xs,
-  },
-  infoText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
-    lineHeight: 20,
-  },
-  footerText: {
+  skipWarning: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
+    color: Colors.warning,
     textAlign: 'center',
-    marginTop: Spacing.lg,
     lineHeight: 18,
   },
 });

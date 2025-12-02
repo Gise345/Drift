@@ -97,11 +97,6 @@ export interface DriverRegistration {
     routingNumber: string;
     bankName: string;
   };
-  backgroundCheck: {
-    consented: boolean;
-    consentedAt?: Date;
-    status?: 'pending' | 'cleared' | 'failed';
-  };
 }
 
 export interface RideRequest {
@@ -356,7 +351,6 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         hasLicense: !!registrationData.documents?.license,
         hasInsurance: !!registrationData.documents?.insurance,
         hasRegistration: !!registrationData.documents?.registration,
-        hasBackgroundCheck: !!registrationData.backgroundCheck,
       });
 
       // Validate required fields

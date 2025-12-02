@@ -15,17 +15,30 @@ import { DriftButton } from '@/components/ui/DriftButton';
 import { DriftInput } from '@/components/ui/DriftInput';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function PersonalInfo() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+  const { user } = useAuthStore();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Fallback to legal-consent if no navigation history
+      router.replace('/(driver)/registration/legal-consent');
+    }
+  };
 
   // Initialize state from saved registration data
   const savedPersonalInfo = registrationData?.personalInfo;
 
+  // Get email from auth store (from signup) - this should not be editable
+  const userEmail = user?.email || savedPersonalInfo?.email || '';
+
   const [firstName, setFirstName] = useState(savedPersonalInfo?.firstName || '');
   const [lastName, setLastName] = useState(savedPersonalInfo?.lastName || '');
-  const [email, setEmail] = useState(savedPersonalInfo?.email || '');
   const [phone, setPhone] = useState(savedPersonalInfo?.phone || '');
   const [dateOfBirth, setDateOfBirth] = useState(
     savedPersonalInfo?.dateOfBirth ? new Date(savedPersonalInfo.dateOfBirth) : new Date()
@@ -43,10 +56,6 @@ export default function PersonalInfo() {
     return age >= 21;
   };
 
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
-
   const validatePhone = (phone: string) => {
     return /^\+?1?[-.]?\(?345\)?[-.]?\d{3}[-.]?\d{4}$/.test(phone);
   };
@@ -56,8 +65,6 @@ export default function PersonalInfo() {
 
     if (!firstName.trim()) newErrors.firstName = 'First name is required';
     if (!lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!email.trim()) newErrors.email = 'Email is required';
-    else if (!validateEmail(email)) newErrors.email = 'Invalid email format';
     if (!phone.trim()) newErrors.phone = 'Phone is required';
     else if (!validatePhone(phone)) newErrors.phone = 'Invalid phone format';
     if (!validateAge(dateOfBirth)) newErrors.dateOfBirth = 'Must be 21 or older';
@@ -71,9 +78,10 @@ export default function PersonalInfo() {
         personalInfo: {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          email: email.trim(),
+          email: userEmail, // Use email from auth store
           phone: phone.trim(),
           dateOfBirth: dateOfBirth.toISOString(),
+          gender: savedPersonalInfo?.gender || 'male',
           address: {
             street: street.trim(),
             city: city,
@@ -91,7 +99,7 @@ export default function PersonalInfo() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Personal Information</Text>
@@ -128,16 +136,15 @@ export default function PersonalInfo() {
           error={errors.lastName}
         />
 
-        {/* Email */}
-        <DriftInput
-          label="Email Address"
-          placeholder="john.smith@example.com"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          error={errors.email}
-        />
+        {/* Email - Display only (from signup) */}
+        <View style={styles.emailContainer}>
+          <Text style={styles.label}>Email Address</Text>
+          <View style={styles.emailDisplay}>
+            <Text style={styles.emailText}>{userEmail}</Text>
+            <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+          </View>
+          <Text style={styles.emailHelper}>Email from your account</Text>
+        </View>
 
         {/* Phone */}
         <DriftInput
@@ -339,5 +346,29 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[700],
     lineHeight: 20,
+  },
+  emailContainer: {
+    marginBottom: Spacing.lg,
+  },
+  emailDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.gray[200],
+  },
+  emailText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.black,
+    flex: 1,
+  },
+  emailHelper: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[500],
+    marginTop: Spacing.xs,
   },
 });

@@ -24,6 +24,15 @@ export default function LegalConsent() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Fallback to welcome screen if no navigation history
+      router.replace('/(driver)/registration/welcome');
+    }
+  };
+
   // Initialize from saved data
   const savedGender = registrationData?.personalInfo?.gender;
 
@@ -61,7 +70,7 @@ export default function LegalConsent() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           style={styles.backButton}
         >
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
@@ -412,12 +421,12 @@ const styles = StyleSheet.create({
   genderTitle: {
     fontSize: Typography.fontSize.lg,
     fontWeight: '600',
-    color: Colors.black,
+    color: '#000000',
     marginBottom: Spacing.xs,
   },
   genderSubtitle: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+    color: '#374151',
     lineHeight: 20,
     marginBottom: Spacing.lg,
   },
@@ -464,10 +473,10 @@ const styles = StyleSheet.create({
   genderLabel: {
     fontSize: Typography.fontSize.base,
     fontWeight: '500',
-    color: Colors.gray[700],
+    color: '#000000',
   },
   genderLabelSelected: {
-    color: Colors.primary,
+    color: '#000000',
     fontWeight: '600',
   },
   checkboxRow: {

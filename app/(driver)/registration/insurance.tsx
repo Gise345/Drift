@@ -22,6 +22,14 @@ export default function Insurance() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/registration/drivers-license');
+    }
+  };
+
   // Initialize from saved data
   const savedInsurance = registrationData?.documents?.insurance;
 
@@ -82,7 +90,7 @@ export default function Insurance() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Vehicle Insurance</Text>

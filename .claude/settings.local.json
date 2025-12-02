@@ -33,7 +33,8 @@
       "Bash(powershell -Command \"Get-ChildItem ''C:\\Drift\\app\\(driver\\)'' -Recurse -Include *.tsx | Select-Object FullName\")",
       "Bash(powershell:*)",
       "Bash(find:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(del \"C:\\Drift\\app\\(driver)\\registration\\background-check.tsx\")"
     ],
     "deny": [],
     "ask": []

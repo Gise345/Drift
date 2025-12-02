@@ -449,11 +449,6 @@ export async function getDriverRegistrationStatus(
       updatedAt: data.updatedAt?.toDate(),
       submittedAt: data.submittedAt?.toDate(),
       reviewedAt: data.reviewedAt?.toDate(),
-      backgroundCheck: {
-        ...data.backgroundCheck,
-        consentedAt: data.backgroundCheck?.consentedAt?.toDate(),
-        completedAt: data.backgroundCheck?.completedAt?.toDate(),
-      },
     } as DriverProfile;
   } catch (error) {
     console.error('❌ Error getting driver registration status:', error);

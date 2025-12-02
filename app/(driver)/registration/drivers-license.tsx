@@ -31,6 +31,14 @@ export default function DriversLicense() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/registration/vehicle-photos');
+    }
+  };
+
   // Initialize from saved data
   const savedLicense = registrationData?.documents?.license;
 
@@ -100,7 +108,7 @@ export default function DriversLicense() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Driver's License</Text>

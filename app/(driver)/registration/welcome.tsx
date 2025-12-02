@@ -7,6 +7,7 @@ import {
   ImageBackground,
   Image,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -65,7 +66,7 @@ const requirements: string[] = [
 
 export default function DriverWelcome() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, signOut } = useAuthStore();
   const { loadSavedRegistrationProgress, setRegistrationStep } = useDriverStore();
   const [isCheckingProgress, setIsCheckingProgress] = useState(true);
   const [hasSavedProgress, setHasSavedProgress] = useState(false);
@@ -82,9 +83,8 @@ export default function DriverWelcome() {
     7: '/(driver)/registration/insurance',
     8: '/(driver)/registration/registration-cert',
     9: '/(driver)/registration/inspection',
-    10: '/(driver)/registration/background-check',
-    11: '/(driver)/registration/bank-details',
-    12: '/(driver)/registration/review-application',
+    10: '/(driver)/registration/bank-details',
+    11: '/(driver)/registration/review-application',
   };
 
   useEffect(() => {
@@ -127,6 +127,15 @@ export default function DriverWelcome() {
     router.push('/(auth)/sign-in');
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      router.replace('/(auth)/welcome');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   // Show loading while checking progress
   if (isCheckingProgress) {
     return (
@@ -152,8 +161,12 @@ export default function DriverWelcome() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header with Logo */}
+          {/* Header with Logo and Sign Out */}
           <View style={styles.header}>
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
             <Image
               source={require('@/assets/images/drift-logo.png')}
               style={styles.logo}
@@ -312,6 +325,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.xl,
     marginBottom: Spacing.md,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 20,
+    marginBottom: Spacing.md,
+    gap: 6,
+  },
+  signOutText: {
+    fontSize: Typography.fontSize.sm,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '500',
   },
   logo: {
     width: 280,

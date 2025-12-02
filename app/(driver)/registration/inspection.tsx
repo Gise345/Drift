@@ -20,6 +20,14 @@ export default function Inspection() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/registration/registration-cert');
+    }
+  };
+
   // Initialize from saved data
   const savedInspection = registrationData?.documents?.inspection;
 
@@ -74,14 +82,14 @@ export default function Inspection() {
       });
     }
 
-    setRegistrationStep(10); // Moving to step 10 (background-check)
-    router.push('/(driver)/registration/background-check');
+    setRegistrationStep(10); // Moving to step 10 (bank-details) - background check removed
+    router.push('/(driver)/registration/bank-details');
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Safety Inspection</Text>

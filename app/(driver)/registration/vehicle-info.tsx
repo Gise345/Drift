@@ -30,6 +30,14 @@ export default function VehicleInfo() {
   const router = useRouter();
   const { updateRegistrationData, setRegistrationStep, registrationData } = useDriverStore();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/registration/personal-info');
+    }
+  };
+
   // Initialize from saved data
   const savedVehicle = registrationData?.vehicle;
 
@@ -85,7 +93,7 @@ export default function VehicleInfo() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Vehicle Information</Text>
