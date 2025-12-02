@@ -26,17 +26,19 @@
       "env": {
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk",
         "EXPO_PUBLIC_GOOGLE_PLACES_API_KEY": "AIzaSyA6o3LcssB-jT0qosUEsmVG3rQ-6uWyncc"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "android": {
         "buildType": "apk"
       },
-       "env": {
+      "env": {
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk",
         "EXPO_PUBLIC_GOOGLE_PLACES_API_KEY": "AIzaSyA6o3LcssB-jT0qosUEsmVG3rQ-6uWyncc",
         "NODE_ENV": "production"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {

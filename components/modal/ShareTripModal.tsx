@@ -66,14 +66,16 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
   const saveSharedContact = async (contactInfo: string) => {
     try {
       const tripRef = firestore().collection('trips').doc(tripId);
-      
+
+      // Note: serverTimestamp() cannot be used inside arrayUnion()
+      // Use a regular Date timestamp instead
       await tripRef.update({
         sharedWith: firestore.FieldValue.arrayUnion({
           contact: contactInfo,
-          sharedAt: firestore.FieldValue.serverTimestamp(),
+          sharedAt: new Date().toISOString(),
         }),
       });
-      
+
       console.log('✅ Saved shared contact to trip');
     } catch (error) {
       console.error('❌ Failed to save shared contact:', error);

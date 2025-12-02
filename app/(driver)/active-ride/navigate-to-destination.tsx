@@ -77,6 +77,7 @@ export default function NavigateToDestination() {
   const [elapsed, setElapsed] = useState(0);
   const [tripStartTime] = useState(new Date());
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
+  const [currentSpeed, setCurrentSpeed] = useState<number>(0); // Speed in m/s
   const lastRouteRecalculation = useRef<number>(0);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
@@ -364,6 +365,11 @@ export default function NavigateToDestination() {
             const { latitude, longitude, heading, speed } = loc.coords;
             setCurrentLocation({ latitude, longitude });
 
+            // Update current speed (in m/s from GPS)
+            if (speed !== null && speed >= 0) {
+              setCurrentSpeed(speed);
+            }
+
             // Update driver location
             updateLocation({
               lat: latitude,
@@ -573,8 +579,15 @@ export default function NavigateToDestination() {
     }
   };
 
+  // Handle navigation when no active ride - must be in useEffect to avoid setState during render
+  useEffect(() => {
+    if (!activeRide) {
+      router.replace('/(driver)/tabs');
+    }
+  }, [activeRide, router]);
+
+  // Show loading while redirecting if no active ride
   if (!activeRide) {
-    router.replace('/(driver)/tabs');
     return null;
   }
 
@@ -663,7 +676,11 @@ export default function NavigateToDestination() {
       {/* Stats Pills */}
       <View style={styles.statsPillContainer}>
         <View style={styles.statPill}>
-          <Ionicons name="time-outline" size={16} color={Colors.primary} />
+          <Ionicons name="speedometer-outline" size={16} color={Colors.primary} />
+          <Text style={styles.statPillText}>{Math.round(currentSpeed * 2.237)} mph</Text>
+        </View>
+        <View style={styles.statPill}>
+          <Ionicons name="time-outline" size={16} color={Colors.gray[600]} />
           <Text style={styles.statPillText}>{formatTime(elapsed)}</Text>
         </View>
         <View style={[styles.statPill, styles.statPillPrimary]}>

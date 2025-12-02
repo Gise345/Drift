@@ -398,8 +398,14 @@ export async function addTipToTrip(
       updatedAt: serverTimestamp(),
     });
 
-    // Update driver's earnings via Cloud Function
-    await updateDriverEarnings(driverId, tripId, finalCost, tipAmount);
+    // Ensure we have a valid driverId (fallback to tripData if not provided)
+    const effectiveDriverId = driverId || tripData?.driverId || tripData?.driverInfo?.id;
+    if (effectiveDriverId) {
+      // Update driver's earnings via Cloud Function
+      await updateDriverEarnings(effectiveDriverId, tripId, finalCost, tipAmount);
+    } else {
+      console.warn('⚠️ No driverId found for tip update:', tripId);
+    }
 
     console.log('✅ Tip added to trip:', tripId, 'Amount:', tipAmount);
   } catch (error) {
@@ -432,8 +438,14 @@ export async function skipTipAndFinalize(tripId: string, driverId: string): Prom
       updatedAt: serverTimestamp(),
     });
 
-    // Update driver's earnings via Cloud Function (no tip)
-    await updateDriverEarnings(driverId, tripId, finalCost, 0);
+    // Ensure we have a valid driverId (fallback to tripData if not provided)
+    const effectiveDriverId = driverId || tripData?.driverId || tripData?.driverInfo?.id;
+    if (effectiveDriverId) {
+      // Update driver's earnings via Cloud Function (no tip)
+      await updateDriverEarnings(effectiveDriverId, tripId, finalCost, 0);
+    } else {
+      console.warn('⚠️ No driverId found for earnings update:', tripId);
+    }
 
     console.log('✅ Trip finalized without tip:', tripId);
   } catch (error) {
@@ -485,6 +497,7 @@ export async function finalizeTrip(tripId: string): Promise<void> {
     const tripDoc = await getDoc(tripRef);
 
     if (!documentExists(tripDoc)) {
+      console.error('❌ Trip not found for finalization:', tripId);
       throw new Error('Trip not found');
     }
 
@@ -499,9 +512,12 @@ export async function finalizeTrip(tripId: string): Promise<void> {
       });
 
       // Update driver earnings via Cloud Function if not already done
-      if (tripData?.driverId) {
+      const driverId = tripData?.driverId || tripData?.driverInfo?.id;
+      if (driverId) {
         const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
-        await updateDriverEarnings(tripData.driverId, tripId, finalCost, tripData?.tip || 0);
+        await updateDriverEarnings(driverId, tripId, finalCost, tripData?.tip || 0);
+      } else {
+        console.warn('⚠️ No driverId found for trip, skipping earnings update:', tripId);
       }
     }
 

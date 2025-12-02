@@ -4,6 +4,7 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { AutoUpdate } from '@/src/components/AutoUpdate';
 
 // Stripe publishable key from environment
 const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -86,6 +87,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AutoUpdate />
       {content}
     </SafeAreaProvider>
   );

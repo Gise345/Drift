@@ -155,6 +155,9 @@ module.exports = {
       policy: "appVersion"
     },
     updates: {
+      enabled: true,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
       url: "https://u.expo.dev/d7b6f22f-7d74-4cc2-b3c6-89ceece434fc"
     }
   }

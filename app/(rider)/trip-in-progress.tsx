@@ -34,7 +34,6 @@ import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
-import { SOSButton } from '@/components/safety/SOSButton';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.38;
@@ -890,29 +889,6 @@ export default function TripInProgressScreen() {
         </View>
       )}
 
-      {/* Floating SOS Button */}
-      {currentTrip && driver && currentTrip.driverLocation && (
-        <View style={styles.sosFloatingContainer}>
-          <SOSButton
-            tripId={currentTrip.id}
-            driverId={currentTrip.driverId || ''}
-            riderId={currentTrip.riderId}
-            currentLocation={{
-              latitude: currentTrip.driverLocation.latitude,
-              longitude: currentTrip.driverLocation.longitude,
-            }}
-            driverInfo={{
-              name: driver.name,
-              phone: driver.phone,
-              vehicle: `${driver.vehicle.make} ${driver.vehicle.model}`,
-              plate: driver.vehicle.plate,
-            }}
-            size="medium"
-            showLabel
-          />
-        </View>
-      )}
-
       {/* Safety Alert Modal (Are you okay?) */}
       <SafetyAlertContainer />
 
@@ -1476,14 +1452,6 @@ const styles = StyleSheet.create({
     top: Platform.OS === 'ios' ? 200 : 180,
     left: 16,
     zIndex: 10,
-  },
-
-  // Floating SOS Button Container
-  sosFloatingContainer: {
-    position: 'absolute',
-    bottom: SCREEN_HEIGHT * 0.42 + 20,
-    right: 16,
-    zIndex: 100,
   },
 
   // Stop Request Modal Styles
