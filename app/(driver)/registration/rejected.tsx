@@ -51,7 +51,6 @@ export default function Rejected() {
           </Text>
           <View style={styles.reasonsList}>
             <Text style={styles.reasonItem}>• Incomplete or unclear documents</Text>
-            <Text style={styles.reasonItem}>• Issues with background check</Text>
             <Text style={styles.reasonItem}>• Vehicle doesn't meet requirements</Text>
             <Text style={styles.reasonItem}>• Expired insurance or registration</Text>
             <Text style={styles.reasonItem}>• Information discrepancies</Text>

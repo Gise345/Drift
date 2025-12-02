@@ -22,13 +22,17 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function LegalConsent() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedGender = registrationData?.personalInfo?.gender;
+
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToPeerToPeer, setAgreedToPeerToPeer] = useState(false);
   const [agreedToInsurance, setAgreedToInsurance] = useState(false);
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | null>(savedGender || null);
 
-  const canContinue = agreedToTerms && agreedToPeerToPeer && agreedToInsurance;
+  const canContinue = agreedToTerms && agreedToPeerToPeer && agreedToInsurance && selectedGender !== null;
 
   const handleContinue = () => {
     const currentPersonalInfo = useDriverStore.getState().registrationData.personalInfo;
@@ -39,6 +43,7 @@ export default function LegalConsent() {
         email: currentPersonalInfo?.email || '',
         phone: currentPersonalInfo?.phone || '',
         dateOfBirth: currentPersonalInfo?.dateOfBirth || '',
+        gender: selectedGender!,
         address: currentPersonalInfo?.address || {
           street: '',
           city: '',
@@ -47,7 +52,7 @@ export default function LegalConsent() {
         },
       },
     });
-    setRegistrationStep(2);
+    setRegistrationStep(3); // Moving to step 3 (personal-info)
     router.push('/(driver)/registration/personal-info');
   };
 
@@ -116,8 +121,19 @@ export default function LegalConsent() {
             <View style={styles.checkboxContent}>
               <Text style={styles.checkboxLabel}>
                 I agree to Drift's{' '}
-                <Text style={styles.link}>Terms of Service</Text> and{' '}
-                <Text style={styles.link}>Privacy Policy</Text>
+                <Text
+                  style={styles.link}
+                  onPress={() => router.push('/(driver)/legal/terms')}
+                >
+                  Terms of Service
+                </Text>{' '}
+                and{' '}
+                <Text
+                  style={styles.link}
+                  onPress={() => router.push('/(driver)/legal/privacy')}
+                >
+                  Privacy Policy
+                </Text>
               </Text>
             </View>
           </TouchableOpacity>
@@ -179,6 +195,76 @@ export default function LegalConsent() {
               </Text>
             </View>
           </TouchableOpacity> */}
+        </View>
+
+        {/* Gender Selection */}
+        <View style={styles.genderSection}>
+          <Text style={styles.genderTitle}>Gender Assigned at Birth</Text>
+          <Text style={styles.genderSubtitle}>
+            This helps us offer future safety features like allowing female riders to request female drivers only.
+          </Text>
+
+          <View style={styles.genderOptions}>
+            <TouchableOpacity
+              style={[
+                styles.genderOption,
+                selectedGender === 'female' && styles.genderOptionSelected,
+              ]}
+              onPress={() => setSelectedGender('female')}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.genderRadio,
+                selectedGender === 'female' && styles.genderRadioSelected,
+              ]}>
+                {selectedGender === 'female' && (
+                  <View style={styles.genderRadioInner} />
+                )}
+              </View>
+              <Ionicons
+                name="female"
+                size={24}
+                color={selectedGender === 'female' ? Colors.primary : Colors.gray[600]}
+                style={styles.genderIcon}
+              />
+              <Text style={[
+                styles.genderLabel,
+                selectedGender === 'female' && styles.genderLabelSelected,
+              ]}>
+                Female
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.genderOption,
+                selectedGender === 'male' && styles.genderOptionSelected,
+              ]}
+              onPress={() => setSelectedGender('male')}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.genderRadio,
+                selectedGender === 'male' && styles.genderRadioSelected,
+              ]}>
+                {selectedGender === 'male' && (
+                  <View style={styles.genderRadioInner} />
+                )}
+              </View>
+              <Ionicons
+                name="male"
+                size={24}
+                color={selectedGender === 'male' ? Colors.primary : Colors.gray[600]}
+                style={styles.genderIcon}
+              />
+              <Text style={[
+                styles.genderLabel,
+                selectedGender === 'male' && styles.genderLabelSelected,
+              ]}>
+                Male
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Key Points */}
@@ -318,7 +404,71 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   termsContainer: {
+    marginBottom: Spacing.lg,
+  },
+  genderSection: {
     marginBottom: Spacing.xl,
+  },
+  genderTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: Spacing.xs,
+  },
+  genderSubtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    lineHeight: 20,
+    marginBottom: Spacing.lg,
+  },
+  genderOptions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  genderOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    padding: Spacing.lg,
+    borderWidth: 2,
+    borderColor: Colors.gray[200],
+  },
+  genderOptionSelected: {
+    backgroundColor: Colors.primary + '10',
+    borderColor: Colors.primary,
+  },
+  genderRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.gray[300],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  genderRadioSelected: {
+    borderColor: Colors.primary,
+  },
+  genderRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.primary,
+  },
+  genderIcon: {
+    marginRight: Spacing.sm,
+  },
+  genderLabel: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '500',
+    color: Colors.gray[700],
+  },
+  genderLabelSelected: {
+    color: Colors.primary,
+    fontWeight: '600',
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -355,6 +505,7 @@ const styles = StyleSheet.create({
   link: {
     color: Colors.primary,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   keyPointsCard: {
     backgroundColor: Colors.gray[50],

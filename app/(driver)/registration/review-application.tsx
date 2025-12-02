@@ -233,14 +233,7 @@ export default function ReviewApplication() {
               />
               <Text style={styles.documentText}>Vehicle Registration</Text>
             </View>
-            <View style={styles.documentRow}>
-              <Ionicons
-                name={registrationData.backgroundCheck?.consented ? "checkmark-circle" : "alert-circle"}
-                size={20}
-                color={registrationData.backgroundCheck?.consented ? Colors.success : Colors.error}
-              />
-              <Text style={styles.documentText}>Background Check Consent</Text>
-            </View>
+            
           </View>
         </View>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,18 +18,23 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function PersonalInfo() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState(new Date());
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize state from saved registration data
+  const savedPersonalInfo = registrationData?.personalInfo;
+
+  const [firstName, setFirstName] = useState(savedPersonalInfo?.firstName || '');
+  const [lastName, setLastName] = useState(savedPersonalInfo?.lastName || '');
+  const [email, setEmail] = useState(savedPersonalInfo?.email || '');
+  const [phone, setPhone] = useState(savedPersonalInfo?.phone || '');
+  const [dateOfBirth, setDateOfBirth] = useState(
+    savedPersonalInfo?.dateOfBirth ? new Date(savedPersonalInfo.dateOfBirth) : new Date()
+  );
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [street, setStreet] = useState('');
-  const [city, setCity] = useState('George Town');
-  const [postalCode, setPostalCode] = useState('');
-  
+  const [street, setStreet] = useState(savedPersonalInfo?.address?.street || '');
+  const [city, setCity] = useState(savedPersonalInfo?.address?.city || 'George Town');
+  const [postalCode, setPostalCode] = useState(savedPersonalInfo?.address?.postalCode || '');
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateAge = (date: Date) => {
@@ -77,7 +82,7 @@ export default function PersonalInfo() {
           },
         },
       });
-      setRegistrationStep(3);
+      setRegistrationStep(4); // Moving to step 4 (vehicle-info)
       router.push('/(driver)/registration/vehicle-info');
     }
   };

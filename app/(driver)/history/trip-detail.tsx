@@ -69,7 +69,9 @@ const formatTime = (date: Date | undefined): string => {
 };
 
 export default function TripDetailScreen() {
-  const { tripId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  // Accept both 'tripId' and 'id' as parameter names for flexibility
+  const tripId = params.tripId || params.id;
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

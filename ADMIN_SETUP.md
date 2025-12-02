@@ -278,22 +278,22 @@ For production, create separate admin accounts:
 1. **Super Admin** (Owner)
    - Full access to everything
    - Can add/remove other admins
-   - Email: admin@drift.ky
+   - Email: info@drift-global.com
 
 2. **Operations Admin**
    - Approve/reject drivers
    - Handle support tickets
-   - Email: ops@drift.ky
+   - Email: ops@drift-global.com
 
 3. **Finance Admin**
    - View earnings
    - Process payouts
-   - Email: finance@drift.ky
+   - Email: finance@drift-global.com
 
 4. **Support Admin**
    - Read-only access
    - Can view trips/drivers
-   - Email: support@drift.ky
+   - Email: info@drift-global.com
 
 ---
 

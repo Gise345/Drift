@@ -18,9 +18,12 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function RegistrationCert() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [registrationImage, setRegistrationImage] = useState<string | null>(null);
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedRegistration = registrationData?.documents?.registration;
+
+  const [registrationImage, setRegistrationImage] = useState<string | null>(savedRegistration?.image || null);
 
   const pickImage = async (useCamera: boolean) => {
     if (useCamera) {
@@ -63,7 +66,7 @@ export default function RegistrationCert() {
       },
     });
 
-    setRegistrationStep(8);
+    setRegistrationStep(9); // Moving to step 9 (inspection)
     router.push('/(driver)/registration/inspection');
   };
 

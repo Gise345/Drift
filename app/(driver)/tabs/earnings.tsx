@@ -362,7 +362,7 @@ export default function DriverEarningsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Trips</Text>
-            <TouchableOpacity onPress={() => router.push('/(driver)/dashboard/trips')}>
+            <TouchableOpacity onPress={() => router.push('/(driver)/history/trips')}>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>

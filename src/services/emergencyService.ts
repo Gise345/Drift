@@ -600,7 +600,7 @@ export async function shareTripWithEmergencyContacts(
       shareTokens.push(shareToken);
 
       // TODO: Send SMS with tracking link
-      console.log(`Trip shared with ${contact.name}: https://drift.ky/track/${shareToken}`);
+      console.log(`Trip shared with ${contact.name}: https://drift-global.com/track/${shareToken}`);
     }
 
     return { success: true, data: shareTokens };

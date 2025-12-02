@@ -67,15 +67,6 @@ export default function PendingApproval() {
             </View>
           </View>
 
-          <View style={styles.timelineLine} />
-
-          <View style={styles.timelineItem}>
-            <View style={styles.timelineDot} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineLabel}>Background Check</Text>
-              <Text style={styles.timelineTime}>1-2 business days</Text>
-            </View>
-          </View>
 
           <View style={styles.timelineLine} />
 

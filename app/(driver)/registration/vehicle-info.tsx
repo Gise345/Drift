@@ -29,14 +29,17 @@ const VEHICLE_COLORS = [
 export default function VehicleInfo() {
   const router = useRouter();
   const { updateRegistrationData, setRegistrationStep, registrationData } = useDriverStore();
-  
-  const [make, setMake] = useState('');
-  const [model, setModel] = useState('');
-  const [year, setYear] = useState('2024');
-  const [color, setColor] = useState('');
-  const [licensePlate, setLicensePlate] = useState('');
-  const [vin, setVin] = useState('');
-  const [seats, setSeats] = useState('4');
+
+  // Initialize from saved data
+  const savedVehicle = registrationData?.vehicle;
+
+  const [make, setMake] = useState(savedVehicle?.make || '');
+  const [model, setModel] = useState(savedVehicle?.model || '');
+  const [year, setYear] = useState(savedVehicle?.year?.toString() || '2024');
+  const [color, setColor] = useState(savedVehicle?.color || '');
+  const [licensePlate, setLicensePlate] = useState(savedVehicle?.licensePlate || '');
+  const [vin, setVin] = useState(savedVehicle?.vin || '');
+  const [seats, setSeats] = useState(savedVehicle?.seats?.toString() || '4');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -73,7 +76,7 @@ export default function VehicleInfo() {
           photos: {},
         },
       });
-      setRegistrationStep(4);
+      setRegistrationStep(5); // Moving to step 5 (vehicle-photos)
       router.push('/(driver)/registration/vehicle-photos');
     }
   };

@@ -519,7 +519,7 @@ export const useTripStore = create<TripStore>((set, get) => ({
       await get().updateTrip(tripId, { sharedWith });
       
       // TODO: Send SMS/Email notifications with tracking link
-      // Example: https://drift.ky/track/ABC123XYZ
+      // Example: https://drift-global.com/track/ABC123XYZ
       for (const contact of sharedWith) {
         await sendShareNotification(contact, trip, contact.shareToken);
       }
@@ -567,7 +567,7 @@ async function sendShareNotification(
   // TODO: Implement SMS/Email sending
   // You can use Twilio for SMS, SendGrid for email, or Firebase Cloud Functions
   
-  const trackingUrl = `https://drift.ky/track/${shareToken}`;
+  const trackingUrl = `https://drift-global.com/track/${shareToken}`;
   const message = `${trip.pickup.address} to ${trip.destination.address}. Track my ride: ${trackingUrl}`;
   
   console.log(`Sharing trip with ${contact.name}:`, message);

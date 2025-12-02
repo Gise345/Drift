@@ -46,8 +46,8 @@ export default function RiderTermsScreen() {
       >
         {/* Effective Date */}
         <View style={styles.effectiveDate}>
-          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2024</Text>
-          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2024</Text>
+          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2025</Text>
+          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2025</Text>
         </View>
 
         {/* Introduction */}
@@ -194,7 +194,7 @@ export default function RiderTermsScreen() {
             <Text style={styles.bold}>5.3 Payment Processing</Text>
           </Text>
           <Text style={styles.paragraph}>
-            If you choose to make cost-sharing contributions through the Platform, payments are processed by PayPal, a third-party payment processor. Drift does not handle, store, or process payment card information.
+            If you choose to make cost-sharing contributions through the Platform, payments are processed by Stripe, a third-party payment processor. Drift does not handle, store, or process payment card information.
           </Text>
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>5.4 Platform Technology Fee</Text>
@@ -280,7 +280,7 @@ export default function RiderTermsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>9. Intellectual Property</Text>
           <Text style={styles.paragraph}>
-            The Platform, including all content, features, trademarks, logos, and intellectual property, is owned by Drift Ltd. and protected by copyright, trademark, and other laws.
+            The Platform, including all content, features, trademarks, logos, and intellectual property, is owned by Invovibe Tech Ltd / I.T Cayman. and protected by copyright, trademark, and other laws.
           </Text>
           <Text style={styles.paragraph}>
             You are granted a limited, non-exclusive, non-transferable license to use the Platform for personal, non-commercial purposes. You may not copy, modify, distribute, sell, or reverse engineer any part of the Platform.
@@ -302,7 +302,7 @@ export default function RiderTermsScreen() {
           <Text style={styles.bulletPoint}>• Account information (name, email, phone number)</Text>
           <Text style={styles.bulletPoint}>• Location data for carpool matching</Text>
           <Text style={styles.bulletPoint}>• Trip history and preferences</Text>
-          <Text style={styles.bulletPoint}>• Payment information (processed by PayPal)</Text>
+          <Text style={styles.bulletPoint}>• Payment information (processed by Stripe)</Text>
           <Text style={styles.bulletPoint}>• Ratings and reviews</Text>
           <Text style={styles.bulletPoint}>• Device information and app usage data</Text>
         </View>
@@ -394,7 +394,7 @@ export default function RiderTermsScreen() {
             <Text style={styles.bold}>14.1 Informal Resolution</Text>
           </Text>
           <Text style={styles.paragraph}>
-            If you have a dispute with Drift, you agree to first contact us at legal@drift.ky to attempt informal resolution.
+            If you have a dispute with Drift, you agree to first contact us at legal@drift-global.com to attempt informal resolution.
           </Text>
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>14.2 Binding Arbitration</Text>
@@ -473,12 +473,12 @@ export default function RiderTermsScreen() {
           <Text style={styles.paragraph}>
             For questions about these Terms, please contact:
           </Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: legal@drift.ky</Text>
-          <Text style={styles.contactInfo}>Support: support@drift.ky</Text>
-          <Text style={styles.contactInfo}>Website: www.drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: legal@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Support: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Website: www.drift-global.com</Text>
         </View>
 
         {/* Acknowledgment */}
@@ -499,7 +499,7 @@ export default function RiderTermsScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Drift Rider Terms of Service v1.0</Text>
           <Text style={styles.footerText}>Effective: December 1, 2024</Text>
-          <Text style={styles.footerText}>© 2024 Drift Ltd. All rights reserved.</Text>
+          <Text style={styles.footerText}>© 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

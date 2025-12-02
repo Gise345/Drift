@@ -25,14 +25,17 @@ interface Photo {
 
 export default function VehiclePhotos() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedPhotos = registrationData?.vehicle?.photos;
+
   const [photos, setPhotos] = useState<Record<PhotoType, string | null>>({
-    front: null,
-    back: null,
-    leftSide: null,
-    rightSide: null,
-    interior: null,
+    front: savedPhotos?.front || null,
+    back: savedPhotos?.back || null,
+    leftSide: savedPhotos?.leftSide || null,
+    rightSide: savedPhotos?.rightSide || null,
+    interior: savedPhotos?.interior || null,
   });
 
   const photoLabels: Record<PhotoType, string> = {
@@ -110,7 +113,7 @@ export default function VehiclePhotos() {
         },
       },
     });
-    setRegistrationStep(5);
+    setRegistrationStep(6); // Moving to step 6 (drivers-license)
     router.push('/(driver)/registration/drivers-license');
   };
 

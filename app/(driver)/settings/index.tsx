@@ -228,7 +228,7 @@ export default function SettingsScreen() {
           action: () => {
             Alert.alert(
               'Drift Driver',
-              `Version ${appVersion}\n\n© 2024 Drift Ltd.\nMade in the Cayman Islands 🇰🇾`,
+              `Version ${appVersion}\n\n© 2024 Invovibe Tech Ltd / I.T Cayman.\nMade in the Cayman Islands 🇰🇾`,
               [{ text: 'OK' }]
             );
           },
@@ -347,7 +347,7 @@ export default function SettingsScreen() {
             Drift Driver v{appVersion}
           </Text>
           <Text style={styles.appInfoSubtext}>
-            © 2024 Drift Ltd. All rights reserved.
+            © 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.
           </Text>
         </View>
       </ScrollView>

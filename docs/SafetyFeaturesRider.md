@@ -188,7 +188,7 @@ The app will call **911** when SOS is pressed.
 
 **Other ways to get help:**
 - **In-app support:** Settings > Help > Safety Emergency
-- **Email:** safety@drift.ky
+- **Email:** safety@drift-global.com
 
 ---
 

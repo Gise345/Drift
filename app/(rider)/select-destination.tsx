@@ -229,7 +229,8 @@ const SelectDestinationScreen = () => {
 
     if (!GOOGLE_DIRECTIONS_API_KEY) {
       console.error('❌ Google API key not configured');
-      calculateFallbackRoute();
+      Alert.alert('Configuration Error', 'Google Maps API key is not configured. Please contact support.');
+      setLoading(false);
       return;
     }
 
@@ -323,6 +324,9 @@ const SelectDestinationScreen = () => {
           stops: stops || [],
         });
 
+        // Detect zones for pricing
+        detectZonesForPricing();
+
         // Fit map after state update
         setTimeout(() => {
           fitMapToRoute(coords);
@@ -332,62 +336,87 @@ const SelectDestinationScreen = () => {
       } else {
         console.error('❌ Directions API error:', data.status);
         console.error('Error message:', data.error_message);
-        calculateFallbackRoute();
         setLoading(false);
+        handleRouteError();
       }
     } catch (error) {
       console.error('❌ Route fetch error:', error);
-      calculateFallbackRoute();
       setLoading(false);
-
-        // ✅ ZONE DETECTION: Detect zones for pricing
-        const pickupZone = detectZone(pickupLocation.latitude, pickupLocation.longitude);
-        const destZone = detectZone(destination.latitude, destination.longitude);
-        
-        if (pickupZone && destZone) {
-          console.log('📍 Zones detected:', {
-            pickup: pickupZone.displayName,
-            destination: destZone.displayName,
-          });
-        } else {
-          Alert.alert(
-            'Service Area', 
-            'Pickup or destination is outside our service area (Grand Cayman). Please select locations within Grand Cayman.'
-          );
-        }
+      handleRouteError();
     }
   };
 
   /**
-   * Fallback to straight line
+   * Calculate distance using Haversine formula (fallback)
+   */
+  const calculateDistance = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const toRad = (deg: number): number => deg * (Math.PI / 180);
+
+  /**
+   * Fallback to straight line when API fails
    */
   const calculateFallbackRoute = () => {
     if (!pickupLocation || !destination) return;
 
-    const straightLine = [
+    console.log('⚠️ Using fallback straight-line route');
+
+    // Create straight line coordinates
+    const straightLine: LatLng[] = [
       { latitude: pickupLocation.latitude, longitude: pickupLocation.longitude },
-      { latitude: destination.latitude, longitude: destination.longitude },
     ];
 
-    const distanceKm = calculateDistance(
-      pickupLocation.latitude,
-      pickupLocation.longitude,
-      destination.latitude,
-      destination.longitude
-    );
-    
-    const distanceMiles = distanceKm * 0.621371;
-    const durationMin = (distanceMiles / 30) * 60;
+    // Add stops if any
+    if (stops && stops.length > 0) {
+      stops.forEach(stop => {
+        straightLine.push({ latitude: stop.latitude, longitude: stop.longitude });
+      });
+    }
 
-    console.log('⚠️ Using fallback straight-line route');
-    console.log('📏 Distance:', distanceMiles.toFixed(2), 'miles');
+    straightLine.push({ latitude: destination.latitude, longitude: destination.longitude });
+
+    // Calculate total distance
+    let totalDistanceKm = 0;
+    for (let i = 0; i < straightLine.length - 1; i++) {
+      totalDistanceKm += calculateDistance(
+        straightLine[i].latitude,
+        straightLine[i].longitude,
+        straightLine[i + 1].latitude,
+        straightLine[i + 1].longitude
+      );
+    }
+
+    // Multiply by 1.3 to account for roads not being straight
+    const adjustedDistanceKm = totalDistanceKm * 1.3;
+    const distanceMiles = adjustedDistanceKm * 0.621371;
+    const durationMin = (distanceMiles / 25) * 60; // Assume 25 mph average
+
+    console.log('📏 Fallback Distance:', distanceMiles.toFixed(2), 'miles');
 
     setRouteCoordinates(straightLine);
     setDistanceMiles(distanceMiles);
     setDurationMinutes(durationMin);
+    setShowPolyline(true);
 
     setRoute({
-      distance: distanceKm * 1000,
+      distance: adjustedDistanceKm * 1000,
       duration: durationMin * 60,
       polylinePoints: straightLine,
       origin: pickupLocation,
@@ -395,37 +424,79 @@ const SelectDestinationScreen = () => {
       stops: stops || [],
     });
 
+    // Detect zones for pricing
+    detectZonesForPricing();
+
     setTimeout(() => {
       fitMapToRoute(straightLine);
     }, 500);
 
     Alert.alert(
-      'Route Calculation',
-      'Using estimated straight-line route. Actual distance may vary.',
+      'Route Estimated',
+      'Using estimated route. Actual distance may vary slightly.',
       [{ text: 'OK' }]
     );
   };
 
-  const calculateDistance = (
-    lat1: number, 
-    lon1: number, 
-    lat2: number, 
-    lon2: number
-  ): number => {
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  /**
+   * Detect zones for pricing
+   */
+  const detectZonesForPricing = () => {
+    if (!pickupLocation || !destination) return;
+
+    const pickupZone = detectZone(pickupLocation.latitude, pickupLocation.longitude);
+    const destZone = detectZone(destination.latitude, destination.longitude);
+
+    if (pickupZone && destZone) {
+      console.log('📍 Zones detected:', {
+        pickup: pickupZone.displayName,
+        destination: destZone.displayName,
+      });
+    } else {
+      console.warn('⚠️ One or more locations outside service area');
+      if (!pickupZone) {
+        console.warn('  Pickup location not in any zone');
+      }
+      if (!destZone) {
+        console.warn('  Destination not in any zone');
+      }
+    }
   };
 
-  const toRad = (deg: number): number => deg * (Math.PI / 180);
+  /**
+   * Handle route calculation error - show error and allow retry or use fallback
+   */
+  const handleRouteError = () => {
+    if (!pickupLocation || !destination) return;
+
+    console.error('❌ Failed to calculate route via Google Directions API');
+
+    Alert.alert(
+      'Route Error',
+      'Unable to calculate route from Google. Would you like to use an estimated route instead?',
+      [
+        {
+          text: 'Use Estimate',
+          onPress: () => {
+            calculateFallbackRoute();
+          }
+        },
+        {
+          text: 'Retry',
+          onPress: () => {
+            setLoading(false);
+            fetchRoute();
+          }
+        },
+        {
+          text: 'Go Back',
+          onPress: () => router.back(),
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
 
   const addStop = () => {
     if (stops && stops.length >= 2) {
@@ -508,7 +579,7 @@ const SelectDestinationScreen = () => {
           </Marker>
         )}
 
-        {/* Stop Markers */}
+        {/* Stop Markers - rendered in order (Stop 1, Stop 2) */}
         {stops && stops.map((stop, index) => (
           <Marker
             key={`stop-${index}`}
@@ -518,6 +589,7 @@ const SelectDestinationScreen = () => {
             }}
             title={`Stop ${index + 1}`}
             tracksViewChanges={false}
+            zIndex={10 + index}
           >
             <View style={styles.markerContainer}>
               <View style={styles.stopMarker}>
@@ -525,14 +597,14 @@ const SelectDestinationScreen = () => {
               </View>
               <View style={styles.markerLabel}>
                 <Text style={styles.markerLabelText} numberOfLines={1}>
-                  {stop.name}
+                  Stop {index + 1}: {stop.name}
                 </Text>
               </View>
             </View>
           </Marker>
         ))}
 
-        {/* Destination Marker */}
+        {/* Destination Marker - always last, no number, uses flag icon */}
         {destination && (
           <Marker
             coordinate={{
@@ -541,13 +613,14 @@ const SelectDestinationScreen = () => {
             }}
             title="Destination"
             tracksViewChanges={false}
+            zIndex={100}
           >
             <View style={styles.markerContainer}>
               <View style={styles.destinationMarker}>
                 <Ionicons name="flag" size={20} color="#FFFFFF" />
               </View>
-              <View style={styles.markerLabel}>
-                <Text style={styles.markerLabelText} numberOfLines={1}>
+              <View style={[styles.markerLabel, styles.destinationLabel]}>
+                <Text style={[styles.markerLabelText, { color: '#FFFFFF' }]} numberOfLines={1}>
                   {destination.name}
                 </Text>
               </View>
@@ -912,7 +985,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 3,
-    maxWidth: 120,
+    maxWidth: 150,
+  },
+  destinationLabel: {
+    backgroundColor: '#EF4444',
+    maxWidth: 150,
   },
   markerLabelText: {
     fontSize: 12,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,7 @@ import {
 export default function SignUpScreen() {
   const router = useRouter();
   const { setUser } = useAuthStore();
-  
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,6 +37,13 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  // Reset loading states when component mounts or re-mounts
+  // This ensures the form is always usable even if a previous error left state in a bad place
+  useEffect(() => {
+    setLoading(false);
+    setGoogleLoading(false);
+  }, []);
 
   const validateEmail = (value: string) =>
     !!value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -127,6 +134,11 @@ export default function SignUpScreen() {
       return;
     }
 
+    // Prevent double-tap
+    if (googleLoading || loading) {
+      return;
+    }
+
     setGoogleLoading(true);
     try {
       const user = await signInWithGoogle(selectedRole);
@@ -145,8 +157,21 @@ export default function SignUpScreen() {
         },
       ]);
     } catch (error: any) {
-      Alert.alert('Google Sign-In Failed', error.message);
+      // Handle cancellation silently
+      const errorMessage = error?.message || 'An error occurred';
+      if (
+        errorMessage.includes('cancelled') ||
+        errorMessage.includes('canceled') ||
+        error?.code === '12501' ||
+        error?.code === 'SIGN_IN_CANCELLED'
+      ) {
+        // User cancelled - don't show error
+        console.log('Google sign-in cancelled by user');
+      } else {
+        Alert.alert('Google Sign-In Failed', errorMessage);
+      }
     } finally {
+      // ALWAYS reset loading state, no matter what happens
       setGoogleLoading(false);
     }
   };
@@ -324,22 +349,36 @@ export default function SignUpScreen() {
               />
 
               {/* Terms */}
-              <TouchableOpacity
-                style={styles.termsContainer}
-                onPress={() => setAcceptedTerms(!acceptedTerms)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[styles.checkbox, acceptedTerms && styles.checkboxActive]}
+              <View style={styles.termsContainer}>
+                <TouchableOpacity
+                  onPress={() => setAcceptedTerms(!acceptedTerms)}
+                  activeOpacity={0.8}
+                  style={styles.checkboxTouchable}
                 >
-                  {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
-                </View>
+                  <View
+                    style={[styles.checkbox, acceptedTerms && styles.checkboxActive]}
+                  >
+                    {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
                 <Text style={styles.termsText}>
                   I agree to Drift&apos;s{' '}
-                  <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-                  <Text style={styles.termsLink}>Privacy Policy</Text>.
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => router.push('/(rider)/terms')}
+                  >
+                    Terms of Service
+                  </Text>{' '}
+                  and{' '}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => router.push('/(rider)/privacy')}
+                  >
+                    Privacy Policy
+                  </Text>
+                  .
                 </Text>
-              </TouchableOpacity>
+              </View>
 
               <DriftButton
                 title="Create Account"
@@ -535,6 +574,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
     gap: Spacing.sm,
   },
+  checkboxTouchable: {
+    padding: 2,
+  },
   checkbox: {
     width: 24,
     height: 24,
@@ -543,7 +585,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
   },
   checkboxActive: {
     backgroundColor: Colors.purple,
@@ -563,6 +604,7 @@ const styles = StyleSheet.create({
   termsLink: {
     color: Colors.purple[400] || Colors.purple,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   signUpButton: {
     marginBottom: Spacing.lg,

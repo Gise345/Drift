@@ -55,7 +55,7 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
   const generateTrackingLink = async (): Promise<string> => {
     // In production, this would be your actual domain
     // For now, we'll use a deep link format
-    const baseUrl = 'https://drift.ky/track';
+    const baseUrl = 'https://drift-global.com/track';
     const link = `${baseUrl}/${tripId}`;
     
     setTrackingLink(link);

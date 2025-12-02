@@ -12,7 +12,7 @@ export default function ReferralProgramScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Join Drift and earn money driving! Use my code ${referralCode} to get a bonus. Download: https://drift.ky`,
+        message: `Join Drift and earn money driving! Use my code ${referralCode} to get a bonus. Download: https://drift-global.com`,
       });
     } catch (error) {
       console.error(error);

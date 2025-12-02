@@ -27,6 +27,7 @@ export interface Driver {
   lastName: string;
   photoUrl?: string;
   dateOfBirth: string;
+  gender: 'male' | 'female';
   address: {
     street: string;
     city: string;
@@ -75,6 +76,7 @@ export interface DriverRegistration {
     email: string;
     phone: string;
     dateOfBirth: string;
+    gender: 'male' | 'female';
     address: {
       street: string;
       city: string;
@@ -217,6 +219,7 @@ interface DriverStore {
   updateRegistrationData: (data: Partial<DriverRegistration>) => void;
   submitRegistration: () => Promise<void>;
   setRegistrationStatus: (status: 'incomplete' | 'pending' | 'approved' | 'rejected') => void;
+  loadSavedRegistrationProgress: (userId: string) => Promise<void>;
   
   // Actions - Profile
   setDriver: (driver: Driver) => void;
@@ -305,21 +308,40 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   processedRequestIds: new Set<string>(),
   
   // Registration actions
-  setRegistrationStep: (step) => set({ registrationStep: step }),
-  
-  updateRegistrationData: (data) => set((state) => ({
-    registrationData: {
-      ...state.registrationData,
-      ...data,
-      // Deep merge for nested documents object
-      documents: data.documents
-        ? {
-            ...state.registrationData.documents,
-            ...data.documents,
-          }
-        : state.registrationData.documents,
+  setRegistrationStep: (step) => {
+    set({ registrationStep: step });
+    // Auto-save progress to Firebase when step changes
+    const { saveRegistrationProgress } = require('../services/driver-registration.service');
+    const { getCurrentUser } = require('../services/firebase-auth-service');
+    const currentUser = getCurrentUser();
+    if (currentUser?.uid) {
+      saveRegistrationProgress(currentUser.uid, step, get().registrationData);
     }
-  })),
+  },
+
+  updateRegistrationData: (data) => {
+    set((state) => ({
+      registrationData: {
+        ...state.registrationData,
+        ...data,
+        // Deep merge for nested documents object
+        documents: data.documents
+          ? {
+              ...state.registrationData.documents,
+              ...data.documents,
+            }
+          : state.registrationData.documents,
+      }
+    }));
+    // Auto-save progress to Firebase when data changes
+    const { saveRegistrationProgress } = require('../services/driver-registration.service');
+    const { getCurrentUser } = require('../services/firebase-auth-service');
+    const currentUser = getCurrentUser();
+    if (currentUser?.uid) {
+      const state = get();
+      saveRegistrationProgress(currentUser.uid, state.registrationStep, state.registrationData);
+    }
+  },
   
   submitRegistration: async () => {
     const { submitDriverRegistration } = require('../services/driver-registration.service');
@@ -353,10 +375,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       if (!registrationData.documents?.registration?.image) {
         throw new Error('Vehicle registration is required');
       }
-      if (!registrationData.backgroundCheck?.consented) {
-        throw new Error('Background check consent is required');
-      }
-
+      
       console.log('📝 Submitting driver registration to Firebase...');
 
       // Submit to Firebase
@@ -375,7 +394,23 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   },
   
   setRegistrationStatus: (status) => set({ registrationStatus: status }),
-  
+
+  loadSavedRegistrationProgress: async (userId: string) => {
+    const { loadRegistrationProgress } = require('../services/driver-registration.service');
+    try {
+      const progress = await loadRegistrationProgress(userId);
+      if (progress) {
+        set({
+          registrationStep: progress.currentStep,
+          registrationData: progress.registrationData,
+        });
+        console.log('✅ Loaded saved registration progress at step:', progress.currentStep);
+      }
+    } catch (error) {
+      console.error('❌ Error loading registration progress:', error);
+    }
+  },
+
   // Profile actions
   setDriver: (driver) => set({ driver }),
   

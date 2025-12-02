@@ -75,12 +75,7 @@ export default function RegistrationStatusScreen() {
       status: 'not_started',
       icon: 'checkmark-done-outline',
     },
-    {
-      type: 'backgroundCheck',
-      name: 'Background Check',
-      status: 'not_started',
-      icon: 'person-circle-outline',
-    },
+    
   ]);
 
   const [overallStatus, setOverallStatus] = useState<'incomplete' | 'pending' | 'approved' | 'rejected'>('incomplete');

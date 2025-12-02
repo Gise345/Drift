@@ -110,7 +110,7 @@ Final cost-sharing amount is a VOLUNTARY AGREEMENT between driver and rider. Eit
 When users choose to process cost-sharing payments through Drift's platform, a 19% platform service fee is applied to cover:
 
 **A) PAYMENT PROCESSING COSTS:**
-- Third-party payment processor fees (PayPal: ~3-4%)
+- Third-party payment processor fees (Stripe: ~3-4%)
 - Transaction security and fraud prevention
 - Payment gateway maintenance
 - Secure data encryption
@@ -145,7 +145,7 @@ When users choose to process cost-sharing payments through Drift's platform, a 1
 - Platform service fee: CI$3.80 (19%)
 
 **Breakdown of the CI$3.80 fee:**
-- Payment processing: ~CI$0.80 (4% of CI$20 - covers PayPal fees, transaction security)
+- Payment processing: ~CI$0.80 (4% of CI$20 - covers Stripe fees, transaction security)
 - Platform maintenance: ~CI$3.00 (15% of CI$20 - covers engineers, servers, APIs, compliance, safety, customer service)
 
 ### 3.3 MANDATORY IN-APP PAYMENT (SAFETY PROTECTION):
@@ -197,7 +197,7 @@ Cash-related conflicts are the #1 cause of disputes and safety incidents in ride
 This is legally similar to:
 - Credit card processing fees (Visa/Mastercard charge merchants 2-3%)
 - App store fees (Apple/Google take 15-30% for app transactions)
-- Payment platform fees (PayPal charges 2.9% + $0.30 per transaction)
+- Payment platform fees (Stripe charges 2.9% + $0.30 per transaction)
 - Marketplace fees (Airbnb charges guests ~14% service fee)
 
 Drift's 19% covers the FULL COST of operating a complex technology platform—not just payment processing—which is why it's higher than basic credit card fees but comparable to other technology marketplaces.

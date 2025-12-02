@@ -269,7 +269,7 @@ export default function TripReceiptScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Thank you for driving with Drift!</Text>
-            <Text style={styles.footerSubtext}>Questions? Contact support@drift.ky</Text>
+            <Text style={styles.footerSubtext}>Questions? Contact info@drift-global.com</Text>
           </View>
         </View>
 

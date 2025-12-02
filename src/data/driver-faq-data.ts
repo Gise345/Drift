@@ -19,14 +19,14 @@ export const driverFAQs: FAQItem[] = [
   {
     id: 'gs-1',
     question: 'How do I become a Drift driver in the Cayman Islands?',
-    answer: 'To become a Drift driver, you must: (1) Be at least 21 years old, (2) Have a valid Cayman Islands driver\'s license, (3) Own or lease a vehicle that meets our requirements, (4) Have valid vehicle insurance, (5) Pass a background check, and (6) Complete the online registration process. The approval process typically takes 3-5 business days.',
+    answer: 'To become a Drift driver, you must: (1) Be at least 21 years old, (2) Have a valid Cayman Islands driver\'s license, (3) Own or lease a vehicle that meets our requirements, (4) Have valid vehicle insurance, and (5) Complete the online registration process. The approval process typically takes 3-5 business days.',
     category: 'Getting Started',
     keywords: ['become driver', 'sign up', 'requirements', 'register', 'join'],
   },
   {
     id: 'gs-2',
     question: 'How long does the application process take?',
-    answer: 'The application process typically takes 3-5 business days once you\'ve submitted all required documents. Background checks usually clear within 2-3 days. Vehicle inspection scheduling depends on availability but is usually within 1-2 days. You\'ll receive email and app notifications at each stage.',
+    answer: 'The application process typically takes 3-5 business days once you\'ve submitted all required documents. Vehicle inspection scheduling depends on availability but is usually within 1-2 days. You\'ll receive email and app notifications at each stage.',
     category: 'Getting Started',
     keywords: ['application', 'approval', 'how long', 'waiting', 'time'],
   },
@@ -241,13 +241,7 @@ export const driverFAQs: FAQItem[] = [
     category: 'Documents',
     keywords: ['verification', 'approval', 'how long', 'pending', 'review'],
   },
-  {
-    id: 'docs-4',
-    question: 'What is the background check?',
-    answer: 'Drift conducts a criminal background check for all drivers. This includes: (1) Cayman Islands criminal record check, (2) Driving history (last 3 years), (3) Identity verification. Most checks clear within 2-3 business days. Disqualifying factors include: recent DUI, violent crimes, serious traffic violations, fraud. You\'ll be notified of the results by email.',
-    category: 'Documents',
-    keywords: ['background check', 'criminal', 'record', 'clearance'],
-  },
+  
 
   // ==================== ACCOUNT & RATINGS ====================
   {

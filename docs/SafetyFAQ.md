@@ -561,8 +561,8 @@ The system accounts for reasonable GPS error. Appeal with evidence if you believ
 ### Contact Support
 
 - **In-App:** Settings > Help > Contact Us
-- **Email:** support@drift.ky
-- **Safety Emergency Email:** safety@drift.ky
+- **Email:** info@drift-global.com
+- **Safety Emergency Email:** safety@drift-global.com
 
 ### Help Center
 

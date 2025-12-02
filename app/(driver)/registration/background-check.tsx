@@ -31,7 +31,7 @@ export default function BackgroundCheck() {
         status: 'pending',
       },
     });
-    setRegistrationStep(10);
+    setRegistrationStep(11); // Moving to step 11 (bank-details)
     router.push('/(driver)/registration/bank-details');
   };
 

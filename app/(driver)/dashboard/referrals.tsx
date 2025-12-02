@@ -18,7 +18,7 @@ export default function Referrals() {
   const [copiedCode, setCopiedCode] = useState(false);
 
   const referralCode = 'DRIFT2024GJ';
-  const referralLink = 'https://drift.ky/join/DRIFT2024GJ';
+  const referralLink = 'https://drift-global.com/join/DRIFT2024GJ';
   const earnedFromReferrals = 300;
   const totalReferrals = 3;
 

@@ -20,9 +20,12 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function Insurance() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [insuranceImage, setInsuranceImage] = useState<string | null>(null);
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedInsurance = registrationData?.documents?.insurance;
+
+  const [insuranceImage, setInsuranceImage] = useState<string | null>(savedInsurance?.image || null);
   const [expiryDate, setExpiryDate] = useState(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -72,7 +75,7 @@ export default function Insurance() {
       },
     });
 
-    setRegistrationStep(7);
+    setRegistrationStep(8); // Moving to step 8 (registration-cert)
     router.push('/(driver)/registration/registration-cert');
   };
 

@@ -17,14 +17,17 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function BankDetails() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [accountHolderName, setAccountHolderName] = useState('');
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [routingNumber, setRoutingNumber] = useState('');
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedBankDetails = registrationData?.bankDetails;
+
+  const [accountHolderName, setAccountHolderName] = useState(savedBankDetails?.accountHolderName || '');
+  const [bankName, setBankName] = useState(savedBankDetails?.bankName || '');
+  const [accountNumber, setAccountNumber] = useState(savedBankDetails?.accountNumber || '');
+  const [routingNumber, setRoutingNumber] = useState(savedBankDetails?.routingNumber || '');
   const [accountType, setAccountType] = useState('checking');
-  
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleContinue = () => {
@@ -46,7 +49,7 @@ export default function BankDetails() {
           routingNumber: routingNumber.trim(),
         },
       });
-      setRegistrationStep(11);
+      setRegistrationStep(12); // Moving to step 12 (review-application)
       router.push('/(driver)/registration/review-application');
     }
   };
@@ -146,7 +149,7 @@ export default function BankDetails() {
             <Text style={styles.infoText}>
               • You receive 81% of each rider's cost-sharing contribution{'\n'}
               • 19% platform service fee covers transaction fees (4%) and platform maintenance (15%){'\n'}
-              • Payments are processed through PayPal{'\n'}
+              • Payments are processed through Stripe{'\n'}
               • You'll receive detailed earning statements
             </Text>
           </View>

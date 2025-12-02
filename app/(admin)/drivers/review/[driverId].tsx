@@ -263,17 +263,7 @@ export default function DriverReviewScreen() {
           </View>
         </View>
 
-        {/* Background Check */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Background Check</Text>
-          <View style={styles.card}>
-            <InfoRow
-              label="Consent"
-              value={driver?.backgroundCheck?.consented ? 'Yes' : 'No'}
-            />
-            <InfoRow label="Status" value={driver?.backgroundCheck?.status || 'Pending'} />
-          </View>
-        </View>
+        
       </ScrollView>
 
       {/* Action Buttons */}
@@ -395,7 +385,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   infoRow: {
     flexDirection: 'row',
@@ -442,7 +432,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   documentHeader: {
     flexDirection: 'row',

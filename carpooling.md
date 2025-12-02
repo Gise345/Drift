@@ -3,8 +3,8 @@
 **Official Business Plan (2026 Edition)**
 
 **Company:** Drift in Cayman Ltd.\
-**Website:** [www.drift.ky](https://www.drift.ky)\
-**Contact:** contact@drift.ky\
+**Website:** [www.drift-global.com](https://www.drift-global.com)\
+**Contact:** contact@drift-global.com\
 **Jurisdiction:** Cayman Islands
 
 **1. Executive Summary**
@@ -395,4 +395,4 @@ values, Drift will:\
 
 **Drift in Cayman Ltd. -- The Future of Legal Ride Sharing in the
 Caribbean.**\
-📧 contact@drift.ky \| 🌐 [www.drift.ky](http://www.drift.ky), 
+📧 contact@drift-global.com \| 🌐 [www.drift-global.com](http://www.drift-global.com), 

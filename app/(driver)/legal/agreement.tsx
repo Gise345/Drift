@@ -44,8 +44,8 @@ export default function DriverAgreementScreen() {
       >
         {/* Effective Date */}
         <View style={styles.effectiveDate}>
-          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2024</Text>
-          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2024</Text>
+          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2025</Text>
+          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2025</Text>
         </View>
 
         {/* Title */}
@@ -63,7 +63,7 @@ export default function DriverAgreementScreen() {
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>("Drift")</Text>
           </Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
           <Text style={styles.paragraph}>
@@ -194,7 +194,7 @@ export default function DriverAgreementScreen() {
           <Text style={styles.paragraph}>
             A 19% platform service fee is applied to all cost-sharing contributions processed through the Platform. This fee covers:
           </Text>
-          <Text style={styles.bulletPoint}>• Payment processing costs (~4%): PayPal fees, transaction security, fraud prevention</Text>
+          <Text style={styles.bulletPoint}>• Payment processing costs (~4%): Stripe fees, transaction security, fraud prevention</Text>
           <Text style={styles.bulletPoint}>• Platform maintenance (~15%): Software engineering, server hosting, Google Maps API, customer support, safety features</Text>
           <Text style={styles.paragraph}>
             Driver receives 81% of each cost-sharing contribution. This fee structure is transparent and deducted automatically from each transaction.
@@ -277,10 +277,10 @@ export default function DriverAgreementScreen() {
           <Text style={styles.paragraph}>
             All cost-sharing contributions are processed through the Platform's secure payment system:
           </Text>
-          <Text style={styles.bulletPoint}>• Payments are processed by PayPal (third-party)</Text>
+          <Text style={styles.bulletPoint}>• Payments are processed by Stripe (third-party)</Text>
           <Text style={styles.bulletPoint}>• 19% platform service fee is deducted (4% transaction fees + 15% platform maintenance)</Text>
           <Text style={styles.bulletPoint}>• Driver receives 81% of rider's contribution</Text>
-          <Text style={styles.bulletPoint}>• Funds are transferred to Driver's registered PayPal account</Text>
+          <Text style={styles.bulletPoint}>• Funds are transferred to Driver's registered Stripe account</Text>
           <Text style={styles.bulletPoint}>• All payments must be processed through the in-app system for safety</Text>
 
           <Text style={styles.paragraph}>
@@ -467,11 +467,11 @@ export default function DriverAgreementScreen() {
         {/* Contact */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>9. Contact Information</Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: drivers@drift.ky</Text>
-          <Text style={styles.contactInfo}>Legal: legal@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Legal: legal@drift-global.com</Text>
         </View>
 
         {/* Acknowledgment */}
@@ -493,7 +493,7 @@ export default function DriverAgreementScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Drift Driver Agreement v1.0</Text>
           <Text style={styles.footerText}>Effective: December 1, 2024</Text>
-          <Text style={styles.footerText}>© 2024 Drift Ltd. All rights reserved.</Text>
+          <Text style={styles.footerText}>© 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

@@ -45,15 +45,15 @@ export default function DriverPrivacyScreen() {
       >
         {/* Effective Date */}
         <View style={styles.effectiveDate}>
-          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2024</Text>
-          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2024</Text>
+          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2025</Text>
+          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2025</Text>
         </View>
 
         {/* Introduction */}
         <View style={styles.section}>
           <Text style={styles.title}>Driver Privacy Policy</Text>
           <Text style={styles.paragraph}>
-            Drift Ltd. ("Drift," "we," "our," or "us") respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, store, and share your personal data when you use the Drift mobile application ("App") as a driver.
+            Invovibe Tech Ltd / I.T Cayman. ("Drift," "we," "our," or "us") respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, store, and share your personal data when you use the Drift mobile application ("App") as a driver.
           </Text>
           <Text style={styles.paragraph}>
             This Privacy Policy complies with the Cayman Islands Data Protection Act (2021 Revision) ("DPA") and applies to all drivers using our Platform within the Cayman Islands.
@@ -64,13 +64,13 @@ export default function DriverPrivacyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Data Controller</Text>
           <Text style={styles.paragraph}>
-            Drift Ltd. is the data controller responsible for your personal data collected through the Platform.
+            Invovibe Tech Ltd / I.T Cayman. is the data controller responsible for your personal data collected through the Platform.
           </Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
-          <Text style={styles.contactInfo}>Data Protection Officer: dpo@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Data Protection Officer: info@drift-global.com</Text>
         </View>
 
         {/* Personal Data Collection */}
@@ -85,6 +85,7 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>• Email address</Text>
           <Text style={styles.bulletPoint}>• Phone number</Text>
           <Text style={styles.bulletPoint}>• Date of birth</Text>
+          <Text style={styles.bulletPoint}>• Gender</Text>
           <Text style={styles.bulletPoint}>• Residential address</Text>
           <Text style={styles.bulletPoint}>• Profile photograph</Text>
           <Text style={styles.bulletPoint}>• Account credentials (encrypted)</Text>
@@ -94,7 +95,6 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>• License number and expiry date</Text>
           <Text style={styles.bulletPoint}>• License issuing country/territory</Text>
           <Text style={styles.bulletPoint}>• Taxi permit (if applicable)</Text>
-          <Text style={styles.bulletPoint}>• National ID or passport (for identity verification)</Text>
 
           <Text style={styles.subSectionTitle}>2.3 Vehicle Information</Text>
           <Text style={styles.bulletPoint}>• Vehicle make, model, and year</Text>
@@ -112,14 +112,8 @@ export default function DriverPrivacyScreen() {
             <Text style={styles.bold}>Note:</Text> We verify that you have insurance but do not access your full policy details.
           </Text>
 
-          <Text style={styles.subSectionTitle}>2.5 Background Check Information</Text>
-          <Text style={styles.bulletPoint}>• Driving record/history</Text>
-          <Text style={styles.bulletPoint}>• Traffic violations and accidents</Text>
-          <Text style={styles.bulletPoint}>• Criminal background check results (where legally permitted)</Text>
-          <Text style={styles.bulletPoint}>• Previous employment verification (if applicable)</Text>
-
           <Text style={styles.subSectionTitle}>2.6 Payment and Financial Information</Text>
-          <Text style={styles.bulletPoint}>• PayPal account information</Text>
+          <Text style={styles.bulletPoint}>• Wise account information</Text>
           <Text style={styles.bulletPoint}>• Transaction history (contributions received, platform fees deducted)</Text>
           <Text style={styles.bulletPoint}>• Payout preferences</Text>
 
@@ -160,7 +154,6 @@ export default function DriverPrivacyScreen() {
           
           <Text style={styles.subSectionTitle}>3.1 Driver Verification and Onboarding</Text>
           <Text style={styles.bulletPoint}>• Verifying your identity and eligibility</Text>
-          <Text style={styles.bulletPoint}>• Conducting background checks</Text>
           <Text style={styles.bulletPoint}>• Reviewing driving records</Text>
           <Text style={styles.bulletPoint}>• Validating insurance coverage</Text>
           <Text style={styles.bulletPoint}>• Approving your driver account</Text>
@@ -241,7 +234,7 @@ export default function DriverPrivacyScreen() {
 
           <Text style={styles.subSectionTitle}>5.2 With Service Providers</Text>
           <Text style={styles.bulletPoint}>
-            <Text style={styles.bold}>PayPal:</Text> Payment processing (financial information)
+            <Text style={styles.bold}>Stripe:</Text> Payment processing (financial information)
           </Text>
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Google Maps:</Text> Navigation services (location data)
@@ -249,9 +242,7 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Firebase:</Text> Infrastructure and database (all Platform data)
           </Text>
-          <Text style={styles.bulletPoint}>
-            <Text style={styles.bold}>Background Check Providers:</Text> Verification services (identity, driving record)
-          </Text>
+         
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Cloud Hosting:</Text> Secure data storage
           </Text>
@@ -303,9 +294,7 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Location Data:</Text> 90 days after trip
           </Text>
-          <Text style={styles.bulletPoint}>
-            <Text style={styles.bold}>Background Checks:</Text> 3 years or until account closure
-          </Text>
+          
         </View>
 
         {/* Driver Rights */}
@@ -350,7 +339,7 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>To Exercise Rights:</Text>
           </Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
           <Text style={styles.contactInfo}>Subject: Driver Data Request</Text>
           <Text style={styles.paragraph}>
             We respond within 30 days. ID verification may be required.
@@ -414,19 +403,19 @@ export default function DriverPrivacyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>14. Contact Us</Text>
           <Text style={styles.contactInfo}>Data Protection Officer</Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
-          <Text style={styles.contactInfo}>DPO: dpo@drift.ky</Text>
-          <Text style={styles.contactInfo}>Driver Support: drivers@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>DPO: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Driver Support: info@drift-global.com</Text>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>Drift Driver Privacy Policy v1.0</Text>
           <Text style={styles.footerText}>Effective: December 1, 2024</Text>
-          <Text style={styles.footerText}>© 2024 Drift Ltd. All rights reserved.</Text>
+          <Text style={styles.footerText}>© 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

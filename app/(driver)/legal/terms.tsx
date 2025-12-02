@@ -47,8 +47,8 @@ export default function DriverTermsScreen() {
       >
         {/* Effective Date */}
         <View style={styles.effectiveDate}>
-          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2024</Text>
-          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2024</Text>
+          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2025</Text>
+          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2025</Text>
         </View>
 
         {/* Introduction */}
@@ -131,7 +131,6 @@ export default function DriverTermsScreen() {
           <Text style={styles.bulletPoint}>• Deciding when and whether to use the Platform</Text>
           <Text style={styles.bulletPoint}>• Choosing which carpool requests to accept or decline</Text>
           <Text style={styles.bulletPoint}>• Setting your own availability and schedule</Text>
-          <Text style={styles.bulletPoint}>• Selecting your routes and driving preferences</Text>
           <Text style={styles.bulletPoint}>• Managing your vehicle and expenses</Text>
           <Text style={styles.bulletPoint}>• Determining how you provide carpooling</Text>
 
@@ -188,7 +187,7 @@ export default function DriverTermsScreen() {
             You MUST maintain valid motor vehicle insurance that:
           </Text>
           <Text style={styles.bulletPoint}>• Meets or exceeds Cayman Islands minimum coverage requirements</Text>
-          <Text style={styles.bulletPoint}>• Covers liability for passenger transportation</Text>
+          <Text style={styles.bulletPoint}>• Covers liability for 3rd party</Text>
           <Text style={styles.bulletPoint}>• Is current and paid up to date</Text>
           <Text style={styles.bulletPoint}>• Names you as an insured driver</Text>
           <Text style={styles.bulletPoint}>• Covers the vehicle you use on the Platform</Text>
@@ -196,17 +195,6 @@ export default function DriverTermsScreen() {
             <Text style={styles.bold}>IMPORTANT:</Text> Drift does NOT provide insurance coverage of any kind. You are solely responsible for ensuring adequate insurance. Failure to maintain valid insurance may result in immediate account termination and legal liability.
           </Text>
 
-          <Text style={styles.paragraph}>
-            <Text style={styles.bold}>3.5 Background Check and Verification</Text>
-          </Text>
-          <Text style={styles.paragraph}>
-            You consent to:
-          </Text>
-          <Text style={styles.bulletPoint}>• Background check verification</Text>
-          <Text style={styles.bulletPoint}>• Driving record review</Text>
-          <Text style={styles.bulletPoint}>• Identity verification</Text>
-          <Text style={styles.bulletPoint}>• Document authenticity verification</Text>
-          <Text style={styles.bulletPoint}>• Ongoing monitoring for compliance</Text>
         </View>
 
         {/* 4. Platform Service Fee */}
@@ -225,7 +213,7 @@ export default function DriverTermsScreen() {
           <Text style={styles.paragraph}>
             The 19% platform service fee covers:
           </Text>
-          <Text style={styles.bulletPoint}>• Payment Processing (~4%): PayPal fees, transaction security, fraud prevention, PCI compliance</Text>
+          <Text style={styles.bulletPoint}>• Payment Processing (~4%): Stripe fees, transaction security, fraud prevention, PCI compliance</Text>
           <Text style={styles.bulletPoint}>• Platform Maintenance (~15%): Software engineering, server hosting, Google Maps API, database maintenance, customer support, safety features</Text>
 
           <Text style={styles.paragraph}>
@@ -286,9 +274,9 @@ export default function DriverTermsScreen() {
           <Text style={styles.paragraph}>
             Cost-sharing contributions processed through the Platform:
           </Text>
-          <Text style={styles.bulletPoint}>• Are processed by PayPal (third-party processor)</Text>
+          <Text style={styles.bulletPoint}>• Are processed by Stripe (third-party processor)</Text>
           <Text style={styles.bulletPoint}>• Have 19% platform service fee automatically deducted</Text>
-          <Text style={styles.bulletPoint}>• Net amount (81%) is transferred to your PayPal account</Text>
+          <Text style={styles.bulletPoint}>• Net amount (81%) is transferred to your Stripe account</Text>
           <Text style={styles.bulletPoint}>• Typically arrive within 1-3 business days</Text>
 
           <Text style={styles.paragraph}>
@@ -598,12 +586,12 @@ export default function DriverTermsScreen() {
           <Text style={styles.paragraph}>
             For questions about these Driver Terms:
           </Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: drivers@drift.ky</Text>
-          <Text style={styles.contactInfo}>Legal: legal@drift.ky</Text>
-          <Text style={styles.contactInfo}>Support: support@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Legal: legal@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Support: info@drift-global.com</Text>
         </View>
 
         {/* Acknowledgment */}
@@ -624,7 +612,7 @@ export default function DriverTermsScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Drift Driver Terms of Service v1.0</Text>
           <Text style={styles.footerText}>Effective: December 1, 2024</Text>
-          <Text style={styles.footerText}>© 2024 Drift Ltd. All rights reserved.</Text>
+          <Text style={styles.footerText}>© 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

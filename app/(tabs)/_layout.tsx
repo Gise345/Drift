@@ -9,7 +9,7 @@ import { useAuthStore } from '@/src/stores/auth-store';
  *
  * Bottom navigation with 3 tabs:
  * 1. Home - Main map and booking
- * 2. Activity - Trip history (my-trips screen)
+ * 2. Activity - Trip history
  * 3. Profile - User profile
  *
  * REQUIRES AUTHENTICATION - Redirects to welcome if not logged in
@@ -57,7 +57,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* Activity Tab - Links to my-trips */}
+      {/* Activity Tab - Renders activity.tsx content directly */}
       <Tabs.Screen
         name="activity"
         options={{
@@ -65,11 +65,10 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time-outline" size={size} color={color} />
           ),
-          href: '/(rider)/my-trips', // This makes the tab navigate to my-trips
         }}
       />
 
-      {/* Profile Tab - Links to profile */}
+      {/* Profile Tab - Renders profile.tsx content directly */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -77,7 +76,6 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
-          href: '/(rider)/profile', // This makes the tab navigate to profile
         }}
       />
     </Tabs>

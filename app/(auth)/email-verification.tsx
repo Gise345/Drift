@@ -52,8 +52,25 @@ export default function EmailVerificationScreen() {
     setChecking(true);
     try {
       const isVerified = await checkEmailVerification();
-      
+
       if (isVerified) {
+        // Update Firestore document to reflect verified status
+        try {
+          const { getCurrentUser } = await import('@/src/services/firebase-auth-service');
+          const currentUser = getCurrentUser();
+          if (currentUser) {
+            const { default: firestore, doc, updateDoc } = await import('@react-native-firebase/firestore');
+            const userRef = doc(firestore(), 'users', currentUser.uid);
+            await updateDoc(userRef, {
+              emailVerified: true,
+            });
+            console.log('✅ Updated Firestore emailVerified status');
+          }
+        } catch (firestoreError) {
+          // Non-critical - continue even if Firestore update fails
+          console.warn('⚠️ Could not update Firestore emailVerified:', firestoreError);
+        }
+
         Alert.alert(
           'Email Verified! ✅',
           'Your email has been successfully verified. You can now use all features of Drift.',
@@ -72,7 +89,13 @@ export default function EmailVerificationScreen() {
         );
       }
     } catch (error: any) {
-      Alert.alert('Error', error.message);
+      // Don't show confusing errors - just inform the user to try again
+      console.error('❌ Verification check error:', error);
+      Alert.alert(
+        'Verification Check Failed',
+        'Could not verify your email status. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setChecking(false);
     }

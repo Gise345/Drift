@@ -4,12 +4,12 @@ module.exports = {
     slug: "drift",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: "./assets/images/drift-logo.png",
     userInterfaceStyle: "automatic",
     splash: {
-      image: "./assets/splash-icon.png",
+      image: "./assets/images/drift-logo.png",
       resizeMode: "contain",
-      backgroundColor: "#3B82F6"
+      backgroundColor: "#5d1289"
     },
     assetBundlePatterns: ["**/*"],
     ios: {
@@ -34,7 +34,7 @@ module.exports = {
       // Deep linking for Stripe callbacks (iOS Universal Links - optional)
       associatedDomains: [
         // Uncomment if you want to use Universal Links:
-        // "applinks:drift.ky"
+        // "applinks:drift-global.com"
       ],
       // Apple Pay entitlement
       entitlements: {
@@ -44,8 +44,8 @@ module.exports = {
     android: {
       package: "com.drift.global",
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#3B82F6"
+        foregroundImage: "./assets/images/drift-logo.png",
+        backgroundColor: "#5d1289"
       },
       permissions: [
         "ACCESS_FINE_LOCATION",

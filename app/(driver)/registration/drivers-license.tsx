@@ -29,10 +29,13 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function DriversLicense() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [frontImage, setFrontImage] = useState<string | null>(null);
-  const [backImage, setBackImage] = useState<string | null>(null);
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedLicense = registrationData?.documents?.license;
+
+  const [frontImage, setFrontImage] = useState<string | null>(savedLicense?.front || null);
+  const [backImage, setBackImage] = useState<string | null>(savedLicense?.back || null);
 
   const pickImage = async (side: 'front' | 'back', useCamera: boolean) => {
     if (useCamera) {
@@ -90,7 +93,7 @@ export default function DriversLicense() {
       },
     });
 
-    setRegistrationStep(6);
+    setRegistrationStep(7); // Moving to step 7 (insurance)
     router.push('/(driver)/registration/insurance');
   };
 

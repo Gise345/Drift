@@ -14,7 +14,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { useDriverStore } from '@/src/stores/driver-store';
-import { addRoleToUser } from '@/src/services/role-service';
 import { DriverService } from '@/src/services/driver.service';
 import firestore from '@react-native-firebase/firestore';
 
@@ -129,17 +128,13 @@ export default function ProfileScreen() {
               onPress: async () => {
                 setSwitching(true);
                 try {
-                  // Add driver role to user
-                  await addRoleToUser('DRIVER');
-
-                  // Switch to driver mode
-                  setMode('DRIVER');
-
-                  // Navigate to driver registration welcome
-                  router.replace('/(driver)/registration/welcome');
+                  // DON'T add driver role yet - it will be added after they complete registration
+                  // Just navigate to driver registration welcome
+                  // The role will be added in submitDriverRegistration after all documents are submitted
+                  router.push('/(driver)/registration/welcome');
                 } catch (error: any) {
-                  console.error('Failed to add driver role:', error);
-                  Alert.alert('Error', error.message || 'Failed to switch to driver mode');
+                  console.error('Failed to start driver registration:', error);
+                  Alert.alert('Error', error.message || 'Failed to start driver registration');
                 } finally {
                   setSwitching(false);
                 }

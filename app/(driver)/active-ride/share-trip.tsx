@@ -15,7 +15,7 @@ import { Colors, Typography, Spacing } from '@/src/constants/theme';
 export default function ShareTrip() {
   const router = useRouter();
   const [isSharing, setIsSharing] = useState(false);
-  const tripLink = 'https://drift.ky/live/ABC123XYZ';
+  const tripLink = 'https://drift-global.com/live/ABC123XYZ';
 
   const handleShare = async () => {
     try {

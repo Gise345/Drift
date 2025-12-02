@@ -12,6 +12,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,22 +22,11 @@ import { useCarpoolStore } from '@/src/stores/carpool-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUserStore } from '@/src/stores/user-store';
 
-/**
- * DRIFT SEARCH LOCATION SCREEN - WITH MULTI-STOP SUPPORT
- * 
- * Features:
- * ✅ Search pickup and destination
- * ✅ Add up to 2 additional stops
- * ✅ Remove stops functionality
- * ✅ Category chips for quick access
- * ✅ Better loading states
- * ✅ Smooth transitions
- * ✅ Visual feedback
- */
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Google Places API Key
-const GOOGLE_PLACES_API_KEY = 
-  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || 
+const GOOGLE_PLACES_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 // Grand Cayman coordinates
@@ -100,17 +90,17 @@ interface RouteLocation {
 
 const SearchLocationScreen = () => {
   const params = useLocalSearchParams();
-  const { 
-    setPickupLocation, 
+  const {
+    setPickupLocation,
     setDestination,
     stops: storeStops,
     addStop,
     removeStop: removeStoreStop,
+    clearBookingFlow,
   } = useCarpoolStore();
 
-  // Check if in add-stop mode
-  const addStopMode = params.mode === 'add-stop';
-  const stopIndex = params.stopIndex ? parseInt(params.stopIndex as string) : null;
+  // Check if in add-stop mode (from select-destination screen)
+  const addStopMode = params.mode === 'add-stop' || params.mode === 'stop';
 
   // Search state
   const [activeInput, setActiveInput] = useState<'pickup' | 'destination' | number>(
@@ -118,41 +108,44 @@ const SearchLocationScreen = () => {
   );
   const [pickupQuery, setPickupQuery] = useState('');
   const [destinationQuery, setDestinationQuery] = useState('');
-  const [stopQueries, setStopQueries] = useState<string[]>(['', '']);
-  
+  const [stopQueries, setStopQueries] = useState<string[]>([]);
+
   // Route locations
   const [pickupLocation, setPickupLocationState] = useState<RouteLocation | null>(null);
   const [destinationLocation, setDestinationLocationState] = useState<RouteLocation | null>(null);
-  const [stopLocations, setStopLocations] = useState<RouteLocation[]>([]);
+  const [stopLocations, setStopLocations] = useState<(RouteLocation | null)[]>([]);
 
   // Predictions and loading
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObjectCoords | null>(null);
-  
+
   // Saved data
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
   // Animation
-  const searchBarScale = useRef(new Animated.Value(1)).current;
-  const resultsFadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const pickupInputRef = useRef<TextInput>(null);
+  const destinationInputRef = useRef<TextInput>(null);
+  const stopInputRefs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
     initializeScreen();
-    // Animate search bar on mount
-    Animated.sequence([
-      Animated.spring(searchBarScale, {
-        toValue: 1.02,
-        useNativeDriver: true,
-        tension: 50,
-      }),
-      Animated.spring(searchBarScale, {
+    // Animate entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
         toValue: 1,
+        duration: 300,
         useNativeDriver: true,
-        tension: 50,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
       }),
     ]).start();
   }, []);
@@ -166,7 +159,7 @@ const SearchLocationScreen = () => {
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      
+
       if (status !== 'granted') {
         return;
       }
@@ -181,7 +174,7 @@ const SearchLocationScreen = () => {
       if (!addStopMode) {
         const address = await reverseGeocode(location.coords.latitude, location.coords.longitude);
         if (address) {
-          setPickupQuery(address);
+          setPickupQuery('Current Location');
           setPickupLocationState({
             name: 'Current Location',
             address: address,
@@ -198,7 +191,7 @@ const SearchLocationScreen = () => {
   const reverseGeocode = async (latitude: number, longitude: number): Promise<string | null> => {
     try {
       const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_PLACES_API_KEY}`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
 
@@ -214,7 +207,6 @@ const SearchLocationScreen = () => {
 
   const loadSavedAddresses = async () => {
     try {
-      // Try to load from Firebase first (source of truth)
       const currentUser = useUserStore.getState().user;
       const addresses: SavedAddress[] = [];
 
@@ -254,12 +246,11 @@ const SearchLocationScreen = () => {
 
         if (addresses.length > 0) {
           setSavedAddresses(addresses);
-          console.log('Loaded saved addresses from Firebase');
           return;
         }
       }
 
-      // Fallback to AsyncStorage if not logged in
+      // Fallback to AsyncStorage
       const [home, work, custom] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.HOME_ADDRESS),
         AsyncStorage.getItem(STORAGE_KEYS.WORK_ADDRESS),
@@ -271,7 +262,6 @@ const SearchLocationScreen = () => {
       if (custom) addresses.push(...JSON.parse(custom));
 
       setSavedAddresses(addresses);
-      console.log('Loaded saved addresses from local storage');
     } catch (error) {
       console.error('Error loading saved addresses:', error);
     }
@@ -279,7 +269,6 @@ const SearchLocationScreen = () => {
 
   const loadRecentSearches = async () => {
     try {
-      // Try to load from Firebase first (source of truth)
       const currentUser = useUserStore.getState().user;
 
       if (currentUser && currentUser.recentSearches && currentUser.recentSearches.length > 0) {
@@ -287,7 +276,6 @@ const SearchLocationScreen = () => {
           .sort((a, b) => b.timestamp - a.timestamp)
           .slice(0, 10);
         setRecentSearches(searches);
-        console.log('Loaded recent searches from Firebase');
         return;
       }
 
@@ -297,35 +285,33 @@ const SearchLocationScreen = () => {
         const searches = JSON.parse(recent);
         searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
         setRecentSearches(searches.slice(0, 10));
-        console.log('Loaded recent searches from local storage');
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
     }
   };
 
-  // Search with animation
+  // Debounced search
   useEffect(() => {
-    const query = 
-      activeInput === 'pickup' ? pickupQuery : 
-      activeInput === 'destination' ? destinationQuery :
-      stopQueries[activeInput as number] || '';
+    let query = '';
+    if (activeInput === 'pickup') {
+      query = pickupQuery;
+    } else if (activeInput === 'destination') {
+      query = destinationQuery;
+    } else if (typeof activeInput === 'number') {
+      query = stopQueries[activeInput] || '';
+    }
 
     if (query.length > 2) {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
-      
+
       searchTimeoutRef.current = setTimeout(() => {
         searchPlaces(query);
-      }, 500);
+      }, 400);
     } else {
       setPredictions([]);
-      Animated.timing(resultsFadeAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
     }
 
     return () => {
@@ -345,7 +331,7 @@ const SearchLocationScreen = () => {
 
     try {
       const location = currentLocation || GRAND_CAYMAN_CENTER;
-      
+
       const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
         query
       )}&location=${location.latitude},${location.longitude}&radius=${SEARCH_RADIUS}&components=country:KY&key=${GOOGLE_PLACES_API_KEY}`;
@@ -355,19 +341,11 @@ const SearchLocationScreen = () => {
 
       if (data.status === 'OK' && data.predictions) {
         setPredictions(data.predictions);
-        
-        // Animate results appearance
-        Animated.timing(resultsFadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
       } else {
         setPredictions([]);
       }
     } catch (error) {
       console.error('Search error:', error);
-      Alert.alert('Error', 'Failed to search locations');
     } finally {
       setLoading(false);
     }
@@ -382,7 +360,7 @@ const SearchLocationScreen = () => {
 
       if (data.status === 'OK' && data.result) {
         const { name, formatted_address, geometry } = data.result;
-        
+
         return {
           name: name || formatted_address,
           address: formatted_address,
@@ -399,11 +377,21 @@ const SearchLocationScreen = () => {
 
   const handleSelectPrediction = async (prediction: PlacePrediction) => {
     const location = await getPlaceDetails(prediction.place_id);
-    
+
     if (location) {
       // ADD STOP MODE: Save stop and go back
       if (addStopMode) {
-        addStop(location);
+        // Check if this stop already exists to prevent duplicates
+        const existingStops = storeStops || [];
+        const isDuplicate = existingStops.some(
+          (stop) =>
+            stop.latitude === location.latitude &&
+            stop.longitude === location.longitude
+        );
+
+        if (!isDuplicate) {
+          addStop(location);
+        }
         router.back();
         return;
       }
@@ -412,6 +400,11 @@ const SearchLocationScreen = () => {
       if (activeInput === 'pickup') {
         setPickupQuery(prediction.structured_formatting.main_text);
         setPickupLocationState(location);
+        // Auto-focus destination
+        setTimeout(() => {
+          setActiveInput('destination');
+          destinationInputRef.current?.focus();
+        }, 100);
       } else if (activeInput === 'destination') {
         setDestinationQuery(prediction.structured_formatting.main_text);
         setDestinationLocationState(location);
@@ -420,14 +413,14 @@ const SearchLocationScreen = () => {
         const newQueries = [...stopQueries];
         newQueries[activeInput] = prediction.structured_formatting.main_text;
         setStopQueries(newQueries);
-        
+
         const newLocations = [...stopLocations];
         newLocations[activeInput] = location;
         setStopLocations(newLocations);
       }
-      
+
       setPredictions([]);
-      
+
       // Save to recent searches
       addRecentSearch({
         name: prediction.structured_formatting.main_text,
@@ -449,7 +442,7 @@ const SearchLocationScreen = () => {
         timestamp: Date.now(),
       };
 
-      // Save to Firebase (primary - persists across reinstalls)
+      // Save to Firebase
       const { addRecentSearch: addSearchToFirebase } = useUserStore.getState();
       try {
         await addSearchToFirebase({
@@ -458,22 +451,15 @@ const SearchLocationScreen = () => {
           latitude: search.latitude,
           longitude: search.longitude,
         });
-        console.log('Recent search saved to Firebase');
       } catch (firebaseError) {
-        console.warn('Failed to save to Firebase, using local storage:', firebaseError);
+        console.warn('Failed to save to Firebase:', firebaseError);
       }
 
-      // Also save to AsyncStorage for offline access
+      // Also save to AsyncStorage
       const existing = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
       let searches: RecentSearch[] = existing ? JSON.parse(existing) : [];
-
-      // Remove if already exists
       searches = searches.filter(s => s.address !== search.address);
-
-      // Add to beginning
       searches.unshift(newSearch);
-
-      // Keep only 10
       searches = searches.slice(0, 10);
 
       await AsyncStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(searches));
@@ -486,29 +472,96 @@ const SearchLocationScreen = () => {
   const handleCategoryPress = (category: typeof CATEGORIES[0]) => {
     if (activeInput === 'destination') {
       setDestinationQuery(category.query);
+    } else if (typeof activeInput === 'number') {
+      const newQueries = [...stopQueries];
+      newQueries[activeInput] = category.query;
+      setStopQueries(newQueries);
     }
   };
 
   const handleAddStop = () => {
-    if (stopLocations.length >= 2) {
+    const currentStopCount = stopLocations.filter(s => s !== null).length + stopQueries.filter(q => q.length > 0).length;
+    if (currentStopCount >= 2) {
       Alert.alert('Maximum Stops', 'You can only add up to 2 stops');
       return;
     }
-    
-    // Set active input to new stop
-    setActiveInput(stopLocations.length);
+
+    // Add a new stop input
+    const newIndex = stopQueries.length;
+    setStopQueries([...stopQueries, '']);
+    setStopLocations([...stopLocations, null]);
+
+    // Focus the new input after render
+    setTimeout(() => {
+      setActiveInput(newIndex);
+      stopInputRefs.current[newIndex]?.focus();
+    }, 100);
   };
 
   const handleRemoveStop = (index: number) => {
     const newQueries = stopQueries.filter((_, i) => i !== index);
     const newLocations = stopLocations.filter((_, i) => i !== index);
-    
+
     setStopQueries(newQueries);
     setStopLocations(newLocations);
-    
+
+    // Update refs array
+    stopInputRefs.current = stopInputRefs.current.filter((_, i) => i !== index);
+
     // Reset active input if needed
     if (activeInput === index) {
       setActiveInput('destination');
+    } else if (typeof activeInput === 'number' && activeInput > index) {
+      setActiveInput(activeInput - 1);
+    }
+  };
+
+  const handleSelectSavedOrRecent = (item: { name: string; address: string; latitude: number; longitude: number }) => {
+    const location: RouteLocation = {
+      name: item.name,
+      address: item.address,
+      latitude: item.latitude,
+      longitude: item.longitude,
+    };
+
+    if (activeInput === 'pickup') {
+      setPickupQuery(item.name);
+      setPickupLocationState(location);
+      setTimeout(() => {
+        setActiveInput('destination');
+        destinationInputRef.current?.focus();
+      }, 100);
+    } else if (activeInput === 'destination') {
+      setDestinationQuery(item.name);
+      setDestinationLocationState(location);
+    } else if (typeof activeInput === 'number') {
+      const newQueries = [...stopQueries];
+      newQueries[activeInput] = item.name;
+      setStopQueries(newQueries);
+
+      const newLocations = [...stopLocations];
+      newLocations[activeInput] = location;
+      setStopLocations(newLocations);
+    }
+    setPredictions([]);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    if (!currentLocation) return;
+
+    const address = await reverseGeocode(currentLocation.latitude, currentLocation.longitude);
+    if (address) {
+      setPickupQuery('Current Location');
+      setPickupLocationState({
+        name: 'Current Location',
+        address: address,
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+      });
+      setTimeout(() => {
+        setActiveInput('destination');
+        destinationInputRef.current?.focus();
+      }, 100);
     }
   };
 
@@ -521,9 +574,10 @@ const SearchLocationScreen = () => {
     // Set in store
     setPickupLocation(pickupLocation);
     setDestination(destinationLocation);
-    
-    // Clear existing stops in store and add current ones
-    stopLocations.forEach((stop) => {
+
+    // Add valid stops to store
+    const validStops = stopLocations.filter((stop): stop is RouteLocation => stop !== null);
+    validStops.forEach((stop) => {
       addStop(stop);
     });
 
@@ -537,323 +591,375 @@ const SearchLocationScreen = () => {
     });
   };
 
-  const handleUseCurrentLocation = async () => {
-    if (!currentLocation) return;
+  const canConfirm = pickupLocation && destinationLocation;
+  const stopCount = stopLocations.filter(s => s !== null).length;
 
-    const address = await reverseGeocode(currentLocation.latitude, currentLocation.longitude);
-    if (address) {
-      setPickupQuery(address);
-      setPickupLocationState({
-        name: 'Current Location',
-        address: address,
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-      });
-    }
+  // Render the vertical route line with dots
+  const renderRouteLine = () => {
+    const totalPoints = 2 + stopQueries.length; // pickup + destination + stops
+    const lineHeight = (totalPoints - 1) * 56; // 56 is the input container height
+
+    return (
+      <View style={styles.routeLineContainer}>
+        {/* Pickup dot */}
+        <View style={[styles.routeDot, styles.pickupDot]} />
+
+        {/* Connecting line */}
+        <View style={[styles.routeLine, { height: lineHeight }]} />
+
+        {/* Stop dots */}
+        {stopQueries.map((_, index) => (
+          <View
+            key={`stop-dot-${index}`}
+            style={[
+              styles.routeDot,
+              styles.stopDot,
+              { top: 56 * (index + 1) + 20 }
+            ]}
+          />
+        ))}
+
+        {/* Destination dot */}
+        <View style={[styles.routeDot, styles.destinationDot, { top: lineHeight + 20 }]} />
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color="#1a1a1a" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {addStopMode ? 'Add Stop' : 'Search Location'}
+            {addStopMode ? 'Add Stop' : 'Plan your trip'}
           </Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerRight} />
         </View>
 
-        {/* Search Inputs Card */}
-        {!addStopMode && (
-          <Animated.View style={[styles.routeCard, { transform: [{ scale: searchBarScale }] }]}>
-            {/* Pickup Input */}
-            <View style={[styles.inputContainer, { borderBottomWidth: 1, borderBottomColor: '#f5f5f5' }]}>
-              <View style={[styles.inputDot, { backgroundColor: '#10B981' }]} />
-              <TextInput
-                style={[styles.input, activeInput === 'pickup' && styles.inputActive]}
-                placeholder="Pickup location"
-                placeholderTextColor="#999"
-                value={pickupQuery}
-                onChangeText={setPickupQuery}
-                onFocus={() => setActiveInput('pickup')}
-              />
-              {pickupQuery.length > 0 && (
-                <TouchableOpacity 
-                  style={styles.inputAction}
-                  onPress={() => setPickupQuery('')}
-                >
-                  <Ionicons name="close-circle" size={20} color="#999" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Stop Inputs */}
-            {stopLocations.map((stop, index) => (
-              <View 
-                key={index}
-                style={[styles.inputContainer, { borderBottomWidth: 1, borderBottomColor: '#f5f5f5' }]}
-              >
-                <View style={[styles.inputDot, { backgroundColor: '#F59E0B' }]} />
-                <TextInput
-                  style={[styles.input, activeInput === index && styles.inputActive]}
-                  placeholder={`Stop ${index + 1}`}
-                  placeholderTextColor="#999"
-                  value={stopQueries[index]}
-                  onChangeText={(text) => {
-                    const newQueries = [...stopQueries];
-                    newQueries[index] = text;
-                    setStopQueries(newQueries);
-                  }}
-                  onFocus={() => setActiveInput(index)}
-                />
-                <TouchableOpacity 
-                  style={styles.inputAction}
-                  onPress={() => handleRemoveStop(index)}
-                >
-                  <Ionicons name="close-circle" size={20} color="#999" />
-                </TouchableOpacity>
+        <Animated.View
+          style={[
+            styles.content,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          {/* Search Card */}
+          {!addStopMode && (
+            <View style={styles.searchCard}>
+              {/* Route line visualization */}
+              <View style={styles.routeLineWrapper}>
+                {renderRouteLine()}
               </View>
-            ))}
 
-            {/* Add Stop Button */}
-            {stopLocations.length < 2 && (
+              {/* Inputs container */}
+              <View style={styles.inputsContainer}>
+                {/* Pickup Input */}
+                <View style={styles.inputRow}>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      ref={pickupInputRef}
+                      style={[
+                        styles.input,
+                        activeInput === 'pickup' && styles.inputActive
+                      ]}
+                      placeholder="Pickup location"
+                      placeholderTextColor="#9ca3af"
+                      value={pickupQuery}
+                      onChangeText={setPickupQuery}
+                      onFocus={() => setActiveInput('pickup')}
+                      returnKeyType="next"
+                    />
+                    {pickupQuery.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.clearButton}
+                        onPress={() => {
+                          setPickupQuery('');
+                          setPickupLocationState(null);
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* Stop Inputs */}
+                {stopQueries.map((query, index) => (
+                  <View key={`stop-${index}`} style={styles.inputRow}>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        ref={(ref) => { stopInputRefs.current[index] = ref; }}
+                        style={[
+                          styles.input,
+                          activeInput === index && styles.inputActive
+                        ]}
+                        placeholder={`Stop ${index + 1}`}
+                        placeholderTextColor="#9ca3af"
+                        value={query}
+                        onChangeText={(text) => {
+                          const newQueries = [...stopQueries];
+                          newQueries[index] = text;
+                          setStopQueries(newQueries);
+                        }}
+                        onFocus={() => setActiveInput(index)}
+                        returnKeyType="next"
+                      />
+                      <TouchableOpacity
+                        style={styles.clearButton}
+                        onPress={() => handleRemoveStop(index)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+
+                {/* Destination Input */}
+                <View style={styles.inputRow}>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      ref={destinationInputRef}
+                      style={[
+                        styles.input,
+                        activeInput === 'destination' && styles.inputActive
+                      ]}
+                      placeholder="Where to?"
+                      placeholderTextColor="#9ca3af"
+                      value={destinationQuery}
+                      onChangeText={setDestinationQuery}
+                      onFocus={() => setActiveInput('destination')}
+                      autoFocus={!addStopMode}
+                      returnKeyType="done"
+                    />
+                    {destinationQuery.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.clearButton}
+                        onPress={() => {
+                          setDestinationQuery('');
+                          setDestinationLocationState(null);
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Add Stop Button */}
+                  {stopQueries.length < 2 && (
+                    <TouchableOpacity
+                      style={styles.addStopButton}
+                      onPress={handleAddStop}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="add" size={22} color="#5d1289" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Add Stop Mode - Single Input */}
+          {addStopMode && (
+            <View style={styles.searchCard}>
+              <View style={styles.inputsContainer}>
+                <View style={styles.inputRow}>
+                  <View style={[styles.inputDotIndicator, { backgroundColor: '#f59e0b' }]} />
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={[styles.input, styles.inputActive]}
+                      placeholder="Search for a stop..."
+                      placeholderTextColor="#9ca3af"
+                      value={stopQueries[0] || ''}
+                      onChangeText={(text) => setStopQueries([text])}
+                      autoFocus
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Category Chips */}
+          {(activeInput === 'destination' || typeof activeInput === 'number') &&
+            predictions.length === 0 && !addStopMode && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoriesScroll}
+              contentContainerStyle={styles.categoriesContent}
+            >
+              {CATEGORIES.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={styles.categoryChip}
+                  onPress={() => handleCategoryPress(category)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={category.icon as any} size={16} color="#5d1289" />
+                  <Text style={styles.categoryLabel}>{category.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Results */}
+          <ScrollView
+            style={styles.resultsContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Loading */}
+            {loading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#5d1289" />
+                <Text style={styles.loadingText}>Searching...</Text>
+              </View>
+            )}
+
+            {/* Predictions */}
+            {predictions.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Results</Text>
+                {predictions.map((prediction) => (
+                  <TouchableOpacity
+                    key={prediction.place_id}
+                    style={styles.resultItem}
+                    onPress={() => handleSelectPrediction(prediction)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.resultIconContainer}>
+                      <Ionicons name="location" size={18} color="#5d1289" />
+                    </View>
+                    <View style={styles.resultInfo}>
+                      <Text style={styles.resultTitle} numberOfLines={1}>
+                        {prediction.structured_formatting.main_text}
+                      </Text>
+                      <Text style={styles.resultSubtitle} numberOfLines={1}>
+                        {prediction.structured_formatting.secondary_text}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#d1d5db" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Current Location (Pickup Only) */}
+            {activeInput === 'pickup' && predictions.length === 0 && currentLocation && !addStopMode && (
               <TouchableOpacity
-                style={styles.addStopContainer}
-                onPress={handleAddStop}
+                style={styles.currentLocationCard}
+                onPress={handleUseCurrentLocation}
+                activeOpacity={0.7}
               >
-                <Ionicons name="add-circle" size={20} color="#5d1289" />
-                <Text style={styles.addStopText}>Add stop ({stopLocations.length}/2)</Text>
+                <View style={styles.currentLocationIcon}>
+                  <Ionicons name="navigate" size={20} color="#5d1289" />
+                </View>
+                <View style={styles.currentLocationInfo}>
+                  <Text style={styles.currentLocationTitle}>Use current location</Text>
+                  <Text style={styles.currentLocationSubtitle}>Your GPS location</Text>
+                </View>
               </TouchableOpacity>
             )}
 
-            {/* Destination Input */}
-            <View style={styles.inputContainer}>
-              <View style={[styles.inputDot, { backgroundColor: '#5d1289' }]} />
-              <TextInput
-                style={[styles.input, activeInput === 'destination' && styles.inputActive]}
-                placeholder="Where to?"
-                placeholderTextColor="#999"
-                value={destinationQuery}
-                onChangeText={setDestinationQuery}
-                onFocus={() => setActiveInput('destination')}
-                autoFocus={!addStopMode}
-              />
-              {destinationQuery.length > 0 && (
-                <TouchableOpacity 
-                  style={styles.inputAction}
-                  onPress={() => setDestinationQuery('')}
-                >
-                  <Ionicons name="close-circle" size={20} color="#999" />
-                </TouchableOpacity>
-              )}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* ADD STOP MODE - Single Input */}
-        {addStopMode && (
-          <Animated.View style={[styles.routeCard, { transform: [{ scale: searchBarScale }] }]}>
-            <View style={styles.inputContainer}>
-              <View style={[styles.inputDot, { backgroundColor: '#F59E0B' }]} />
-              <TextInput
-                style={[styles.input, styles.inputActive]}
-                placeholder={`Stop ${(stopIndex || 0) + 1}`}
-                placeholderTextColor="#999"
-                value={stopQueries[0]}
-                onChangeText={(text) => setStopQueries([text])}
-                autoFocus
-              />
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Category Chips (When Destination is Active) */}
-        {activeInput === 'destination' && predictions.length === 0 && !addStopMode && (
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoriesContainer}
-            contentContainerStyle={styles.categoriesContent}
-          >
-            {CATEGORIES.map((category) => (
-              <TouchableOpacity
-                key={category.id}
-                style={styles.categoryChip}
-                onPress={() => handleCategoryPress(category)}
-              >
-                <Ionicons name={category.icon as any} size={18} color="#5d1289" />
-                <Text style={styles.categoryText}>{category.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Results */}
-        <ScrollView style={styles.results}>
-          {/* Loading */}
-          {loading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#5d1289" />
-              <Text style={styles.loadingText}>Searching...</Text>
-            </View>
-          )}
-
-          {/* Predictions */}
-          {predictions.length > 0 && (
-            <Animated.View style={[styles.section, { opacity: resultsFadeAnim }]}>
-              <Text style={styles.sectionTitle}>Search Results</Text>
-              {predictions.map((prediction) => (
-                <TouchableOpacity
-                  key={prediction.place_id}
-                  style={styles.predictionItem}
-                  onPress={() => handleSelectPrediction(prediction)}
-                >
-                  <View style={styles.predictionIcon}>
-                    <Ionicons name="location" size={20} color="#5d1289" />
-                  </View>
-                  <View style={styles.predictionInfo}>
-                    <Text style={styles.predictionMain}>
-                      {prediction.structured_formatting.main_text}
-                    </Text>
-                    <Text style={styles.predictionSecondary}>
-                      {prediction.structured_formatting.secondary_text}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </Animated.View>
-          )}
-
-          {/* Saved Addresses */}
-          {predictions.length === 0 && savedAddresses.length > 0 && !addStopMode && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Saved Places</Text>
-              {savedAddresses.map((address) => (
-                <TouchableOpacity
-                  key={address.id}
-                  style={styles.savedItem}
-                  onPress={() => {
-                    if (activeInput === 'pickup') {
-                      setPickupQuery(address.label);
-                      setPickupLocationState({
-                        name: address.label,
-                        address: address.address,
-                        latitude: address.latitude,
-                        longitude: address.longitude,
-                      });
-                    } else if (activeInput === 'destination') {
-                      setDestinationQuery(address.label);
-                      setDestinationLocationState({
-                        name: address.label,
-                        address: address.address,
-                        latitude: address.latitude,
-                        longitude: address.longitude,
-                      });
-                    } else if (typeof activeInput === 'number') {
-                      const newQueries = [...stopQueries];
-                      newQueries[activeInput] = address.label;
-                      setStopQueries(newQueries);
-                      
-                      const newLocations = [...stopLocations];
-                      newLocations[activeInput] = {
-                        name: address.label,
-                        address: address.address,
-                        latitude: address.latitude,
-                        longitude: address.longitude,
-                      };
-                      setStopLocations(newLocations);
-                    }
-                    setPredictions([]);
-                  }}
-                >
-                  <View style={styles.savedIcon}>
-                    <Ionicons 
-                      name={address.type === 'home' ? 'home' : address.type === 'work' ? 'briefcase' : 'location'} 
-                      size={20} 
-                      color="#5d1289" 
-                    />
-                  </View>
-                  <View style={styles.savedInfo}>
-                    <Text style={styles.savedName}>{address.label}</Text>
-                    <Text style={styles.savedAddress}>{address.address}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Recent Searches */}
-          {predictions.length === 0 && recentSearches.length > 0 && !addStopMode && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent</Text>
-              {recentSearches.map((search) => (
-                <TouchableOpacity
-                  key={search.id}
-                  style={styles.recentItem}
-                  onPress={() => {
-                    if (activeInput === 'pickup') {
-                      setPickupQuery(search.name);
-                      setPickupLocationState({
-                        name: search.name,
-                        address: search.address,
-                        latitude: search.latitude,
-                        longitude: search.longitude,
-                      });
-                    } else if (activeInput === 'destination') {
-                      setDestinationQuery(search.name);
-                      setDestinationLocationState({
-                        name: search.name,
-                        address: search.address,
-                        latitude: search.latitude,
-                        longitude: search.longitude,
-                      });
-                    }
-                    setPredictions([]);
-                  }}
-                >
-                  <View style={styles.recentIcon}>
-                    <Ionicons name="time-outline" size={20} color="#666" />
-                  </View>
-                  <View style={styles.recentInfo}>
-                    <Text style={styles.recentName}>{search.name}</Text>
-                    <Text style={styles.recentAddress}>{search.address}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Current Location (Pickup Only) */}
-          {activeInput === 'pickup' && predictions.length === 0 && currentLocation && !addStopMode && (
-            <TouchableOpacity 
-              style={styles.currentLocationButton}
-              onPress={handleUseCurrentLocation}
-            >
-              <View style={styles.currentLocationIcon}>
-                <Ionicons name="navigate" size={20} color="#5d1289" />
+            {/* Saved Addresses */}
+            {predictions.length === 0 && savedAddresses.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Saved Places</Text>
+                {savedAddresses.map((address) => (
+                  <TouchableOpacity
+                    key={address.id}
+                    style={styles.resultItem}
+                    onPress={() => handleSelectSavedOrRecent(address)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[
+                      styles.resultIconContainer,
+                      address.type === 'home' && styles.homeIcon,
+                      address.type === 'work' && styles.workIcon,
+                    ]}>
+                      <Ionicons
+                        name={
+                          address.type === 'home' ? 'home' :
+                          address.type === 'work' ? 'briefcase' : 'star'
+                        }
+                        size={18}
+                        color={
+                          address.type === 'home' ? '#10b981' :
+                          address.type === 'work' ? '#3b82f6' : '#5d1289'
+                        }
+                      />
+                    </View>
+                    <View style={styles.resultInfo}>
+                      <Text style={styles.resultTitle}>{address.label}</Text>
+                      <Text style={styles.resultSubtitle} numberOfLines={1}>
+                        {address.address}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#d1d5db" />
+                  </TouchableOpacity>
+                ))}
               </View>
-              <Text style={styles.currentLocationText}>Use current location</Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+            )}
+
+            {/* Recent Searches */}
+            {predictions.length === 0 && recentSearches.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Recent</Text>
+                {recentSearches.slice(0, 5).map((search) => (
+                  <TouchableOpacity
+                    key={search.id}
+                    style={styles.resultItem}
+                    onPress={() => handleSelectSavedOrRecent(search)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.resultIconContainer, styles.recentIcon]}>
+                      <Ionicons name="time-outline" size={18} color="#6b7280" />
+                    </View>
+                    <View style={styles.resultInfo}>
+                      <Text style={styles.resultTitle}>{search.name}</Text>
+                      <Text style={styles.resultSubtitle} numberOfLines={1}>
+                        {search.address}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#d1d5db" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Bottom spacing */}
+            <View style={{ height: 100 }} />
+          </ScrollView>
+        </Animated.View>
 
         {/* Confirm Button */}
-        {pickupLocation && destinationLocation && !addStopMode && (
+        {canConfirm && !addStopMode && (
           <View style={styles.footer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.confirmButton}
               onPress={handleConfirm}
+              activeOpacity={0.8}
             >
-              <Text style={styles.confirmButtonText}>Confirm route</Text>
+              <Text style={styles.confirmButtonText}>
+                Confirm Route
+                {stopCount > 0 && ` (${stopCount} stop${stopCount > 1 ? 's' : ''})`}
+              </Text>
               <Ionicons name="arrow-forward" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -866,84 +972,145 @@ const SearchLocationScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8fafc',
+  },
+  keyboardView: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#e5e7eb',
   },
   backButton: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
+    color: '#1a1a1a',
+    letterSpacing: -0.3,
   },
-  routeCard: {
-    margin: 16,
+  headerRight: {
+    width: 40,
+  },
+  content: {
+    flex: 1,
+  },
+  searchCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
     padding: 16,
-    borderWidth: 2,
-    borderColor: '#f0f0f0',
+    flexDirection: 'row',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 3,
+        elevation: 4,
       },
     }),
   },
-  inputContainer: {
+  routeLineWrapper: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: 12,
+    paddingTop: 18,
+  },
+  routeLineContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  routeDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    position: 'absolute',
+    left: -6,
+    zIndex: 2,
+  },
+  pickupDot: {
+    backgroundColor: '#10b981',
+    top: 0,
+  },
+  stopDot: {
+    backgroundColor: '#f59e0b',
+  },
+  destinationDot: {
+    backgroundColor: '#5d1289',
+  },
+  routeLine: {
+    width: 2,
+    backgroundColor: '#e5e7eb',
+    position: 'absolute',
+    top: 6,
+    left: -1,
+    zIndex: 1,
+  },
+  inputsContainer: {
+    flex: 1,
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    height: 56,
   },
-  inputDot: {
+  inputDotIndicator: {
     width: 10,
     height: 10,
     borderRadius: 5,
     marginRight: 12,
   },
+  inputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: '#000',
+    fontSize: 15,
+    color: '#1a1a1a',
     fontWeight: '500',
   },
   inputActive: {
     fontWeight: '600',
   },
-  inputAction: {
+  clearButton: {
     padding: 4,
   },
-  addStopContainer: {
-    flexDirection: 'row',
+  addStopButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f3e8ff',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#f5f5f5',
+    justifyContent: 'center',
+    marginLeft: 10,
   },
-  addStopText: {
-    marginLeft: 8,
-    fontSize: 15,
-    color: '#5d1289',
-    fontWeight: '600',
-  },
-  categoriesContainer: {
-    maxHeight: 60,
+  categoriesScroll: {
+    marginTop: 16,
+    maxHeight: 44,
   },
   categoriesContent: {
     paddingHorizontal: 16,
@@ -952,162 +1119,150 @@ const styles = StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F9F5FF',
-    paddingVertical: 8,
+    backgroundColor: '#fff',
+    paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E9D5FF',
+    borderRadius: 22,
+    marginRight: 8,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#e9d5ff',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
-  categoryText: {
-    fontSize: 14,
+  categoryLabel: {
+    fontSize: 13,
     color: '#5d1289',
     fontWeight: '600',
   },
-  results: {
+  resultsContainer: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   loadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
-    gap: 12,
+    paddingVertical: 24,
+    gap: 10,
   },
   loadingText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#5d1289',
     fontWeight: '500',
   },
   section: {
     marginTop: 16,
-    marginBottom: 24,
+    marginHorizontal: 16,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#666',
+    color: '#6b7280',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
-  predictionItem: {
+  resultItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#fff',
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
-  predictionIcon: {
+  resultIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F9F5FF',
+    backgroundColor: '#f3e8ff',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  predictionInfo: {
-    flex: 1,
+  homeIcon: {
+    backgroundColor: '#d1fae5',
   },
-  predictionMain: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 2,
-  },
-  predictionSecondary: {
-    fontSize: 14,
-    color: '#666',
-  },
-  savedItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
-  },
-  savedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F9F5FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  savedInfo: {
-    flex: 1,
-  },
-  savedName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 2,
-  },
-  savedAddress: {
-    fontSize: 14,
-    color: '#666',
-  },
-  recentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+  workIcon: {
+    backgroundColor: '#dbeafe',
   },
   recentIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    backgroundColor: '#f3f4f6',
   },
-  recentInfo: {
+  resultInfo: {
     flex: 1,
   },
-  recentName: {
-    fontSize: 16,
+  resultTitle: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#000',
+    color: '#1a1a1a',
     marginBottom: 2,
   },
-  recentAddress: {
-    fontSize: 14,
-    color: '#666',
+  resultSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
   },
-  currentLocationButton: {
+  currentLocationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#F9F5FF',
-    borderRadius: 12,
-    marginTop: 12,
+    backgroundColor: '#f3e8ff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e9d5ff',
   },
   currentLocationIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
-  currentLocationText: {
-    fontSize: 16,
+  currentLocationInfo: {
+    flex: 1,
+  },
+  currentLocationTitle: {
+    fontSize: 15,
     fontWeight: '600',
     color: '#5d1289',
   },
+  currentLocationSubtitle: {
+    fontSize: 13,
+    color: '#7c3aed',
+    marginTop: 2,
+  },
   footer: {
     padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    paddingBottom: Platform.OS === 'ios' ? 8 : 16,
     backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
   confirmButton: {
     backgroundColor: '#5d1289',
@@ -1115,7 +1270,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     gap: 8,
     ...Platform.select({
       ios: {

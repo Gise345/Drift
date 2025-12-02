@@ -4,7 +4,7 @@
  * Production-ready implementation
  */
 
-import firestore from '@react-native-firebase/firestore';
+import firestore, { arrayUnion } from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import { getCurrentUser } from './firebase-auth-service';
 import type { DriverRegistration, Document as DriverDocument } from '../stores/driver-store';
@@ -35,6 +35,7 @@ export interface DriverProfile {
     year: number;
     color: string;
     licensePlate: string;
+    vin?: string;
     seats: number;
     photos: {
       front?: string;
@@ -54,15 +55,6 @@ export interface DriverProfile {
     accountType: 'checking' | 'savings';
   };
 
-  // Background Check
-  backgroundCheck: {
-    consented: boolean;
-    consentedAt: Date;
-    status: 'pending' | 'in_progress' | 'cleared' | 'failed';
-    completedAt?: Date;
-    provider?: string;
-    reportId?: string;
-  };
 
   // Documents Status
   documents: {
@@ -273,12 +265,6 @@ export async function submitDriverRegistration(
         accountType: 'checking', // Default to checking
       },
 
-      backgroundCheck: {
-        consented: registrationData.backgroundCheck.consented,
-        consentedAt: registrationData.backgroundCheck.consentedAt || new Date(),
-        status: 'pending',
-      },
-
       documents: {
         driversLicense: {
           status: 'pending',
@@ -327,10 +313,118 @@ export async function submitDriverRegistration(
       uploadedAt: new Date(),
     });
 
+    // NOW add the DRIVER role to the user's roles array
+    // This only happens after they successfully submit their complete application
+    await db.collection('users').doc(userId).update({
+      roles: arrayUnion('DRIVER'),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Clear the registration progress since registration is complete
+    await db.collection('driverRegistrationProgress').doc(userId).delete();
+
     console.log('✅ Driver registration submitted successfully');
+    console.log('✅ DRIVER role added to user');
+    console.log('🗑️ Registration progress cleared');
   } catch (error: any) {
     console.error('❌ Error submitting driver registration:', error);
     throw new Error(`Failed to submit registration: ${error.message}`);
+  }
+}
+
+/**
+ * Recursively remove undefined values from an object
+ * Firestore doesn't accept undefined values
+ */
+function removeUndefinedValues(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedValues(item)).filter(item => item !== undefined);
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefinedValues(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+/**
+ * Save driver registration progress to Firebase
+ * This allows users to continue where they left off, even on a different device
+ */
+export async function saveRegistrationProgress(
+  userId: string,
+  currentStep: number,
+  registrationData: Partial<DriverRegistration>
+): Promise<void> {
+  try {
+    console.log('💾 Saving registration progress at step:', currentStep);
+
+    // Clean the registration data to remove any undefined values
+    const cleanedData = removeUndefinedValues(registrationData);
+
+    await db.collection('driverRegistrationProgress').doc(userId).set(
+      {
+        userId,
+        currentStep,
+        registrationData: cleanedData || {},
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    console.log('✅ Registration progress saved');
+  } catch (error) {
+    console.error('❌ Error saving registration progress:', error);
+    // Don't throw - this is non-critical
+  }
+}
+
+/**
+ * Load driver registration progress from Firebase
+ */
+export async function loadRegistrationProgress(
+  userId: string
+): Promise<{ currentStep: number; registrationData: Partial<DriverRegistration> } | null> {
+  try {
+    console.log('📖 Loading registration progress for:', userId);
+
+    const progressDoc = await db.collection('driverRegistrationProgress').doc(userId).get();
+
+    if (!progressDoc.exists) {
+      console.log('📝 No registration progress found');
+      return null;
+    }
+
+    const data = progressDoc.data();
+    console.log('✅ Registration progress loaded at step:', data?.currentStep);
+
+    return {
+      currentStep: data?.currentStep || 1,
+      registrationData: data?.registrationData || {},
+    };
+  } catch (error) {
+    console.error('❌ Error loading registration progress:', error);
+    return null;
+  }
+}
+
+/**
+ * Clear driver registration progress after successful submission
+ */
+export async function clearRegistrationProgress(userId: string): Promise<void> {
+  try {
+    await db.collection('driverRegistrationProgress').doc(userId).delete();
+    console.log('🗑️ Registration progress cleared');
+  } catch (error) {
+    console.error('❌ Error clearing registration progress:', error);
   }
 }
 

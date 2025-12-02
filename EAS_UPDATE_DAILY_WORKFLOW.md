@@ -448,7 +448,7 @@ eas update --branch production --message "Improved Google Maps loading speed and
 
 **Payment Updates:**
 ```bash
-eas update --branch production --message "Enhanced PayPal checkout flow with better error handling"
+eas update --branch production --message "Enhanced Stripe checkout flow with better error handling"
 ```
 
 **Driver Features:**

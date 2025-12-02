@@ -4,9 +4,9 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,7 +15,10 @@ import { useTripStore, Trip as TripData } from '@/src/stores/trip-store';
 import { useUserStore, RecentTravel } from '@/src/stores/user-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 
-type Tab = 'upcoming' | 'past';
+/**
+ * My Trips Screen
+ * Shows past trip history only (no upcoming trips feature)
+ */
 
 interface Trip {
   id: string;
@@ -25,7 +28,7 @@ interface Trip {
   to: string;
   driver: string;
   cost: string;
-  status: 'completed' | 'upcoming' | 'cancelled';
+  status: 'completed' | 'cancelled';
   rating?: number;
 }
 
@@ -60,8 +63,7 @@ const convertTrip = (trip: TripData): Trip => ({
   to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
   driver: trip.driverInfo?.name || 'Driver',
   cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
-  status: trip.status === 'COMPLETED' ? 'completed' :
-          trip.status === 'CANCELLED' ? 'cancelled' : 'upcoming',
+  status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
   rating: trip.driverRating,
 });
 
@@ -79,12 +81,11 @@ const convertRecentTravel = (travel: RecentTravel): Trip => ({
 
 export default function MyTripsScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>('upcoming');
   const [loading, setLoading] = useState(true);
-  const [upcomingTrips, setUpcomingTrips] = useState<Trip[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [pastTrips, setPastTrips] = useState<Trip[]>([]);
 
-  const { getTripHistory, pastTrips: storePastTrips, upcomingTrips: storeUpcomingTrips } = useTripStore();
+  const { getTripHistory, pastTrips: storePastTrips } = useTripStore();
   const { user, getRecentTravels } = useUserStore();
   const { user: authUser } = useAuthStore();
 
@@ -93,7 +94,10 @@ export default function MyTripsScreen() {
   }, [user, authUser]);
 
   const loadTrips = async () => {
-    setLoading(true);
+    if (!refreshing) {
+      setLoading(true);
+    }
+
     try {
       const userId = authUser?.id || user?.id;
 
@@ -101,11 +105,12 @@ export default function MyTripsScreen() {
         // Load from Firebase trip history
         await getTripHistory(userId);
 
-        // Convert to display format
-        const upcoming = storeUpcomingTrips.map(convertTrip);
-        const past = storePastTrips.map(convertTrip);
+        // Convert completed/cancelled trips only
+        const past = storePastTrips
+          .filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED')
+          .map(convertTrip);
 
-        // Also get recent travels from user store (hard cached)
+        // Also get recent travels from user store
         const recentTravels = getRecentTravels();
         const recentTripsDisplay = recentTravels.map(convertRecentTravel);
 
@@ -120,20 +125,23 @@ export default function MyTripsScreen() {
         // Sort by date (most recent first)
         mergedPast.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        setUpcomingTrips(upcoming);
         setPastTrips(mergedPast);
-
-        console.log(`Loaded ${upcoming.length} upcoming and ${mergedPast.length} past trips from Firebase`);
+        console.log(`Loaded ${mergedPast.length} past trips`);
       } else {
         console.log('No user ID, showing empty trips');
-        setUpcomingTrips([]);
         setPastTrips([]);
       }
     } catch (error) {
       console.error('Error loading trips:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadTrips();
   };
 
   const renderTripCard = ({ item }: { item: Trip }) => (
@@ -159,11 +167,6 @@ export default function MyTripsScreen() {
             <Text style={[styles.badgeText, styles.cancelledText]}>Cancelled</Text>
           </View>
         )}
-        {item.status === 'upcoming' && (
-          <View style={[styles.completedBadge, styles.upcomingBadge]}>
-            <Text style={[styles.badgeText, styles.upcomingText]}>Upcoming</Text>
-          </View>
-        )}
       </View>
 
       {/* Route */}
@@ -171,11 +174,11 @@ export default function MyTripsScreen() {
         <View style={styles.routeIconsContainer}>
           <View style={styles.greenDot} />
           <View style={styles.dottedLine} />
-          <View style={styles.redSquare} />
+          <View style={styles.purpleSquare} />
         </View>
         <View style={styles.addressesContainer}>
-          <Text style={styles.address}>{item.from}</Text>
-          <Text style={styles.address}>{item.to}</Text>
+          <Text style={styles.address} numberOfLines={1}>{item.from}</Text>
+          <Text style={styles.address} numberOfLines={1}>{item.to}</Text>
         </View>
       </View>
 
@@ -186,7 +189,7 @@ export default function MyTripsScreen() {
           <Text style={styles.driverName}>{item.driver}</Text>
         </View>
         <View style={styles.costContainer}>
-          <Text style={styles.costLabel}>Cost Share:</Text>
+          <Text style={styles.costLabel}>Cost:</Text>
           <Text style={styles.costValue}>{item.cost}</Text>
         </View>
         {item.rating && (
@@ -206,9 +209,6 @@ export default function MyTripsScreen() {
       />
     </TouchableOpacity>
   );
-
-  // Use state-based trips (loaded from Firebase) instead of mock data
-  const trips = activeTab === 'upcoming' ? upcomingTrips : pastTrips;
 
   if (loading) {
     return (
@@ -245,62 +245,43 @@ export default function MyTripsScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
-          onPress={() => setActiveTab('upcoming')}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[styles.tabText, activeTab === 'upcoming' && styles.activeTabText]}
-          >
-            Upcoming
-          </Text>
-          {activeTab === 'upcoming' && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'past' && styles.activeTab]}
-          onPress={() => setActiveTab('past')}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[styles.tabText, activeTab === 'past' && styles.activeTabText]}
-          >
-            Past
-          </Text>
-          {activeTab === 'past' && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
+      {/* Subtitle */}
+      <View style={styles.subtitleContainer}>
+        <Text style={styles.subtitle}>Your trip history</Text>
       </View>
 
       {/* Trip List */}
-      {trips.length > 0 ? (
+      {pastTrips.length > 0 ? (
         <FlatList
-          data={trips}
+          data={pastTrips}
           renderItem={renderTripCard}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#5d1289"
+              colors={['#5d1289']}
+            />
+          }
         />
       ) : (
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconContainer}>
             <Ionicons name="car-outline" size={64} color="#D1D5DB" />
           </View>
-          <Text style={styles.emptyTitle}>No {activeTab} trips</Text>
+          <Text style={styles.emptyTitle}>No trips yet</Text>
           <Text style={styles.emptyText}>
-            {activeTab === 'upcoming'
-              ? "You don't have any upcoming rides scheduled"
-              : "You haven't taken any trips yet"}
+            Your completed trips will appear here
           </Text>
-          {activeTab === 'upcoming' && (
-            <TouchableOpacity
-              style={styles.bookButton}
-              onPress={() => router.push('/(tabs)')}
-            >
-              <Text style={styles.bookButtonText}>Book a Ride</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.bookButton}
+            onPress={() => router.push('/(tabs)')}
+          >
+            <Text style={styles.bookButtonText}>Book a Ride</Text>
+          </TouchableOpacity>
         </View>
       )}
     </SafeAreaView>
@@ -319,6 +300,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
     width: 40,
@@ -334,38 +317,14 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 40,
   },
-  tabsContainer: {
-    flexDirection: 'row',
+  subtitleContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFF',
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 16,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  activeTab: {},
-  tabText: {
-    fontSize: 16,
-    fontWeight: '500',
+  subtitle: {
+    fontSize: 14,
     color: '#6B7280',
-  },
-  activeTabText: {
-    color: '#5d1289ff',
-    fontWeight: '600',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: '#5d1289ff',
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
   },
   listContent: {
     padding: 16,
@@ -401,9 +360,6 @@ const styles = StyleSheet.create({
   cancelledBadge: {
     backgroundColor: '#FEE2E2',
   },
-  upcomingBadge: {
-    backgroundColor: '#DBEAFE',
-  },
   badgeText: {
     fontSize: 11,
     fontWeight: '600',
@@ -411,9 +367,6 @@ const styles = StyleSheet.create({
   },
   cancelledText: {
     color: '#DC2626',
-  },
-  upcomingText: {
-    color: '#2563EB',
   },
   routeContainer: {
     flexDirection: 'row',
@@ -437,10 +390,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     marginVertical: 2,
   },
-  redSquare: {
+  purpleSquare: {
     width: 10,
     height: 10,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#5d1289',
     marginTop: 4,
   },
   addressesContainer: {
@@ -528,7 +481,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   bookButton: {
-    backgroundColor: '#000',
+    backgroundColor: '#5d1289',
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 24,

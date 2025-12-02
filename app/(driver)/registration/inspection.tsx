@@ -18,9 +18,12 @@ import { useDriverStore } from '@/src/stores/driver-store';
 
 export default function Inspection() {
   const router = useRouter();
-  const { updateRegistrationData, setRegistrationStep } = useDriverStore();
-  
-  const [inspectionImage, setInspectionImage] = useState<string | null>(null);
+  const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+
+  // Initialize from saved data
+  const savedInspection = registrationData?.documents?.inspection;
+
+  const [inspectionImage, setInspectionImage] = useState<string | null>(savedInspection?.image || null);
   const [skipInspection, setSkipInspection] = useState(false);
 
   const pickImage = async (useCamera: boolean) => {
@@ -71,7 +74,7 @@ export default function Inspection() {
       });
     }
 
-    setRegistrationStep(9);
+    setRegistrationStep(10); // Moving to step 10 (background-check)
     router.push('/(driver)/registration/background-check');
   };
 

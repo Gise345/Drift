@@ -23,6 +23,7 @@ import {
   Dimensions,
   Image,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -194,6 +195,9 @@ export default function TripInProgressScreen() {
     }
   }, [currentTrip?.status]);
 
+  // Track processed stop requests to prevent duplicates
+  const processedStopRequestRef = useRef<string | null>(null);
+
   // Listen for stop request status changes (driver approves/declines)
   useEffect(() => {
     if (!currentTrip) return;
@@ -202,7 +206,13 @@ export default function TripInProgressScreen() {
     const stopRequest = tripData.pendingStopRequest;
 
     if (stopRequest && stopRequest.requestedBy === 'rider') {
-      if (stopRequest.status === 'approved') {
+      // Create a unique key for this stop request to track if we've processed it
+      const stopRequestKey = `${stopRequest.address}-${stopRequest.status}-${stopRequest.requestedAt}`;
+
+      if (stopRequest.status === 'approved' && processedStopRequestRef.current !== stopRequestKey) {
+        // Mark this request as processed to prevent duplicates
+        processedStopRequestRef.current = stopRequestKey;
+
         // Driver approved the stop - update the trip with the new stop and fare
         const additionalCost = stopRequest.estimatedAdditionalCost || 0;
         const newEstimatedCost = (currentTrip.estimatedCost || 0) + additionalCost;
@@ -218,22 +228,34 @@ export default function TripInProgressScreen() {
         // Get existing stops or initialize empty array
         const existingStops = currentTrip.stops || [];
 
-        // Update the trip with the new stop and updated fare
-        const { updateTrip } = useTripStore.getState();
-        updateTrip(currentTrip.id, {
-          stops: [...existingStops, newStop],
-          estimatedCost: newEstimatedCost,
-          pendingStopRequest: null, // Clear the pending request
-        }).catch(err => console.error('Failed to update trip with approved stop:', err));
-
-        Alert.alert(
-          'Stop Approved',
-          `Your driver has approved the stop at ${stopRequest.placeName || stopRequest.address}.${
-            additionalCost > 0 ? ` The fare has been increased by CI$${additionalCost.toFixed(2)}.` : ''
-          }`,
-          [{ text: 'OK' }]
+        // Check if this stop already exists to prevent duplicates
+        const stopExists = existingStops.some(
+          (stop: any) =>
+            stop.coordinates?.latitude === newStop.coordinates?.latitude &&
+            stop.coordinates?.longitude === newStop.coordinates?.longitude
         );
-      } else if (stopRequest.status === 'declined') {
+
+        if (!stopExists) {
+          // Update the trip with the new stop and updated fare
+          const { updateTrip } = useTripStore.getState();
+          updateTrip(currentTrip.id, {
+            stops: [...existingStops, newStop],
+            estimatedCost: newEstimatedCost,
+            pendingStopRequest: null, // Clear the pending request
+          }).catch(err => console.error('Failed to update trip with approved stop:', err));
+
+          Alert.alert(
+            'Stop Approved',
+            `Your driver has approved the stop at ${stopRequest.placeName || stopRequest.address}.${
+              additionalCost > 0 ? ` The fare has been increased by CI$${additionalCost.toFixed(2)}.` : ''
+            }`,
+            [{ text: 'OK' }]
+          );
+        }
+      } else if (stopRequest.status === 'declined' && processedStopRequestRef.current !== stopRequestKey) {
+        // Mark this request as processed
+        processedStopRequestRef.current = stopRequestKey;
+
         // Driver declined the stop - clear the pending request
         const { updateTrip } = useTripStore.getState();
         updateTrip(currentTrip.id, {
@@ -780,7 +802,7 @@ export default function TripInProgressScreen() {
       )}
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: bottomInset }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
         <View style={styles.bottomSheetSafeArea}>
           {/* Handle */}
           <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
@@ -794,7 +816,7 @@ export default function TripInProgressScreen() {
 
           {/* Minimized View */}
           {isSheetMinimized ? (
-            <View style={styles.minimizedContent}>
+            <View style={[styles.minimizedContent, { paddingBottom: bottomInset }]}>
               <View style={styles.driverAvatarSmall}>
                 <Ionicons name="person" size={20} color="#5d1289" />
               </View>
@@ -810,8 +832,13 @@ export default function TripInProgressScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            /* Expanded View */
-            <View style={styles.expandedContent}>
+            /* Expanded View - Make it scrollable */
+            <ScrollView
+              style={styles.expandedScrollView}
+              contentContainerStyle={[styles.expandedContent, { paddingBottom: bottomInset + 16 }]}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+            >
               {/* Driver Info */}
               <View style={styles.driverInfo}>
                 {driver.photo ? (
@@ -877,7 +904,7 @@ export default function TripInProgressScreen() {
                 <Ionicons name="add-circle" size={24} color="white" />
                 <Text style={styles.addStopButtonText}>Add a Stop</Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           )}
         </View>
       </Animated.View>
@@ -1243,6 +1270,9 @@ const styles = StyleSheet.create({
   },
 
   // Expanded Content
+  expandedScrollView: {
+    flex: 1,
+  },
   expandedContent: {
     paddingHorizontal: 20,
     paddingBottom: 8,

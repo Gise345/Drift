@@ -46,15 +46,15 @@ export default function RiderPrivacyScreen() {
       >
         {/* Effective Date */}
         <View style={styles.effectiveDate}>
-          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2024</Text>
-          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2024</Text>
+          <Text style={styles.effectiveDateText}>Effective Date: December 1, 2025</Text>
+          <Text style={styles.effectiveDateText}>Last Updated: November 29, 2025</Text>
         </View>
 
         {/* Introduction */}
         <View style={styles.section}>
           <Text style={styles.title}>Drift Privacy Policy</Text>
           <Text style={styles.paragraph}>
-            Drift Ltd. ("Drift," "we," "our," or "us") respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, store, and share your personal data when you use the Drift mobile application ("App") as a rider.
+            Invovibe Tech Ltd / I.T Cayman. ("Drift," "we," "our," or "us") respects your privacy and is committed to protecting your personal data. This Privacy Policy explains how we collect, use, store, and share your personal data when you use the Drift mobile application ("App") as a rider.
           </Text>
           <Text style={styles.paragraph}>
             This Privacy Policy complies with the Cayman Islands Data Protection Act (2021 Revision) ("DPA") and applies to all riders using our Platform within the Cayman Islands.
@@ -65,13 +65,13 @@ export default function RiderPrivacyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Data Controller</Text>
           <Text style={styles.paragraph}>
-            Drift Ltd. is the data controller responsible for your personal data collected through the Platform.
+            Invovibe Tech Ltd / I.T Cayman. is the data controller responsible for your personal data collected through the Platform.
           </Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
-          <Text style={styles.contactInfo}>Data Protection Officer: dpo@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>Data Protection Officer: info@drift-global.com</Text>
         </View>
 
         {/* Personal Data We Collect */}
@@ -112,7 +112,7 @@ export default function RiderPrivacyScreen() {
           <Text style={styles.bulletPoint}>• Payment transaction history</Text>
           <Text style={styles.bulletPoint}>• Billing address</Text>
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>Important:</Text> We do NOT store your full payment card details. All payment processing is handled securely by PayPal, a PCI DSS-compliant third-party payment processor.
+            <Text style={styles.bold}>Important:</Text> We do NOT store your full payment card details. All payment processing is handled securely by Stripe, a PCI DSS-compliant third-party payment processor.
           </Text>
 
           <Text style={styles.subSectionTitle}>2.5 Communications and Ratings</Text>
@@ -226,7 +226,7 @@ export default function RiderPrivacyScreen() {
             We share data with trusted third-party service providers who assist us in operating the Platform:
           </Text>
           <Text style={styles.bulletPoint}>
-            <Text style={styles.bold}>PayPal:</Text> Payment processing (card information, transaction amounts)
+            <Text style={styles.bold}>Stripe:</Text> Payment processing (card information, transaction amounts)
           </Text>
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Google Maps:</Text> Location services and mapping (location data)
@@ -379,7 +379,7 @@ export default function RiderPrivacyScreen() {
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>To Exercise Your Rights:</Text>
           </Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
           <Text style={styles.contactInfo}>Subject: Data Protection Request</Text>
           <Text style={styles.paragraph}>
             We will respond to all requests within 30 days. We may request identification verification to process your request.
@@ -396,7 +396,7 @@ export default function RiderPrivacyScreen() {
             If we become aware that we have collected personal data from a child under 18, we will take steps to delete such information immediately.
           </Text>
           <Text style={styles.paragraph}>
-            If you believe a child under 18 has provided us with personal data, please contact us at privacy@drift.ky.
+            If you believe a child under 18 has provided us with personal data, please contact us at info@drift-global.com.
           </Text>
         </View>
 
@@ -429,7 +429,7 @@ export default function RiderPrivacyScreen() {
             Our App integrates with third-party services. Each service has its own privacy policy:
           </Text>
           <Text style={styles.bulletPoint}>
-            <Text style={styles.bold}>PayPal:</Text> https://www.paypal.com/privacy
+            <Text style={styles.bold}>Stripe:</Text> https://www.Stripe.com/privacy
           </Text>
           <Text style={styles.bulletPoint}>
             <Text style={styles.bold}>Google Maps:</Text> https://policies.google.com/privacy
@@ -507,12 +507,12 @@ export default function RiderPrivacyScreen() {
             For questions, concerns, or requests regarding this Privacy Policy or your personal data, please contact:
           </Text>
           <Text style={styles.contactInfo}>Data Protection Officer</Text>
-          <Text style={styles.contactInfo}>Drift Ltd.</Text>
+          <Text style={styles.contactInfo}>Invovibe Tech Ltd / I.T Cayman.</Text>
           <Text style={styles.contactInfo}>George Town, Grand Cayman</Text>
           <Text style={styles.contactInfo}>Cayman Islands</Text>
-          <Text style={styles.contactInfo}>Email: privacy@drift.ky</Text>
-          <Text style={styles.contactInfo}>DPO: dpo@drift.ky</Text>
-          <Text style={styles.contactInfo}>General Support: support@drift.ky</Text>
+          <Text style={styles.contactInfo}>Email: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>DPO: info@drift-global.com</Text>
+          <Text style={styles.contactInfo}>General Support: info@drift-global.com</Text>
         </View>
 
         {/* Consent */}
@@ -534,7 +534,7 @@ export default function RiderPrivacyScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Drift Privacy Policy v1.0</Text>
           <Text style={styles.footerText}>Effective: December 1, 2024</Text>
-          <Text style={styles.footerText}>© 2024 Drift Ltd. All rights reserved.</Text>
+          <Text style={styles.footerText}>© 2024 Invovibe Tech Ltd / I.T Cayman. All rights reserved.</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

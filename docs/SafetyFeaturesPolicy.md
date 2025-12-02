@@ -345,13 +345,13 @@ If initial appeal is denied:
 ### Safety Concerns
 
 - **In-App:** Support > Safety Concern
-- **Email:** safety@drift.ky
+- **Email:** safety@drift-global.com
 - **Phone:** Available in app
 
 ### Appeal Submissions
 
 - **In-App:** Safety Dashboard > Appeal Strike
-- **Email:** appeals@drift.ky
+- **Email:** appeals@drift-global.com
 
 ---
 

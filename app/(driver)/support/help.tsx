@@ -88,7 +88,7 @@ export default function HelpCenterScreen() {
     {
       id: 'gs-1',
       question: 'How do I become a Drift driver in the Cayman Islands?',
-      answer: 'To become a Drift driver, you must: (1) Be at least 21 years old, (2) Have a valid Cayman Islands driver\'s license, (3) Own or lease a vehicle that meets our requirements, (4) Have valid vehicle insurance, (5) Pass a background check, and (6) Complete the online registration process. The approval process typically takes 3-5 business days.',
+      answer: 'To become a Drift driver, you must: (1) Be at least 21 years old, (2) Have a valid Cayman Islands driver\'s license, (3) Own or lease a vehicle that meets our requirements, (4) Have valid vehicle insurance, and (5) Complete the online registration process. The approval process typically takes 3-5 business days.',
       category: 'Getting Started',
     },
     {

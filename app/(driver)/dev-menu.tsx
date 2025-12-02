@@ -37,7 +37,6 @@ export default function DevMenuScreen() {
     { name: 'Insurance', route: '/(driver)/registration/insurance', category: 'Registration' },
     { name: 'Registration Cert', route: '/(driver)/registration/registration-cert', category: 'Registration' },
     { name: 'Inspection', route: '/(driver)/registration/inspection', category: 'Registration' },
-    { name: 'Background Check', route: '/(driver)/registration/background-check', category: 'Registration' },
     { name: 'Bank Details', route: '/(driver)/registration/bank-details', category: 'Registration' },
     { name: 'Review Application', route: '/(driver)/registration/review-application', category: 'Registration' },
     { name: 'Pending Approval', route: '/(driver)/registration/pending-approval', category: 'Registration' },

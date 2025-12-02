@@ -1,23 +1,30 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
+  ImageBackground,
   Image,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { loadRegistrationProgress } from '@/src/services/driver-registration.service';
 
 /**
  * DRIVER WELCOME SCREEN
- * 
+ *
  * Introduction to the Drift driver program
  * Highlights benefits and requirements
  * Entry point for driver registration
+ *
+ * UPDATED: Loads saved registration progress and redirects if in progress
  */
 
 interface Benefit {
@@ -53,138 +60,249 @@ const requirements: string[] = [
   'Valid driver\'s license',
   'Vehicle insurance',
   'Vehicle registration',
-  'Clean background check',
   'Age 21 or older',
 ];
 
 export default function DriverWelcome() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const { loadSavedRegistrationProgress, setRegistrationStep } = useDriverStore();
+  const [isCheckingProgress, setIsCheckingProgress] = useState(true);
+  const [hasSavedProgress, setHasSavedProgress] = useState(false);
+  const [savedStep, setSavedStep] = useState(1);
+
+  // Step route mapping
+  const stepRoutes: { [key: number]: string } = {
+    1: '/(driver)/registration/welcome',
+    2: '/(driver)/registration/legal-consent',
+    3: '/(driver)/registration/personal-info',
+    4: '/(driver)/registration/vehicle-info',
+    5: '/(driver)/registration/vehicle-photos',
+    6: '/(driver)/registration/drivers-license',
+    7: '/(driver)/registration/insurance',
+    8: '/(driver)/registration/registration-cert',
+    9: '/(driver)/registration/inspection',
+    10: '/(driver)/registration/background-check',
+    11: '/(driver)/registration/bank-details',
+    12: '/(driver)/registration/review-application',
+  };
+
+  useEffect(() => {
+    checkSavedProgress();
+  }, [user?.id]);
+
+  const checkSavedProgress = async () => {
+    if (!user?.id) {
+      setIsCheckingProgress(false);
+      return;
+    }
+
+    try {
+      const progress = await loadRegistrationProgress(user.id);
+      if (progress && progress.currentStep > 1) {
+        // User has saved progress beyond step 1
+        setHasSavedProgress(true);
+        setSavedStep(progress.currentStep);
+        // Load progress into store
+        await loadSavedRegistrationProgress(user.id);
+      }
+    } catch (error) {
+      console.error('Error checking saved progress:', error);
+    } finally {
+      setIsCheckingProgress(false);
+    }
+  };
 
   const handleGetStarted = () => {
+    setRegistrationStep(2); // Start at step 2 (legal consent)
     router.push('/(driver)/registration/legal-consent');
+  };
+
+  const handleContinueProgress = () => {
+    const route = stepRoutes[savedStep] || '/(driver)/registration/legal-consent';
+    router.push(route);
   };
 
   const handleSignIn = () => {
     router.push('/(auth)/sign-in');
   };
 
+  // Show loading while checking progress
+  if (isCheckingProgress) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Checking registration progress...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <ImageBackground
+        source={require('@/assets/images/NeonPalms.png')}
+        style={styles.background}
+        resizeMode="cover"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.logo}>Drift</Text>
-          <Text style={styles.driverBadge}>DRIVER</Text>
-        </View>
+        <View style={styles.overlay} />
 
-        {/* Hero Section */}
-        <View style={styles.hero}>
-          <Text style={styles.title}>
-            Drive with Drift
-          </Text>
-          <Text style={styles.subtitle}>
-            Connect with your community and earn by sharing rides across the Cayman Islands
-          </Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header with Logo */}
+          <View style={styles.header}>
+            <Image
+              source={require('@/assets/images/drift-logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.driverBadge}>DRIVER</Text>
+          </View>
 
-        {/* Illustration */}
-        <View style={styles.illustrationContainer}>
-          <Ionicons
-            name="car-sport-outline"
-            size={120}
-            color={Colors.primary}
-          />
-        </View>
+          {/* Cayman Map */}
+          <View style={styles.mapWrapper}>
+            <Image
+              source={require('@/assets/images/cayman-map.png')}
+              style={styles.mapImage}
+              resizeMode="contain"
+            />
+          </View>
 
-        {/* Benefits */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Why Drive with Drift?</Text>
-          {benefits.map((benefit, index) => (
-            <View key={index} style={styles.benefitCard}>
-              <View style={styles.benefitIcon}>
-                <Ionicons
-                  name={benefit.icon}
-                  size={24}
-                  color={Colors.primary}
-                />
-              </View>
-              <View style={styles.benefitContent}>
-                <Text style={styles.benefitTitle}>{benefit.title}</Text>
-                <Text style={styles.benefitDescription}>
-                  {benefit.description}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
+          {/* Hero Section */}
+          <View style={styles.hero}>
+            <Text style={styles.title}>
+              Drive with Drift
+            </Text>
+            <Text style={styles.subtitle}>
+              Connect with your community and earn by sharing rides across the Cayman Islands
+            </Text>
+          </View>
 
-        {/* Requirements */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Requirements</Text>
-          <View style={styles.requirementsCard}>
-            {requirements.map((requirement, index) => (
-              <View key={index} style={styles.requirementRow}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={20}
-                  color={Colors.primary}
-                />
-                <Text style={styles.requirementText}>{requirement}</Text>
+          {/* Benefits */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Why Drive with Drift?</Text>
+            {benefits.map((benefit, index) => (
+              <View key={index} style={styles.benefitCard}>
+                <View style={styles.benefitIcon}>
+                  <Ionicons
+                    name={benefit.icon}
+                    size={24}
+                    color={Colors.primary}
+                  />
+                </View>
+                <View style={styles.benefitContent}>
+                  <Text style={styles.benefitTitle}>{benefit.title}</Text>
+                  <Text style={styles.benefitDescription}>
+                    {benefit.description}
+                  </Text>
+                </View>
               </View>
             ))}
           </View>
-        </View>
 
-        {/* Legal Notice */}
-        <View style={styles.legalNotice}>
-          <Ionicons
-            name="information-circle-outline"
-            size={20}
-            color={Colors.gray[600]}
-            style={styles.infoIcon}
-          />
-          <Text style={styles.legalText}>
-            Drift is a peer-to-peer carpool network. Drivers are independent individuals
-            voluntarily sharing rides. This is not a taxi or for-hire service.
-          </Text>
-        </View>
+          {/* Requirements */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Requirements</Text>
+            <View style={styles.requirementsCard}>
+              {requirements.map((requirement, index) => (
+                <View key={index} style={styles.requirementRow}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color={Colors.primary}
+                  />
+                  <Text style={styles.requirementText}>{requirement}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
 
-        {/* CTA Buttons */}
-        <View style={styles.ctaContainer}>
-          <DriftButton
-            title="Get Started"
-            onPress={handleGetStarted}
-            variant="black"
-            icon={<Ionicons name="arrow-forward" size={20} color="white" />}
-          />
+          {/* Legal Notice */}
+          <View style={styles.legalNotice}>
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color="rgba(255,255,255,0.7)"
+              style={styles.infoIcon}
+            />
+            <Text style={styles.legalText}>
+              Drift is a peer-to-peer carpool network. Drivers are independent individuals
+              voluntarily sharing rides. This is not a taxi or for-hire service.
+            </Text>
+          </View>
 
-          <DriftButton
-            title="Already a driver? Sign In"
-            onPress={handleSignIn}
-            variant="outline"
-          />
-        </View>
+          {/* CTA Buttons */}
+          <View style={styles.ctaContainer}>
+            {hasSavedProgress ? (
+              <>
+                <DriftButton
+                  title={`Continue Registration (Step ${savedStep}/12)`}
+                  onPress={handleContinueProgress}
+                  variant="black"
+                  icon={<Ionicons name="arrow-forward" size={20} color="white" />}
+                />
+                <DriftButton
+                  title="Start Over"
+                  onPress={handleGetStarted}
+                  variant="outline"
+                />
+              </>
+            ) : (
+              <>
+                <DriftButton
+                  title="Get Started"
+                  onPress={handleGetStarted}
+                  variant="black"
+                  icon={<Ionicons name="arrow-forward" size={20} color="white" />}
+                />
+                <DriftButton
+                  title="Already a driver? Sign In"
+                  onPress={handleSignIn}
+                  variant="outline"
+                />
+              </>
+            )}
+          </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            By continuing, you agree to Drift's{' '}
-            <Text style={styles.link}>Terms of Service</Text> and{' '}
-            <Text style={styles.link}>Privacy Policy</Text>
-          </Text>
-        </View>
-      </ScrollView>
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              By continuing, you agree to Drift's{' '}
+              <Text style={styles.link}>Terms of Service</Text> and{' '}
+              <Text style={styles.link}>Privacy Policy</Text>
+            </Text>
+          </View>
+        </ScrollView>
+      </ImageBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#000',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: Typography.fontSize.base,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  background: {
+    flex: 1,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
@@ -193,23 +311,31 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginTop: Spacing.xl,
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
   },
   logo: {
-    fontSize: Typography.fontSize['3xl'],
-    fontWeight: '700',
-    color: Colors.purple,
-    marginBottom: Spacing.xs,
+    width: 280,
+    height: 100,
+    marginBottom: Spacing.sm,
   },
   driverBadge: {
     fontSize: Typography.fontSize.sm,
     fontWeight: '600',
     color: Colors.primary,
-    backgroundColor: Colors.primary + '20',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  mapWrapper: {
+    alignItems: 'center',
+    marginVertical: Spacing.lg,
+  },
+  mapImage: {
+    width: 320,
+    height: 130,
+    opacity: 0.9,
   },
   hero: {
     alignItems: 'center',
@@ -218,19 +344,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: Typography.fontSize['3xl'],
     fontWeight: '700',
-    color: Colors.black,
+    color: '#fff',
     textAlign: 'center',
     marginBottom: Spacing.md,
   },
   subtitle: {
     fontSize: Typography.fontSize.base,
-    color: Colors.gray[600],
+    color: 'rgba(255,255,255,0.85)',
     textAlign: 'center',
     lineHeight: 24,
-  },
-  illustrationContainer: {
-    alignItems: 'center',
-    marginVertical: Spacing['2xl'],
   },
   section: {
     marginBottom: Spacing['2xl'],
@@ -238,12 +360,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: Typography.fontSize.xl,
     fontWeight: '700',
-    color: Colors.black,
+    color: '#fff',
     marginBottom: Spacing.lg,
   },
   benefitCard: {
     flexDirection: 'row',
-    backgroundColor: Colors.gray[50],
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
@@ -252,7 +374,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.primary + '20',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
@@ -263,16 +385,16 @@ const styles = StyleSheet.create({
   benefitTitle: {
     fontSize: Typography.fontSize.base,
     fontWeight: '600',
-    color: Colors.black,
+    color: '#fff',
     marginBottom: Spacing.xs,
   },
   benefitDescription: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
+    color: 'rgba(255,255,255,0.8)',
     lineHeight: 20,
   },
   requirementsCard: {
-    backgroundColor: Colors.gray[50],
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 16,
     padding: Spacing.lg,
   },
@@ -283,12 +405,12 @@ const styles = StyleSheet.create({
   },
   requirementText: {
     fontSize: Typography.fontSize.base,
-    color: Colors.black,
+    color: '#fff',
     marginLeft: Spacing.md,
   },
   legalNotice: {
     flexDirection: 'row',
-    backgroundColor: Colors.gray[50],
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 12,
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
@@ -300,7 +422,7 @@ const styles = StyleSheet.create({
   legalText: {
     flex: 1,
     fontSize: Typography.fontSize.sm,
-    color: Colors.gray[700],
+    color: 'rgba(255,255,255,0.8)',
     lineHeight: 20,
   },
   ctaContainer: {
@@ -312,7 +434,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[600],
+    color: 'rgba(255,255,255,0.7)',
     textAlign: 'center',
     lineHeight: 18,
   },
