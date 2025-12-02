@@ -31,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useTripStore } from '@/src/stores/trip-store';
 import { startTrip } from '@/src/services/ride-request.service';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -40,13 +41,50 @@ export default function ArrivedAtPickup() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
-  const { activeRide, startRide } = useDriverStore();
+  const { activeRide, startRide, setActiveRide } = useDriverStore();
+  const { subscribeToTrip, currentTrip } = useTripStore();
   const [waitTime, setWaitTime] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
   const maxWaitTime = 300; // 5 minutes in seconds
 
   // Animation for pulsing effect
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Subscribe to trip updates to detect rider cancellation
+  useEffect(() => {
+    if (!activeRide?.id) return;
+
+    const unsubscribe = subscribeToTrip(activeRide.id);
+
+    return () => unsubscribe();
+  }, [activeRide?.id]);
+
+  // Listen for trip status changes (e.g., rider cancellation)
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    // If trip was cancelled by rider
+    if (currentTrip.status === 'CANCELLED') {
+      console.log('⚠️ Trip was cancelled by rider while waiting at pickup');
+
+      // Clear active ride from driver store
+      setActiveRide(null);
+
+      // Show alert and redirect
+      Alert.alert(
+        'Ride Cancelled',
+        currentTrip.cancelledBy === 'RIDER'
+          ? 'The rider has cancelled this trip.'
+          : 'This trip has been cancelled.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(driver)/tabs'),
+          },
+        ]
+      );
+    }
+  }, [currentTrip?.status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -77,7 +115,7 @@ export default function ArrivedAtPickup() {
   }, []);
 
   if (!activeRide) {
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
     return null;
   }
 

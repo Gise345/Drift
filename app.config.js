@@ -35,7 +35,11 @@ module.exports = {
       associatedDomains: [
         // Uncomment if you want to use Universal Links:
         // "applinks:drift.ky"
-      ]
+      ],
+      // Apple Pay entitlement
+      entitlements: {
+        "com.apple.developer.in-app-payments": ["merchant.com.drift.app"]
+      }
     },
     android: {
       package: "com.drift.global",

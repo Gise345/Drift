@@ -15,8 +15,8 @@ export default function Approved() {
   const router = useRouter();
 
   const handleGetStarted = () => {
-    // Navigate to driver dashboard
-    router.replace('/(driver)/dashboard/home');
+    // Navigate to driver home with tabs
+    router.replace('/(driver)/tabs');
   };
 
   return (

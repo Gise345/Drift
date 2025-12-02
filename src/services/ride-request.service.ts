@@ -4,7 +4,7 @@
  * Production-ready Firebase implementation with Zone-Based Pricing Support
  */
 
-import { firebaseDb } from '../config/firebase';
+import { firebaseDb, firebaseFunctions } from '../config/firebase';
 import firestore, {
   collection,
   doc,
@@ -398,8 +398,8 @@ export async function addTipToTrip(
       updatedAt: serverTimestamp(),
     });
 
-    // Update driver's earnings in Firebase
-    await updateDriverEarnings(driverId, finalCost, tipAmount);
+    // Update driver's earnings via Cloud Function
+    await updateDriverEarnings(driverId, tripId, finalCost, tipAmount);
 
     console.log('✅ Tip added to trip:', tripId, 'Amount:', tipAmount);
   } catch (error) {
@@ -432,8 +432,8 @@ export async function skipTipAndFinalize(tripId: string, driverId: string): Prom
       updatedAt: serverTimestamp(),
     });
 
-    // Update driver's earnings (no tip)
-    await updateDriverEarnings(driverId, finalCost, 0);
+    // Update driver's earnings via Cloud Function (no tip)
+    await updateDriverEarnings(driverId, tripId, finalCost, 0);
 
     console.log('✅ Trip finalized without tip:', tripId);
   } catch (error) {
@@ -443,33 +443,30 @@ export async function skipTipAndFinalize(tripId: string, driverId: string): Prom
 }
 
 /**
- * Update driver's earnings in Firebase
+ * Update driver's earnings via Cloud Function
+ * This is more secure than direct Firestore updates
  */
 async function updateDriverEarnings(
   driverId: string,
+  tripId: string,
   tripEarnings: number,
   tipAmount: number
 ): Promise<void> {
   try {
-    const driverRef = doc(firebaseDb, 'drivers', driverId);
-    const driverDoc = await getDoc(driverRef);
+    const updateEarnings = firebaseFunctions.httpsCallable('updateDriverEarnings');
 
-    if (documentExists(driverDoc)) {
-      const driverData = driverDoc.data();
-      const currentTodayEarnings = driverData?.todayEarnings || 0;
-      const currentTotalEarnings = driverData?.totalEarnings || 0;
-      const currentTotalTrips = driverData?.totalTrips || 0;
-      const currentTotalTips = driverData?.totalTips || 0;
+    const result = await updateEarnings({
+      driverId,
+      tripId,
+      tripEarnings,
+      tipAmount,
+    });
 
-      await updateDoc(driverRef, {
-        todayEarnings: currentTodayEarnings + tripEarnings + tipAmount,
-        totalEarnings: currentTotalEarnings + tripEarnings + tipAmount,
-        totalTrips: currentTotalTrips + 1,
-        totalTips: currentTotalTips + tipAmount,
-        lastTripAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+    const data = result.data as { success: boolean; alreadyUpdated?: boolean };
 
+    if (data.alreadyUpdated) {
+      console.log('ℹ️ Driver earnings already updated for trip:', tripId);
+    } else {
       console.log('✅ Driver earnings updated:', driverId, 'Total:', tripEarnings + tipAmount);
     }
   } catch (error) {
@@ -501,10 +498,10 @@ export async function finalizeTrip(tripId: string): Promise<void> {
         updatedAt: serverTimestamp(),
       });
 
-      // Update driver earnings if not already done
+      // Update driver earnings via Cloud Function if not already done
       if (tripData?.driverId) {
         const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
-        await updateDriverEarnings(tripData.driverId, finalCost, tripData?.tip || 0);
+        await updateDriverEarnings(tripData.driverId, tripId, finalCost, tripData?.tip || 0);
       }
     }
 

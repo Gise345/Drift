@@ -16,3 +16,17 @@ export {
   createStripeSetupIntent,
   confirmStripeSetupIntent
 } from './stripe';
+
+// Export Safety functions
+export {
+  issueStrike,
+  expireStrikes,
+  liftExpiredSuspensions,
+  autoResolveHeldPayments,
+  onEmergencyAlertCreated,
+  onTripUpdated,
+  processStrikeQueue,
+  resolveAppeal,
+  resolveDispute,
+  getSafetyDashboard,
+} from './safety';

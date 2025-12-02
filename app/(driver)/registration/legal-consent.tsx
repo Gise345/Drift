@@ -202,7 +202,7 @@ export default function LegalConsent() {
           <View style={styles.keyPoint}>
             <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
             <Text style={styles.keyPointText}>
-              18% platform service fee is applied to cover bank fees and operational costs to keep the app running
+              19% platform service fee is applied to cover bank fees and operational costs to keep the app running
             </Text>
           </View>
 

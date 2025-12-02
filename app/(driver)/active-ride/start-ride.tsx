@@ -23,7 +23,7 @@ export default function StartRide() {
   const [isStarting, setIsStarting] = useState(false);
 
   if (!activeRide) {
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
     return null;
   }
 

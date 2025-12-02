@@ -451,6 +451,10 @@ export default function SelectPaymentScreen() {
             onSuccess={handleStripeSuccess}
             onCancel={handleStripeCancel}
             onError={handleStripeError}
+            preferredMethod={
+              selectedPayment === 'apple-pay' ? 'apple_pay' :
+              selectedPayment === 'google-pay' ? 'google_pay' : 'card'
+            }
             metadata={{
               userId: user?.id,
               pickup: (pickupLocation as any)?.placeName || pickupLocation?.address,

@@ -36,7 +36,7 @@ export default function RateRider() {
   };
 
   const handleSubmit = () => {
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
   };
 
   return (

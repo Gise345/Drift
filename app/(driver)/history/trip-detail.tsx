@@ -18,6 +18,13 @@ import firestore from '@react-native-firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
+interface StopData {
+  name: string;
+  address: string;
+  coords: { latitude: number; longitude: number };
+  completed: boolean;
+}
+
 interface TripData {
   id: string;
   riderName: string;
@@ -34,6 +41,7 @@ interface TripData {
     fullAddress: string;
     coords: { latitude: number; longitude: number };
   };
+  stops: StopData[];
   date: string;
   time: string;
   duration: number;
@@ -136,6 +144,17 @@ export default function TripDetailScreen() {
       const tip = data.tip || 0;
       const totalEarnings = baseFare + tip;
 
+      // Parse stops data
+      const stops: StopData[] = (data.stops || []).map((stop: any) => ({
+        name: stop.placeName || 'Stop',
+        address: stop.address || 'Unknown location',
+        coords: {
+          latitude: stop.coordinates?.latitude || 0,
+          longitude: stop.coordinates?.longitude || 0,
+        },
+        completed: stop.completed || false,
+      }));
+
       // Build trip object
       const tripData: TripData = {
         id: tripDoc.id,
@@ -159,6 +178,7 @@ export default function TripDetailScreen() {
             longitude: data.destination?.coordinates?.longitude || -81.2546,
           },
         },
+        stops,
         date: formatDate(completedAt || requestedAt),
         time: formatTime(completedAt || requestedAt),
         duration: data.actualDuration || data.duration || 0,
@@ -224,6 +244,7 @@ export default function TripDetailScreen() {
 
   const routeCoords = [
     trip.pickup.coords,
+    ...trip.stops.map(s => s.coords),
     trip.destination.coords,
   ];
 
@@ -274,6 +295,15 @@ export default function TripDetailScreen() {
                 </View>
               </View>
             </Marker>
+
+            {/* Stop markers */}
+            {trip.stops.map((stop, index) => (
+              <Marker key={`stop-${index}`} coordinate={stop.coords}>
+                <View style={styles.stopMarker}>
+                  <Text style={styles.stopMarkerText}>{index + 1}</Text>
+                </View>
+              </Marker>
+            ))}
 
             {/* Destination marker */}
             <Marker coordinate={trip.destination.coords}>
@@ -329,6 +359,25 @@ export default function TripDetailScreen() {
                 <Text style={styles.routeFullAddress} numberOfLines={2}>{trip.pickup.fullAddress}</Text>
               </View>
             </View>
+            {/* Stops */}
+            {trip.stops.map((stop, index) => (
+              <React.Fragment key={`stop-route-${index}`}>
+                <View style={styles.routeLine} />
+                <View style={styles.routeItem}>
+                  <View style={[styles.routeDot, { backgroundColor: Colors.warning }]} />
+                  <View style={styles.routeTextContainer}>
+                    <View style={styles.stopLabelRow}>
+                      <Text style={styles.routeLabel}>Stop {index + 1}</Text>
+                      <View style={styles.stopBadge}>
+                        <Text style={styles.stopBadgeText}>{stop.completed ? 'Completed' : 'Added'}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.routeAddress}>{stop.name}</Text>
+                    <Text style={styles.routeFullAddress} numberOfLines={2}>{stop.address}</Text>
+                  </View>
+                </View>
+              </React.Fragment>
+            ))}
             <View style={styles.routeLine} />
             <View style={styles.routeItem}>
               <View style={[styles.routeDot, { backgroundColor: Colors.success }]} />
@@ -528,6 +577,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: Colors.white,
+  },
+  stopMarker: {
+    backgroundColor: Colors.warning,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.white,
+  },
+  stopMarkerText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stopLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stopBadge: {
+    backgroundColor: `${Colors.warning}20`,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  stopBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.warning,
   },
   section: {
     padding: Spacing.md,

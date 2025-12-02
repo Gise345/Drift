@@ -14,6 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import firestore from '@react-native-firebase/firestore';
 
+interface StopData {
+  name: string;
+  address: string;
+  coords: { latitude: number; longitude: number };
+  completed: boolean;
+}
+
 interface TripData {
   id: string;
   status: string;
@@ -29,6 +36,7 @@ interface TripData {
     address: string;
     coords: { latitude: number; longitude: number };
   };
+  stops: StopData[];
   distance: string;
   duration: string;
   cost: string;
@@ -132,6 +140,17 @@ export default function TripDetailScreen() {
       const tip = data.tip || 0;
       const totalCost = baseCost + tip;
 
+      // Parse stops data
+      const stops: StopData[] = (data.stops || []).map((stop: any) => ({
+        name: stop.placeName || 'Stop',
+        address: stop.address || 'Unknown location',
+        coords: {
+          latitude: stop.coordinates?.latitude || 0,
+          longitude: stop.coordinates?.longitude || 0,
+        },
+        completed: stop.completed || false,
+      }));
+
       // Build trip object
       const tripData: TripData = {
         id: tripDoc.id,
@@ -154,6 +173,7 @@ export default function TripDetailScreen() {
             longitude: data.destination?.coordinates?.longitude || -81.2546,
           },
         },
+        stops,
         distance: formatDistance(data.distance || data.actualDistance),
         duration: formatDuration(data.duration || data.actualDuration || data.estimatedDuration),
         cost: `CI$${baseCost.toFixed(2)}`,
@@ -269,13 +289,30 @@ export default function TripDetailScreen() {
                 <Ionicons name="location" size={20} color="#10B981" />
               </View>
             </Marker>
+            {/* Stop Markers */}
+            {trip.stops.map((stop, index) => (
+              <Marker
+                key={`stop-${index}`}
+                coordinate={stop.coords}
+                title={`Stop ${index + 1}: ${stop.name}`}
+              >
+                <View style={styles.stopMarker}>
+                  <Text style={styles.stopMarkerText}>{index + 1}</Text>
+                </View>
+              </Marker>
+            ))}
             <Marker coordinate={trip.to.coords} title="Destination">
               <View style={styles.destinationMarker}>
                 <Ionicons name="location" size={20} color="#EF4444" />
               </View>
             </Marker>
+            {/* Polyline through all points */}
             <Polyline
-              coordinates={[trip.from.coords, trip.to.coords]}
+              coordinates={[
+                trip.from.coords,
+                ...trip.stops.map(s => s.coords),
+                trip.to.coords,
+              ]}
               strokeColor="#5d1289"
               strokeWidth={3}
             />
@@ -301,6 +338,13 @@ export default function TripDetailScreen() {
             <View style={styles.routeIcons}>
               <View style={styles.greenDot} />
               <View style={styles.dottedLine} />
+              {/* Stop indicators */}
+              {trip.stops.map((_, index) => (
+                <React.Fragment key={`stop-icon-${index}`}>
+                  <View style={styles.orangeDot} />
+                  <View style={styles.dottedLine} />
+                </React.Fragment>
+              ))}
               <View style={styles.redSquare} />
             </View>
             <View style={styles.addresses}>
@@ -308,6 +352,18 @@ export default function TripDetailScreen() {
                 <Text style={styles.addressName}>{trip.from.name}</Text>
                 <Text style={styles.addressText} numberOfLines={1}>{trip.from.address}</Text>
               </View>
+              {/* Stops */}
+              {trip.stops.map((stop, index) => (
+                <View key={`stop-addr-${index}`} style={styles.addressRow}>
+                  <View style={styles.stopLabelRow}>
+                    <Text style={styles.addressName}>{stop.name}</Text>
+                    <View style={styles.stopBadge}>
+                      <Text style={styles.stopBadgeText}>Stop {index + 1}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.addressText} numberOfLines={1}>{stop.address}</Text>
+                </View>
+              ))}
               <View style={styles.addressRow}>
                 <Text style={styles.addressName}>{trip.to.name}</Text>
                 <Text style={styles.addressText} numberOfLines={1}>{trip.to.address}</Text>
@@ -475,6 +531,21 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#EF4444',
   },
+  stopMarker: {
+    backgroundColor: '#F59E0B',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  stopMarkerText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   statusBadge: {
     position: 'absolute',
     top: 16,
@@ -522,6 +593,29 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   redSquare: { width: 10, height: 10, backgroundColor: '#EF4444', marginTop: 4 },
+  orangeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#F59E0B',
+    marginVertical: 4,
+  },
+  stopLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  stopBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  stopBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#D97706',
+  },
   addresses: { flex: 1, justifyContent: 'space-between' },
   addressRow: { paddingVertical: 4 },
   addressName: { fontSize: 15, color: '#000', fontWeight: '600' },

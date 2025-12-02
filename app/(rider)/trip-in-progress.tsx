@@ -24,19 +24,21 @@ import {
   Image,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useTripStore, TripLocation } from '@/src/stores/trip-store';
+import { useSafetyStore } from '@/src/stores/safety-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
+import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
+import { SOSButton } from '@/components/safety/SOSButton';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.35;
-const BOTTOM_SHEET_MIN_HEIGHT = 100;
-// Extra padding for Android navigation bar
-const ANDROID_NAV_BAR_HEIGHT = Platform.OS === 'android' ? 48 : 0;
+const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.38;
+const BOTTOM_SHEET_MIN_HEIGHT_BASE = 140;
 
 // Route deviation threshold in meters (200m = ~0.12 miles)
 const ROUTE_DEVIATION_THRESHOLD = 200;
@@ -104,8 +106,18 @@ interface RouteCoordinate {
 export default function TripInProgressScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   const { currentTrip, subscribeToTrip } = useTripStore();
+  const {
+    startMonitoring,
+    stopMonitoring,
+    updateSpeed,
+    checkLocation,
+    isMonitoring,
+    speedState,
+  } = useSafetyStore();
   const hasNavigatedRef = useRef(false);
+  const safetyInitializedRef = useRef(false);
 
   // State
   const [eta, setEta] = useState<number | null>(null);
@@ -118,18 +130,31 @@ export default function TripInProgressScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [showRouteDeviationModal, setShowRouteDeviationModal] = useState(false);
   const [routeDeviationConfirmed, setRouteDeviationConfirmed] = useState(false);
+  const [showStopRequestModal, setShowStopRequestModal] = useState(false);
+  const [pendingStopRequest, setPendingStopRequest] = useState<{
+    address: string;
+    coordinates: { latitude: number; longitude: number };
+    requestedBy: 'driver' | 'rider';
+    additionalCost?: number;
+  } | null>(null);
+
+  // Calculate insets-aware heights
+  const bottomInset = Math.max(insets.bottom, 20);
+  const BOTTOM_SHEET_MAX_HEIGHT = BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset;
+  const BOTTOM_SHEET_MIN_HEIGHT = BOTTOM_SHEET_MIN_HEIGHT_BASE + bottomInset;
 
   // Animation
-  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
-
-  // If no current trip, redirect back
-  if (!currentTrip) {
-    router.replace('/(rider)');
-    return null;
-  }
+  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset)).current;
 
   // Get driver info from current trip
-  const driver = currentTrip.driverInfo;
+  const driver = currentTrip?.driverInfo;
+
+  // If no current trip, redirect back (must be in useEffect to avoid navigation before mount)
+  useEffect(() => {
+    if (!currentTrip) {
+      router.replace('/(rider)');
+    }
+  }, [currentTrip]);
 
   // Subscribe to trip updates
   useEffect(() => {
@@ -170,6 +195,74 @@ export default function TripInProgressScreen() {
     }
   }, [currentTrip?.status]);
 
+  // Listen for stop request status changes (driver approves/declines)
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    const tripData = currentTrip as any;
+    const stopRequest = tripData.pendingStopRequest;
+
+    if (stopRequest && stopRequest.requestedBy === 'rider') {
+      if (stopRequest.status === 'approved') {
+        // Driver approved the stop - update the trip with the new stop and fare
+        const additionalCost = stopRequest.estimatedAdditionalCost || 0;
+        const newEstimatedCost = (currentTrip.estimatedCost || 0) + additionalCost;
+
+        // Build the new stop object
+        const newStop = {
+          address: stopRequest.address,
+          coordinates: stopRequest.coordinates,
+          placeName: stopRequest.placeName,
+          completed: false,
+        };
+
+        // Get existing stops or initialize empty array
+        const existingStops = currentTrip.stops || [];
+
+        // Update the trip with the new stop and updated fare
+        const { updateTrip } = useTripStore.getState();
+        updateTrip(currentTrip.id, {
+          stops: [...existingStops, newStop],
+          estimatedCost: newEstimatedCost,
+          pendingStopRequest: null, // Clear the pending request
+        }).catch(err => console.error('Failed to update trip with approved stop:', err));
+
+        Alert.alert(
+          'Stop Approved',
+          `Your driver has approved the stop at ${stopRequest.placeName || stopRequest.address}.${
+            additionalCost > 0 ? ` The fare has been increased by CI$${additionalCost.toFixed(2)}.` : ''
+          }`,
+          [{ text: 'OK' }]
+        );
+      } else if (stopRequest.status === 'declined') {
+        // Driver declined the stop - clear the pending request
+        const { updateTrip } = useTripStore.getState();
+        updateTrip(currentTrip.id, {
+          pendingStopRequest: null,
+        }).catch(err => console.error('Failed to clear declined stop request:', err));
+
+        Alert.alert(
+          'Stop Declined',
+          'Your driver was unable to accommodate the stop request.',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+
+    // Check for driver-initiated stop requests
+    if (stopRequest && stopRequest.requestedBy === 'driver' && stopRequest.status === 'pending') {
+      if (!showStopRequestModal) {
+        setPendingStopRequest({
+          address: stopRequest.address,
+          coordinates: stopRequest.coordinates,
+          requestedBy: 'driver',
+          additionalCost: stopRequest.estimatedAdditionalCost,
+        });
+        setShowStopRequestModal(true);
+      }
+    }
+  }, [(currentTrip as any)?.pendingStopRequest]);
+
   // Trip timer
   useEffect(() => {
     const interval = setInterval(() => {
@@ -189,22 +282,87 @@ export default function TripInProgressScreen() {
     }
   }, [currentTrip?.pickup, currentTrip?.destination]);
 
-  // Check for route deviation and update ETA when driver location updates
+  // Re-fetch route when stops are added/removed
   useEffect(() => {
-    if (currentTrip?.driverLocation && currentTrip?.destination) {
-      // Update route display from driver's current position
+    if (currentTrip?.driverLocation && currentTrip?.destination && currentTrip?.stops) {
+      console.log('📍 Stops changed, re-fetching route with', currentTrip.stops.length, 'stops');
       fetchRoute(
         {
           latitude: currentTrip.driverLocation.latitude,
           longitude: currentTrip.driverLocation.longitude,
         },
+        currentTrip.destination.coordinates,
+        currentTrip.stops
+      );
+    }
+  }, [currentTrip?.stops?.length]);
+
+  // Start safety monitoring when trip starts and route is ready
+  useEffect(() => {
+    if (
+      currentTrip?.id &&
+      currentTrip?.driverId &&
+      currentTrip?.riderId &&
+      originalRoute.length > 0 &&
+      currentTrip?.destination?.coordinates &&
+      !safetyInitializedRef.current
+    ) {
+      console.log('Starting safety monitoring for trip:', currentTrip.id);
+      safetyInitializedRef.current = true;
+
+      startMonitoring(
+        currentTrip.id,
+        currentTrip.driverId,
+        currentTrip.riderId,
+        originalRoute,
         currentTrip.destination.coordinates
+      );
+    }
+
+    // Cleanup when trip ends
+    return () => {
+      if (safetyInitializedRef.current) {
+        console.log('Stopping safety monitoring');
+        stopMonitoring();
+        safetyInitializedRef.current = false;
+      }
+    };
+  }, [currentTrip?.id, currentTrip?.driverId, currentTrip?.riderId, originalRoute, currentTrip?.destination?.coordinates]);
+
+  // Check for route deviation and update ETA when driver location updates
+  useEffect(() => {
+    if (currentTrip?.driverLocation && currentTrip?.destination) {
+      // Update route display from driver's current position (include stops)
+      fetchRoute(
+        {
+          latitude: currentTrip.driverLocation.latitude,
+          longitude: currentTrip.driverLocation.longitude,
+        },
+        currentTrip.destination.coordinates,
+        currentTrip.stops // Pass stops for waypoints
       );
 
       // Calculate ETA
       calculateETA(currentTrip.driverLocation, currentTrip.destination.coordinates);
 
-      // Check for route deviation
+      // Update safety monitoring with current location
+      if (isMonitoring) {
+        checkLocation(
+          currentTrip.driverLocation.latitude,
+          currentTrip.driverLocation.longitude
+        );
+
+        // Update speed if available (speed is in m/s from GPS)
+        if (currentTrip.driverLocation.speed !== undefined) {
+          updateSpeed(
+            currentTrip.driverLocation.speed,
+            currentTrip.driverLocation.latitude,
+            currentTrip.driverLocation.longitude
+          );
+        }
+      }
+
+      // Check for route deviation (legacy - now handled by safety store)
       if (originalRoute.length > 0 && !routeDeviationConfirmed) {
         const driverPoint = {
           latitude: currentTrip.driverLocation.latitude,
@@ -217,26 +375,51 @@ export default function TripInProgressScreen() {
         }
       }
     }
-  }, [currentTrip?.driverLocation, originalRoute, routeDeviationConfirmed]);
+  }, [currentTrip?.driverLocation, originalRoute, routeDeviationConfirmed, isMonitoring]);
 
-  // Calculate ETA based on driver location
-  const calculateETA = (
+  // Calculate ETA based on driver location using Google Directions API
+  const lastEtaFetch = useRef<number>(0);
+  const ETA_FETCH_INTERVAL = 15000; // Fetch new ETA every 15 seconds
+
+  const calculateETA = async (
     driverLocation: TripLocation,
     destinationLocation: { latitude: number; longitude: number }
   ) => {
+    // Calculate straight-line distance for display
     const dist = calculateDistance(
       driverLocation.latitude,
       driverLocation.longitude,
       destinationLocation.latitude,
       destinationLocation.longitude
     );
-    setDistance(dist);
 
-    // Estimate ETA based on average speed
-    const avgSpeed = driverLocation.speed || 40 / 3.6; // m/s
-    const timeInSeconds = (dist * 1000) / avgSpeed;
-    const timeInMinutes = Math.ceil(timeInSeconds / 60);
-    setEta(Math.max(1, timeInMinutes));
+    const now = Date.now();
+    // Only fetch from Google API periodically to avoid excessive API calls
+    if (now - lastEtaFetch.current >= ETA_FETCH_INTERVAL && GOOGLE_DIRECTIONS_API_KEY) {
+      lastEtaFetch.current = now;
+      try {
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${destinationLocation.latitude},${destinationLocation.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.status === 'OK' && data.routes.length > 0) {
+          const leg = data.routes[0].legs[0];
+          // Use Google's accurate duration (in seconds, convert to minutes)
+          setEta(Math.ceil(leg.duration.value / 60));
+          // Use Google's accurate distance (in meters, convert to km)
+          setDistance(leg.distance.value / 1000);
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to fetch ETA from Google Directions:', error);
+      }
+    }
+
+    // Fallback: use straight-line distance with speed estimate
+    setDistance(dist);
+    const avgSpeedKmPerMin = 0.5; // 30 km/h = 0.5 km/min (city speed fallback)
+    const timeInMinutes = Math.ceil(dist / avgSpeedKmPerMin);
+    setEta(Math.max(1, Math.min(timeInMinutes, 999)));
   };
 
   // Calculate distance (Haversine)
@@ -276,11 +459,23 @@ export default function TripInProgressScreen() {
   };
 
   // Fetch route from Google Directions API (for display updates)
-  const fetchRoute = async (origin: RouteCoordinate, destination: RouteCoordinate) => {
+  // Includes any stops as waypoints
+  const fetchRoute = async (origin: RouteCoordinate, destination: RouteCoordinate, stops?: Array<{ coordinates: { latitude: number; longitude: number } }>) => {
     if (!GOOGLE_DIRECTIONS_API_KEY) return;
 
     try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      // Add waypoints for stops
+      if (stops && stops.length > 0) {
+        const waypointsStr = stops
+          .filter(stop => !stop.completed) // Only include uncompleted stops
+          .map(stop => `${stop.coordinates.latitude},${stop.coordinates.longitude}`)
+          .join('|');
+        if (waypointsStr) {
+          url += `&waypoints=${waypointsStr}`;
+        }
+      }
 
       const response = await fetch(url);
       const data = await response.json();
@@ -356,21 +551,46 @@ export default function TripInProgressScreen() {
   };
 
   // Handlers
-  const handleCall = () => {
-    if (!driver?.phone) return;
-    Alert.alert('Call Driver', `Call ${driver.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Call', onPress: () => Linking.openURL(`tel:${driver.phone}`) },
-    ]);
-  };
-
-  const handleMessage = () => {
-    if (!driver?.phone) return;
-    Linking.openURL(`sms:${driver.phone}`);
+  const handleAddStop = () => {
+    // Navigate to add stop screen
+    router.push('/(rider)/add-stop');
   };
 
   const handleShareTrip = () => {
     setShowShareModal(true);
+  };
+
+  // Handle stop request from driver (listener would update pendingStopRequest)
+  const handleApproveStopRequest = () => {
+    if (!pendingStopRequest || !currentTrip) return;
+
+    Alert.alert(
+      'Stop Request Approved',
+      `The stop at ${pendingStopRequest.address} has been added to your trip.${
+        pendingStopRequest.additionalCost
+          ? ` Additional cost: $${pendingStopRequest.additionalCost.toFixed(2)}`
+          : ''
+      }`,
+      [{ text: 'OK' }]
+    );
+
+    // TODO: Update trip in Firebase with approved stop
+    setPendingStopRequest(null);
+    setShowStopRequestModal(false);
+  };
+
+  const handleDeclineStopRequest = () => {
+    if (!currentTrip) return;
+
+    Alert.alert(
+      'Stop Request Declined',
+      'The driver has been notified that you declined the stop request.',
+      [{ text: 'OK' }]
+    );
+
+    // TODO: Update trip in Firebase with declined stop request
+    setPendingStopRequest(null);
+    setShowStopRequestModal(false);
   };
 
   // Emergency call - directly opens phone dialer with 911
@@ -384,7 +604,18 @@ export default function TripInProgressScreen() {
     setShowRouteDeviationModal(false);
   };
 
-  // Calculate map region
+  // Don't render if no current trip or driver info (redirect will happen via useEffect)
+  if (!currentTrip || !driver) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, color: '#666' }}>Loading trip information...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Calculate map region (after null check so currentTrip is guaranteed)
   const driverLat = currentTrip.driverLocation?.latitude || currentTrip.pickup.coordinates.latitude;
   const driverLng = currentTrip.driverLocation?.longitude || currentTrip.pickup.coordinates.longitude;
   const destLat = currentTrip.destination.coordinates.latitude;
@@ -396,17 +627,6 @@ export default function TripInProgressScreen() {
     latitudeDelta: Math.abs(driverLat - destLat) * 1.5 + 0.01,
     longitudeDelta: Math.abs(driverLng - destLng) * 1.5 + 0.01,
   };
-
-  // Don't render if no driver info
-  if (!driver) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, color: '#666' }}>Loading trip information...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -433,6 +653,20 @@ export default function TripInProgressScreen() {
             </View>
           </Marker>
         )}
+
+        {/* Stop Markers */}
+        {currentTrip.stops && currentTrip.stops.map((stop, index) => (
+          <Marker
+            key={`stop-marker-${index}`}
+            coordinate={stop.coordinates}
+            title={`Stop ${index + 1}`}
+            description={stop.placeName || stop.address}
+          >
+            <View style={styles.stopMarker}>
+              <Text style={styles.stopMarkerText}>{index + 1}</Text>
+            </View>
+          </Marker>
+        ))}
 
         {/* Destination Marker */}
         <Marker
@@ -547,7 +781,7 @@ export default function TripInProgressScreen() {
       )}
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: ANDROID_NAV_BAR_HEIGHT }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: bottomInset }]}>
         <View style={styles.bottomSheetSafeArea}>
           {/* Handle */}
           <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
@@ -571,8 +805,9 @@ export default function TripInProgressScreen() {
                   {driver.vehicle.color} {driver.vehicle.make}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.callButtonSmall} onPress={handleCall}>
-                <Ionicons name="call" size={20} color="#fff" />
+              <TouchableOpacity style={styles.addStopButtonSmall} onPress={handleAddStop}>
+                <Ionicons name="add" size={20} color="#5d1289" />
+                <Text style={styles.addStopTextSmall}>Stop</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -605,6 +840,28 @@ export default function TripInProgressScreen() {
                 </View>
               </View>
 
+              {/* Stops (if any) */}
+              {currentTrip.stops && currentTrip.stops.length > 0 && (
+                <View style={styles.stopsContainer}>
+                  {currentTrip.stops.map((stop, index) => (
+                    <View key={`stop-${index}`} style={styles.stopCard}>
+                      <View style={styles.stopDot}>
+                        <Text style={styles.stopNumber}>{index + 1}</Text>
+                      </View>
+                      <View style={styles.stopInfo}>
+                        <Text style={styles.stopLabel}>STOP {index + 1}</Text>
+                        <Text style={styles.stopAddress} numberOfLines={2}>
+                          {stop.placeName || stop.address}
+                        </Text>
+                      </View>
+                      {stop.completed && (
+                        <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Destination */}
               <View style={styles.destinationCard}>
                 <View style={styles.destinationDot} />
@@ -616,21 +873,48 @@ export default function TripInProgressScreen() {
                 </View>
               </View>
 
-              {/* Action Buttons */}
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-                  <Ionicons name="call" size={24} color="white" />
-                  <Text style={styles.actionButtonText}>Call</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
-                  <Ionicons name="chatbubble" size={24} color="white" />
-                  <Text style={styles.actionButtonText}>Message</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Action Button */}
+              <TouchableOpacity style={styles.addStopButton} onPress={handleAddStop}>
+                <Ionicons name="add-circle" size={24} color="white" />
+                <Text style={styles.addStopButtonText}>Add a Stop</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
       </Animated.View>
+
+      {/* Speed Monitor Display - positioned above bottom sheet */}
+      {isMonitoring && (
+        <View style={styles.speedMonitorContainer}>
+          <SpeedMonitorDisplay compact />
+        </View>
+      )}
+
+      {/* Floating SOS Button */}
+      {currentTrip && driver && currentTrip.driverLocation && (
+        <View style={styles.sosFloatingContainer}>
+          <SOSButton
+            tripId={currentTrip.id}
+            driverId={currentTrip.driverId || ''}
+            riderId={currentTrip.riderId}
+            currentLocation={{
+              latitude: currentTrip.driverLocation.latitude,
+              longitude: currentTrip.driverLocation.longitude,
+            }}
+            driverInfo={{
+              name: driver.name,
+              phone: driver.phone,
+              vehicle: `${driver.vehicle.make} ${driver.vehicle.model}`,
+              plate: driver.vehicle.plate,
+            }}
+            size="medium"
+            showLabel
+          />
+        </View>
+      )}
+
+      {/* Safety Alert Modal (Are you okay?) */}
+      <SafetyAlertContainer />
 
       {/* Share Trip Modal */}
       {currentTrip && (
@@ -640,6 +924,63 @@ export default function TripInProgressScreen() {
           onClose={() => setShowShareModal(false)}
         />
       )}
+
+      {/* Stop Request Modal (when driver requests a stop) */}
+      <Modal
+        visible={showStopRequestModal && pendingStopRequest !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStopRequestModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.stopRequestModal}>
+            <View style={styles.stopRequestIconContainer}>
+              <Ionicons name="location" size={40} color="#5d1289" />
+            </View>
+
+            <Text style={styles.stopRequestTitle}>
+              {pendingStopRequest?.requestedBy === 'driver' ? 'Driver' : 'You'} Requested a Stop
+            </Text>
+
+            <Text style={styles.stopRequestAddress}>
+              {pendingStopRequest?.address}
+            </Text>
+
+            {pendingStopRequest?.additionalCost && pendingStopRequest.additionalCost > 0 && (
+              <View style={styles.additionalCostContainer}>
+                <Text style={styles.additionalCostLabel}>Additional Cost</Text>
+                <Text style={styles.additionalCostValue}>
+                  +${pendingStopRequest.additionalCost.toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.stopRequestMessage}>
+              {pendingStopRequest?.requestedBy === 'driver'
+                ? 'Your driver has requested to add this stop to your trip. Do you approve?'
+                : 'Waiting for driver to confirm the stop...'}
+            </Text>
+
+            {pendingStopRequest?.requestedBy === 'driver' && (
+              <View style={styles.stopRequestButtons}>
+                <TouchableOpacity
+                  style={styles.declineButton}
+                  onPress={handleDeclineStopRequest}
+                >
+                  <Text style={styles.declineButtonText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.approveButton}
+                  onPress={handleApproveStopRequest}
+                >
+                  <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                  <Text style={styles.approveButtonText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -784,6 +1125,68 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
+  // Stop Marker
+  stopMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  stopMarkerText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Stops Container (in bottom sheet)
+  stopsContainer: {
+    marginBottom: 8,
+  },
+  stopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  stopDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stopNumber: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stopInfo: {
+    flex: 1,
+  },
+  stopLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#F59E0B',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  stopAddress: {
+    fontSize: 14,
+    color: '#374151',
+  },
+
   // Bottom Sheet
   bottomSheet: {
     position: 'absolute',
@@ -821,7 +1224,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 24,
+    paddingBottom: 8,
   },
   driverAvatarSmall: {
     width: 44,
@@ -845,19 +1248,28 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 2,
   },
-  callButtonSmall: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#5d1289',
+  addStopButtonSmall: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#5d1289',
+    backgroundColor: '#F3E8FF',
+  },
+  addStopTextSmall: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#5d1289',
   },
 
   // Expanded Content
   expandedContent: {
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    paddingBottom: 8,
   },
   driverInfo: {
     flexDirection: 'row',
@@ -944,26 +1356,21 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Action Buttons
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  actionButton: {
-    flex: 1,
+  // Add Stop Button
+  addStopButton: {
     flexDirection: 'row',
     backgroundColor: '#5d1289',
-    padding: 14,
+    padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 16,
+    gap: 8,
   },
-  actionButtonText: {
+  addStopButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
   },
 
   // Safety Modal Styles
@@ -1060,6 +1467,117 @@ const styles = StyleSheet.create({
   sosHeaderText: {
     fontSize: 14,
     fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Speed Monitor Container
+  speedMonitorContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 200 : 180,
+    left: 16,
+    zIndex: 10,
+  },
+
+  // Floating SOS Button Container
+  sosFloatingContainer: {
+    position: 'absolute',
+    bottom: SCREEN_HEIGHT * 0.42 + 20,
+    right: 16,
+    zIndex: 100,
+  },
+
+  // Stop Request Modal Styles
+  stopRequestModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+  },
+  stopRequestIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F3E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  stopRequestTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  stopRequestAddress: {
+    fontSize: 16,
+    color: '#374151',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  additionalCostContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  additionalCostLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#92400E',
+  },
+  additionalCostValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  stopRequestMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  stopRequestButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  declineButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  approveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#5d1289',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  approveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
 });

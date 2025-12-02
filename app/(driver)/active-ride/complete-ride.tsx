@@ -29,7 +29,7 @@ import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { completeTrip, finalizeTrip } from '@/src/services/ride-request.service';
 import { firebaseDb } from '@/src/config/firebase';
-import { doc, onSnapshot } from '@react-native-firebase/firestore';
+import { doc, onSnapshot, getDoc } from '@react-native-firebase/firestore';
 
 export default function CompleteRide() {
   const router = useRouter();
@@ -40,11 +40,45 @@ export default function CompleteRide() {
   const [tripFinalized, setTripFinalized] = useState(false);
   const hasCompletedRef = useRef(false);
   const hasAutoStartedRef = useRef(false);
+  const [currentFare, setCurrentFare] = useState<number>(activeRide?.estimatedEarnings || 0);
+
+  // Fetch the latest fare from Firebase (includes any added stops)
+  useEffect(() => {
+    if (!activeRide?.id) return;
+
+    const fetchCurrentFare = async () => {
+      try {
+        const tripRef = doc(firebaseDb, 'trips', activeRide.id);
+        const tripDoc = await getDoc(tripRef);
+        if (tripDoc.exists) {
+          const data = tripDoc.data();
+          // Use estimatedCost from Firebase which includes any added stop costs
+          const updatedFare = data?.estimatedCost || activeRide?.estimatedEarnings || 0;
+          setCurrentFare(updatedFare);
+          console.log('📊 Updated fare from Firebase:', updatedFare, '(includes stops)');
+        }
+      } catch (error) {
+        console.warn('Could not fetch updated fare:', error);
+      }
+    };
+
+    fetchCurrentFare();
+  }, [activeRide?.id]);
+
+  // Calculate values (use currentFare which is updated from Firebase)
+  const baseFare = currentFare;
+  const totalEarnings = baseFare + (tipReceived || 0);
+  const actualDistance = activeRide?.distance || 0;
+  const actualDuration = activeRide?.estimatedDuration || 0;
 
   // Redirect to tabs if no active ride
   useEffect(() => {
     if (!activeRide) {
-      router.replace('/(driver)/tabs');
+      // Use setTimeout to ensure navigation happens after layout mount
+      const timer = setTimeout(() => {
+        router.replace('/(driver)/tabs');
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [activeRide, router]);
 
@@ -72,6 +106,14 @@ export default function CompleteRide() {
     return () => unsubscribe();
   }, [activeRide?.id, waitingForTip]);
 
+  // Auto-complete trip when screen loads
+  useEffect(() => {
+    if (!activeRide || hasAutoStartedRef.current || hasCompletedRef.current) return;
+
+    hasAutoStartedRef.current = true;
+    handleComplete();
+  }, [activeRide]);
+
   // Show loading while redirecting (if no active ride)
   if (!activeRide) {
     return (
@@ -82,19 +124,6 @@ export default function CompleteRide() {
       </SafeAreaView>
     );
   }
-
-  const baseFare = activeRide.estimatedEarnings || 0;
-  const totalEarnings = baseFare + (tipReceived || 0);
-  const actualDistance = activeRide.distance || 0;
-  const actualDuration = activeRide.estimatedDuration || 0;
-
-  // Auto-complete trip when screen loads
-  useEffect(() => {
-    if (!activeRide || hasAutoStartedRef.current || hasCompletedRef.current) return;
-
-    hasAutoStartedRef.current = true;
-    handleComplete();
-  }, [activeRide]);
 
   const handleComplete = async () => {
     if (completing || hasCompletedRef.current) return;
@@ -146,7 +175,7 @@ export default function CompleteRide() {
       setCompleting(true);
 
       // If not yet finalized, finalize now
-      if (!tripFinalized) {
+      if (!tripFinalized && activeRide?.id) {
         await finalizeTrip(activeRide.id);
       }
 
@@ -156,13 +185,17 @@ export default function CompleteRide() {
       // Clear active ride
       setActiveRide(null);
 
-      // Navigate to rate rider first, then home
-      router.replace('/(driver)/active-ride/rate-rider');
+      // Navigate to rate rider - use setTimeout to ensure navigation happens after state updates
+      setTimeout(() => {
+        router.replace('/(driver)/active-ride/rate-rider');
+      }, 100);
     } catch (error) {
       console.error('Failed to finish trip:', error);
-      // Still navigate away
+      // Still navigate away - clear state first, then navigate
       setActiveRide(null);
-      router.replace('/(driver)/tabs');
+      setTimeout(() => {
+        router.replace('/(driver)/tabs');
+      }, 100);
     }
   };
 

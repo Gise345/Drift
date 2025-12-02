@@ -985,7 +985,7 @@ const HomeScreen = () => {
               activeOpacity={0.7}
             >
               <Ionicons name="search" size={24} color="#666" />
-              <Text style={styles.searchBarText}>Where to?</Text>
+              <Text style={styles.searchBarText}>Where yah goin?</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1023,7 +1023,7 @@ const HomeScreen = () => {
               activeOpacity={0.7}
             >
               <Ionicons name="search" size={24} color="#666" />
-              <Text style={styles.searchBarText}>Where to?</Text>
+              <Text style={styles.searchBarText}>Where yah goin?</Text>
               <View style={styles.laterBadge}>
                 <Text style={styles.laterText}>Later</Text>
               </View>

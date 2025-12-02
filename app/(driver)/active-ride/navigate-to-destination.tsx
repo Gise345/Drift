@@ -22,6 +22,7 @@ import {
   Dimensions,
   Platform,
   Image,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -34,8 +35,8 @@ import { useTripStore } from '@/src/stores/trip-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.40;
-const BOTTOM_SHEET_MIN_HEIGHT = 100;
+const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.42;
+const BOTTOM_SHEET_MIN_HEIGHT_BASE = 150;
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -58,8 +59,13 @@ export default function NavigateToDestination() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
-  const { activeRide, updateLocation } = useDriverStore();
-  const { updateDriverLocation } = useTripStore();
+  const { activeRide, updateLocation, setActiveRide } = useDriverStore();
+  const { updateDriverLocation, subscribeToTrip, currentTrip } = useTripStore();
+
+  // Calculate insets-aware heights
+  const bottomInset = Math.max(insets.bottom, 20);
+  const BOTTOM_SHEET_MAX_HEIGHT = BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset;
+  const BOTTOM_SHEET_MIN_HEIGHT = BOTTOM_SHEET_MIN_HEIGHT_BASE + bottomInset;
 
   // State
   const [eta, setEta] = useState<number | null>(null);
@@ -74,8 +80,94 @@ export default function NavigateToDestination() {
   const lastRouteRecalculation = useRef<number>(0);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
+  // Stop request state
+  const [showStopRequestModal, setShowStopRequestModal] = useState(false);
+  const [pendingStopRequest, setPendingStopRequest] = useState<{
+    address: string;
+    placeName?: string;
+    coordinates: { latitude: number; longitude: number };
+    requestedBy: 'driver' | 'rider';
+    estimatedAdditionalCost?: number;
+  } | null>(null);
+
   // Animation
-  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset)).current;
+
+  // Subscribe to trip updates to detect rider cancellation
+  useEffect(() => {
+    if (!activeRide?.id) return;
+
+    const unsubscribe = subscribeToTrip(activeRide.id);
+
+    return () => unsubscribe();
+  }, [activeRide?.id]);
+
+  // Listen for trip status changes (e.g., rider cancellation)
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    // If trip was cancelled by rider
+    if (currentTrip.status === 'CANCELLED') {
+      console.log('⚠️ Trip was cancelled by rider during ride');
+
+      // Clear active ride from driver store
+      setActiveRide(null);
+
+      // Show alert and redirect
+      Alert.alert(
+        'Ride Cancelled',
+        currentTrip.cancelledBy === 'RIDER'
+          ? 'The rider has cancelled this trip.'
+          : 'This trip has been cancelled.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(driver)/tabs'),
+          },
+        ]
+      );
+    }
+  }, [currentTrip?.status]);
+
+  // Re-fetch route when stops are added/changed
+  useEffect(() => {
+    if (!currentTrip || !currentLocation || !activeRide) return;
+
+    const tripData = currentTrip as any;
+    if (tripData.stops && tripData.stops.length > 0) {
+      console.log('📍 Stops changed, re-fetching route with', tripData.stops.length, 'stops');
+      fetchRoute(
+        currentLocation,
+        {
+          latitude: activeRide.destination.lat,
+          longitude: activeRide.destination.lng,
+        },
+        tripData.stops
+      );
+    }
+  }, [(currentTrip as any)?.stops?.length]);
+
+  // Listen for pending stop requests from rider
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    const tripData = currentTrip as any;
+    if (tripData.pendingStopRequest && tripData.pendingStopRequest.status === 'pending') {
+      const stopRequest = tripData.pendingStopRequest;
+      // Only show modal for rider-initiated requests
+      if (stopRequest.requestedBy === 'rider' && !showStopRequestModal) {
+        console.log('📍 Rider requested a stop:', stopRequest.address);
+        setPendingStopRequest({
+          address: stopRequest.address,
+          placeName: stopRequest.placeName,
+          coordinates: stopRequest.coordinates,
+          requestedBy: 'rider',
+          estimatedAdditionalCost: stopRequest.estimatedAdditionalCost,
+        });
+        setShowStopRequestModal(true);
+      }
+    }
+  }, [(currentTrip as any)?.pendingStopRequest]);
 
   // Handle route deviation - recalculate route when driver goes off route
   const handleRouteDeviation = async (distanceFromRoute: number) => {
@@ -114,10 +206,11 @@ export default function NavigateToDestination() {
     return () => clearInterval(interval);
   }, [tripStartTime]);
 
-  // Fetch route from Google Directions API
+  // Fetch route from Google Directions API (with optional stops as waypoints)
   const fetchRoute = async (
     origin: RouteCoordinate,
-    destination: RouteCoordinate
+    destination: RouteCoordinate,
+    stops?: Array<{ coordinates: { latitude: number; longitude: number }; completed?: boolean }>
   ) => {
     if (!GOOGLE_DIRECTIONS_API_KEY) {
       console.error('❌ Google Directions API key not configured');
@@ -125,7 +218,18 @@ export default function NavigateToDestination() {
     }
 
     try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      // Add waypoints for uncompleted stops
+      if (stops && stops.length > 0) {
+        const waypointsStr = stops
+          .filter(stop => !stop.completed)
+          .map(stop => `${stop.coordinates.latitude},${stop.coordinates.longitude}`)
+          .join('|');
+        if (waypointsStr) {
+          url += `&waypoints=${waypointsStr}`;
+        }
+      }
 
       const response = await fetch(url);
       const data = await response.json();
@@ -239,11 +343,15 @@ export default function NavigateToDestination() {
         };
         setCurrentLocation(initialLocation);
 
-        // Fetch route to destination
-        await fetchRoute(initialLocation, {
-          latitude: activeRide.destination.lat,
-          longitude: activeRide.destination.lng,
-        });
+        // Fetch route to destination (include stops from currentTrip)
+        await fetchRoute(
+          initialLocation,
+          {
+            latitude: activeRide.destination.lat,
+            longitude: activeRide.destination.lng,
+          },
+          (currentTrip as any)?.stops
+        );
 
         // Start watching position
         locationSubscription = await Location.watchPositionAsync(
@@ -379,6 +487,82 @@ export default function NavigateToDestination() {
     router.push('/(driver)/active-ride/add-stop');
   };
 
+  // Handle approving a stop request from rider
+  const handleApproveStopRequest = async () => {
+    if (!pendingStopRequest || !activeRide?.id) return;
+
+    try {
+      // Import updateTrip from trip store
+      const { updateTrip } = useTripStore.getState();
+
+      // Update trip with approved stop and new price
+      const additionalCost = pendingStopRequest.estimatedAdditionalCost || 0;
+      await updateTrip(activeRide.id, {
+        pendingStopRequest: {
+          ...pendingStopRequest,
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+        // Add stop to the trip's stops array
+        stops: [
+          ...(currentTrip as any)?.stops || [],
+          {
+            address: pendingStopRequest.address,
+            placeName: pendingStopRequest.placeName,
+            coordinates: pendingStopRequest.coordinates,
+            addedBy: 'rider',
+            approvedAt: new Date(),
+          },
+        ],
+        // Update the estimated cost
+        estimatedCost: ((currentTrip as any)?.estimatedCost || 0) + additionalCost,
+      });
+
+      Alert.alert(
+        'Stop Approved',
+        `The stop at ${pendingStopRequest.placeName || pendingStopRequest.address} has been added.${
+          additionalCost > 0 ? ` Fare increased by $${additionalCost.toFixed(2)}.` : ''
+        }`,
+        [{ text: 'OK' }]
+      );
+
+      setPendingStopRequest(null);
+      setShowStopRequestModal(false);
+    } catch (error) {
+      console.error('Failed to approve stop:', error);
+      Alert.alert('Error', 'Failed to approve stop request. Please try again.');
+    }
+  };
+
+  // Handle declining a stop request from rider
+  const handleDeclineStopRequest = async () => {
+    if (!pendingStopRequest || !activeRide?.id) return;
+
+    try {
+      const { updateTrip } = useTripStore.getState();
+
+      await updateTrip(activeRide.id, {
+        pendingStopRequest: {
+          ...pendingStopRequest,
+          status: 'declined',
+          declinedAt: new Date(),
+        },
+      });
+
+      Alert.alert(
+        'Stop Declined',
+        'The rider has been notified that the stop request was declined.',
+        [{ text: 'OK' }]
+      );
+
+      setPendingStopRequest(null);
+      setShowStopRequestModal(false);
+    } catch (error) {
+      console.error('Failed to decline stop:', error);
+      Alert.alert('Error', 'Failed to decline stop request. Please try again.');
+    }
+  };
+
   const handleCenterMap = () => {
     if (currentLocation && mapRef.current) {
       mapRef.current.animateToRegion({
@@ -412,6 +596,20 @@ export default function NavigateToDestination() {
         showsCompass={false}
         followsUserLocation={false}
       >
+        {/* Stop Markers */}
+        {(currentTrip as any)?.stops?.map((stop: any, index: number) => (
+          <Marker
+            key={`stop-marker-${index}`}
+            coordinate={stop.coordinates}
+            title={`Stop ${index + 1}`}
+            description={stop.placeName || stop.address}
+          >
+            <View style={styles.stopMarker}>
+              <Text style={styles.stopMarkerText}>{index + 1}</Text>
+            </View>
+          </Marker>
+        ))}
+
         {/* Destination Marker */}
         <Marker
           coordinate={{
@@ -489,7 +687,7 @@ export default function NavigateToDestination() {
       </View>
 
       {/* Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 20) }]}>
+      <Animated.View style={[styles.bottomSheet, { height: sheetHeight, paddingBottom: bottomInset }]}>
         <View style={styles.bottomSheetSafeArea}>
           {/* Handle */}
           <TouchableOpacity style={styles.sheetHandle} onPress={toggleSheet} activeOpacity={0.8}>
@@ -547,6 +745,28 @@ export default function NavigateToDestination() {
                 </View>
               </View>
 
+              {/* Stops (if any) */}
+              {(currentTrip as any)?.stops && (currentTrip as any).stops.length > 0 && (
+                <View style={styles.stopsSection}>
+                  {(currentTrip as any).stops.map((stop: any, index: number) => (
+                    <View key={`stop-card-${index}`} style={styles.stopCard}>
+                      <View style={styles.stopDot}>
+                        <Text style={styles.stopDotText}>{index + 1}</Text>
+                      </View>
+                      <View style={styles.stopInfoCard}>
+                        <Text style={styles.stopLabel}>STOP {index + 1}</Text>
+                        <Text style={styles.stopAddress} numberOfLines={2}>
+                          {stop.placeName || stop.address}
+                        </Text>
+                      </View>
+                      {stop.completed && (
+                        <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {/* Destination Location */}
               <View style={styles.locationCard}>
                 <View style={styles.locationDot} />
@@ -574,6 +794,57 @@ export default function NavigateToDestination() {
           )}
         </View>
       </Animated.View>
+
+      {/* Stop Request Modal (when rider requests a stop) */}
+      <Modal
+        visible={showStopRequestModal && pendingStopRequest !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStopRequestModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.stopRequestModal}>
+            <View style={styles.stopRequestIconContainer}>
+              <Ionicons name="location" size={40} color={Colors.primary} />
+            </View>
+
+            <Text style={styles.stopRequestTitle}>Rider Requested a Stop</Text>
+
+            <Text style={styles.stopRequestAddress}>
+              {pendingStopRequest?.placeName || pendingStopRequest?.address}
+            </Text>
+
+            {pendingStopRequest?.estimatedAdditionalCost && pendingStopRequest.estimatedAdditionalCost > 0 && (
+              <View style={styles.additionalCostContainer}>
+                <Text style={styles.additionalCostLabel}>Additional Fare</Text>
+                <Text style={styles.additionalCostValue}>
+                  +${pendingStopRequest.estimatedAdditionalCost.toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.stopRequestMessage}>
+              The rider would like to add this stop to the trip. Do you approve?
+            </Text>
+
+            <View style={styles.stopRequestButtons}>
+              <TouchableOpacity
+                style={styles.declineButton}
+                onPress={handleDeclineStopRequest}
+              >
+                <Text style={styles.declineButtonText}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.approveButton}
+                onPress={handleApproveStopRequest}
+              >
+                <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                <Text style={styles.approveButtonText}>Approve</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -697,6 +968,65 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: Colors.white,
     ...Shadows.md,
+  },
+
+  // Stop Marker
+  stopMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.white,
+    ...Shadows.md,
+  },
+  stopMarkerText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Stops Section in Bottom Sheet
+  stopsSection: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  stopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  stopDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  stopDotText: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stopInfoCard: {
+    flex: 1,
+  },
+  stopLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.warning,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  stopAddress: {
+    fontSize: 14,
+    color: Colors.gray[700],
   },
 
   // Bottom Sheet
@@ -908,5 +1238,107 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.white,
+  },
+
+  // Stop Request Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  stopRequestModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+  },
+  stopRequestIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  stopRequestTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  stopRequestAddress: {
+    fontSize: 16,
+    color: '#374151',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 12,
+  },
+  additionalCostContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#DCFCE7',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  additionalCostLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#166534',
+  },
+  additionalCostValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  stopRequestMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  stopRequestButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  declineButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  approveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  approveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

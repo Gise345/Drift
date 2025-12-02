@@ -114,7 +114,7 @@ export default function IncomingRequests() {
             </Text>
             <TouchableOpacity
               style={styles.goOnlineButton}
-              onPress={() => router.push('/(driver)/dashboard/home')}
+              onPress={() => router.push('/(driver)/tabs')}
             >
               <Text style={styles.goOnlineText}>Go Online</Text>
             </TouchableOpacity>

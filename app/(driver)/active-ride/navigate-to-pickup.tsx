@@ -57,8 +57,8 @@ export default function NavigateToPickup() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
-  const { activeRide, updateLocation, arrivedAtPickup } = useDriverStore();
-  const { updateDriverLocation } = useTripStore();
+  const { activeRide, updateLocation, arrivedAtPickup, setActiveRide } = useDriverStore();
+  const { updateDriverLocation, subscribeToTrip } = useTripStore();
 
   // State
   const [eta, setEta] = useState<number | null>(null);
@@ -75,6 +75,44 @@ export default function NavigateToPickup() {
 
   // Animation
   const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+
+  // Subscribe to trip updates to detect rider cancellation
+  useEffect(() => {
+    if (!activeRide?.id) return;
+
+    const unsubscribe = subscribeToTrip(activeRide.id);
+
+    return () => unsubscribe();
+  }, [activeRide?.id]);
+
+  // Listen for trip status changes (e.g., rider cancellation)
+  const { currentTrip } = useTripStore();
+
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    // If trip was cancelled by rider
+    if (currentTrip.status === 'CANCELLED') {
+      console.log('⚠️ Trip was cancelled by rider');
+
+      // Clear active ride from driver store
+      setActiveRide(null);
+
+      // Show alert and redirect
+      Alert.alert(
+        'Ride Cancelled',
+        currentTrip.cancelledBy === 'RIDER'
+          ? 'The rider has cancelled this trip.'
+          : 'This trip has been cancelled.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(driver)/tabs'),
+          },
+        ]
+      );
+    }
+  }, [currentTrip?.status]);
 
   // Handle route deviation - recalculate route when driver goes off route
   const handleRouteDeviation = async (distanceFromRoute: number) => {
@@ -247,7 +285,7 @@ export default function NavigateToPickup() {
             timeInterval: 3000,
             distanceInterval: 10,
           },
-          (loc) => {
+          async (loc) => {
             const { latitude, longitude, heading, speed } = loc.coords;
             const newLocation = { latitude, longitude };
             setCurrentLocation(newLocation);
@@ -272,7 +310,7 @@ export default function NavigateToPickup() {
               });
             }
 
-            // Recalculate distance
+            // Recalculate distance (straight line for display)
             const distanceToPickup = calculateDistance(
               latitude,
               longitude,
@@ -281,10 +319,31 @@ export default function NavigateToPickup() {
             );
             setDistance(distanceToPickup);
 
-            // Simple ETA recalculation
-            const avgSpeed = 30; // km/h
-            const newEta = (distanceToPickup / avgSpeed) * 60;
-            setEta(Math.ceil(newEta));
+            // Fetch accurate ETA from Google Directions API every 10 seconds
+            // Only do this if significant movement has occurred
+            const now = Date.now();
+            if (now - lastRouteRecalculation.current >= 10000) {
+              lastRouteRecalculation.current = now;
+              try {
+                const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${latitude},${longitude}&destination=${activeRide.pickup.lat},${activeRide.pickup.lng}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.status === 'OK' && data.routes.length > 0) {
+                  const leg = data.routes[0].legs[0];
+                  // Use Google's accurate duration calculation
+                  setEta(Math.ceil(leg.duration.value / 60));
+                  // Use Google's accurate distance
+                  setDistance(leg.distance.value / 1000);
+                }
+              } catch (error) {
+                // Fallback to simple calculation if API fails
+                console.warn('Failed to fetch directions, using fallback ETA');
+                const avgSpeed = 30; // km/h fallback
+                const newEta = (distanceToPickup / avgSpeed) * 60;
+                setEta(Math.ceil(newEta));
+              }
+            }
           }
         );
       } catch (error) {

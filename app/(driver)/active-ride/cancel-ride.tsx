@@ -93,7 +93,7 @@ export default function CancelRide() {
                 Alert.alert(
                   'Ride Cancelled',
                   `You will receive CI$${cancellationFee.toFixed(2)} for this cancellation.`,
-                  [{ text: 'OK', onPress: () => router.replace('/(driver)/dashboard/home') }]
+                  [{ text: 'OK', onPress: () => router.replace('/(driver)/tabs') }]
                 );
               } else {
                 // Regular cancellation - no fee
@@ -103,7 +103,7 @@ export default function CancelRide() {
                 // Clear local state
                 setActiveRide(null);
 
-                router.replace('/(driver)/dashboard/home');
+                router.replace('/(driver)/tabs');
               }
             } catch (error) {
               console.error('Failed to cancel trip:', error);

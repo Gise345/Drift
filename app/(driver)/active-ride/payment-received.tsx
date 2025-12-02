@@ -19,7 +19,7 @@ export default function PaymentReceived() {
   };
 
   const handleFinish = () => {
-    router.replace('/(driver)/dashboard/home');
+    router.replace('/(driver)/tabs');
   };
 
   return (

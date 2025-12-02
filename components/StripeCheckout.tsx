@@ -24,9 +24,15 @@ import { createStripePaymentIntent, confirmStripePayment } from '@/src/services/
 // In EAS dev builds, appOwnership is 'standalone' or undefined
 const isExpoGo = Constants.appOwnership === 'expo';
 
-// Conditionally import useStripe - try to load it and check if it works
+// Conditionally import Stripe hooks
 let useStripe: any = () => ({ initPaymentSheet: null, presentPaymentSheet: null });
+let usePlatformPay: any = () => ({
+  isPlatformPaySupported: false,
+  confirmPlatformPayPayment: null,
+  createPlatformPayPaymentMethod: null,
+});
 let stripeAvailable = false;
+let PlatformPayButton: any = null;
 
 // Always try to load Stripe in non-Expo Go builds
 if (!isExpoGo) {
@@ -36,6 +42,16 @@ if (!isExpoGo) {
       useStripe = StripeModule.useStripe;
       stripeAvailable = true;
       console.log('✅ Stripe native module loaded successfully');
+
+      // Load usePlatformPay hook for Google Pay and Apple Pay
+      if (StripeModule.usePlatformPay) {
+        usePlatformPay = StripeModule.usePlatformPay;
+        console.log('✅ usePlatformPay hook loaded');
+      }
+      if (StripeModule.PlatformPayButton) {
+        PlatformPayButton = StripeModule.PlatformPayButton;
+        console.log('✅ PlatformPayButton loaded');
+      }
     }
   } catch (e) {
     console.log('Stripe native module not available:', e);
@@ -78,6 +94,8 @@ interface StripeCheckoutProps {
   onSuccess: (paymentIntentId: string, status: string, details: any) => void;
   onCancel: () => void;
   onError: (error: Error) => void;
+  /** Preferred payment method - 'apple_pay', 'google_pay', or 'card' (default) */
+  preferredMethod?: 'apple_pay' | 'google_pay' | 'card';
 }
 
 export function StripeCheckout({
@@ -89,11 +107,32 @@ export function StripeCheckout({
   onSuccess,
   onCancel,
   onError,
+  preferredMethod = 'card',
 }: StripeCheckoutProps) {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { isPlatformPaySupported, confirmPlatformPayPayment } = usePlatformPay();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'creating' | 'presenting' | 'confirming'>('idle');
   const [paymentSheetReady, setPaymentSheetReady] = useState(false);
+  const [platformPayAvailable, setPlatformPayAvailable] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+
+  // Check if platform pay (Google Pay / Apple Pay) is supported on this device
+  useEffect(() => {
+    const checkPlatformPay = async () => {
+      if (stripeAvailable && isPlatformPaySupported) {
+        try {
+          const supported = await isPlatformPaySupported();
+          setPlatformPayAvailable(supported);
+          console.log('🔵 Platform Pay (Google Pay / Apple Pay) supported:', supported);
+        } catch (e) {
+          console.log('Platform Pay check failed:', e);
+          setPlatformPayAvailable(false);
+        }
+      }
+    };
+    checkPlatformPay();
+  }, [isPlatformPaySupported]);
 
   // Initialize payment sheet when modal becomes visible
   useEffect(() => {
@@ -151,7 +190,13 @@ export function StripeCheckout({
         customerId: paymentData.customerId,
       });
 
-      // Initialize payment sheet
+      // Save client secret for platform pay
+      setClientSecret(paymentData.clientSecret);
+
+      console.log('🔵 Initializing payment sheet with Apple Pay and Google Pay...');
+      console.log('🔵 Preferred method:', preferredMethod, '| Platform Pay available:', platformPayAvailable);
+
+      // Initialize payment sheet with Apple Pay and Google Pay enabled
       const { error } = await initPaymentSheet({
         merchantDisplayName: 'Drift Carpool',
         customerId: paymentData.customerId,
@@ -162,7 +207,25 @@ export function StripeCheckout({
           name: '',
         },
         returnURL: 'drift://stripe/callback',
+        // Enable Apple Pay (iOS only)
+        applePay: {
+          merchantCountryCode: 'US',
+        },
+        // Enable Google Pay (Android only)
+        googlePay: {
+          merchantCountryCode: 'US',
+          currencyCode: currency.toUpperCase(),
+          testEnv: __DEV__, // Use test environment in development
+        },
+        // Style customization
+        appearance: {
+          colors: {
+            primary: '#5d1289',
+          },
+        },
       });
+
+      console.log('🔵 Payment sheet init result:', { error: error?.message || 'none' });
 
       if (error) {
         console.error('❌ Payment sheet init error:', error);
@@ -220,6 +283,87 @@ export function StripeCheckout({
         onCancel();
       } else {
         onError(error);
+      }
+    } finally {
+      setLoading(false);
+      setStatus('idle');
+    }
+  };
+
+  // Handle Google Pay / Apple Pay directly using Platform Pay
+  const handlePlatformPay = async () => {
+    if (!clientSecret) {
+      Alert.alert('Please wait', 'Payment is still initializing...');
+      return;
+    }
+
+    if (!confirmPlatformPayPayment) {
+      // Fallback to payment sheet if platform pay isn't available
+      handlePayment();
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setStatus('presenting');
+
+      console.log('🌐 Presenting Platform Pay (Google Pay / Apple Pay)...');
+
+      const { error } = await confirmPlatformPayPayment(clientSecret, {
+        googlePay: {
+          testEnv: __DEV__,
+          merchantName: 'Drift Carpool',
+          merchantCountryCode: 'US',
+          currencyCode: currency.toUpperCase(),
+          billingAddressConfig: {
+            isRequired: false,
+          },
+        },
+        applePay: {
+          cartItems: [
+            {
+              label: description || 'Drift Carpool Ride',
+              amount: amount.toFixed(2),
+              paymentType: 'Immediate',
+            },
+          ],
+          merchantCountryCode: 'US',
+          currencyCode: currency.toUpperCase(),
+        },
+      });
+
+      if (error) {
+        if (error.code === 'Canceled') {
+          console.log('❌ Platform Pay cancelled by user');
+          onCancel();
+          return;
+        }
+        throw new Error(error.message);
+      }
+
+      setStatus('confirming');
+      console.log('✅ Platform Pay completed successfully');
+
+      onSuccess('platform_pay_completed', 'succeeded', {
+        amount,
+        currency,
+        method: preferredMethod,
+      });
+    } catch (error: any) {
+      console.error('❌ Platform Pay error:', error);
+
+      if (error.message?.includes('canceled') || error.message?.includes('cancelled')) {
+        onCancel();
+      } else {
+        // If platform pay fails, offer to use card payment
+        Alert.alert(
+          'Payment Method Unavailable',
+          `${preferredMethod === 'google_pay' ? 'Google Pay' : 'Apple Pay'} is not available. Would you like to pay with a card instead?`,
+          [
+            { text: 'Cancel', onPress: onCancel, style: 'cancel' },
+            { text: 'Pay with Card', onPress: handlePayment },
+          ]
+        );
       }
     } finally {
       setLoading(false);
@@ -293,10 +437,20 @@ export function StripeCheckout({
             </Text>
           </View>
 
-          {/* Accepted Cards */}
+          {/* Accepted Payment Methods */}
           <View style={styles.cardsContainer}>
             <Text style={styles.cardsLabel}>Accepted Payment Methods</Text>
             <View style={styles.cardsRow}>
+              <View style={[styles.cardBadge, styles.walletBadge]}>
+                <Ionicons name="logo-apple" size={14} color={Colors.black} />
+                <Text style={styles.cardText}>Pay</Text>
+              </View>
+              <View style={[styles.cardBadge, styles.googleBadge]}>
+                <Ionicons name="logo-google" size={14} color={Colors.white} />
+                <Text style={[styles.cardText, styles.googleText]}>Pay</Text>
+              </View>
+            </View>
+            <View style={[styles.cardsRow, { marginTop: 8 }]}>
               <View style={styles.cardBadge}>
                 <Text style={styles.cardText}>Visa</Text>
               </View>
@@ -315,14 +469,53 @@ export function StripeCheckout({
           {/* Action Buttons */}
           {!loading && paymentSheetReady && (
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.payButton}
-                onPress={handlePayment}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="card" size={20} color={Colors.white} />
-                <Text style={styles.payButtonText}>Pay ${amount.toFixed(2)}</Text>
-              </TouchableOpacity>
+              {/* Show Google Pay button if selected and supported */}
+              {preferredMethod === 'google_pay' && platformPayAvailable && (
+                <TouchableOpacity
+                  style={[styles.payButton, styles.googlePayButton]}
+                  onPress={handlePlatformPay}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="logo-google" size={20} color={Colors.white} />
+                  <Text style={styles.payButtonText}>Pay with Google Pay</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Show Apple Pay button if selected and supported */}
+              {preferredMethod === 'apple_pay' && platformPayAvailable && (
+                <TouchableOpacity
+                  style={[styles.payButton, styles.applePayButton]}
+                  onPress={handlePlatformPay}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="logo-apple" size={20} color={Colors.white} />
+                  <Text style={styles.payButtonText}>Pay with Apple Pay</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Show card payment button */}
+              {(preferredMethod === 'card' || !platformPayAvailable) && (
+                <TouchableOpacity
+                  style={styles.payButton}
+                  onPress={handlePayment}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="card" size={20} color={Colors.white} />
+                  <Text style={styles.payButtonText}>Pay ${amount.toFixed(2)}</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Alternative: Show "Or pay with card" when using platform pay */}
+              {(preferredMethod === 'google_pay' || preferredMethod === 'apple_pay') && platformPayAvailable && (
+                <TouchableOpacity
+                  style={styles.alternativeButton}
+                  onPress={handlePayment}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="card-outline" size={18} color={Colors.gray[600]} />
+                  <Text style={styles.alternativeButtonText}>Or pay with card</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -457,11 +650,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  walletBadge: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.gray[300],
+  },
+  googleBadge: {
+    backgroundColor: '#4285F4',
   },
   cardText: {
     fontSize: 11,
     fontWeight: '600',
     color: Colors.gray[600],
+  },
+  googleText: {
+    color: Colors.white,
   },
   buttonContainer: {
     gap: 12,
@@ -476,10 +683,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  googlePayButton: {
+    backgroundColor: '#4285F4',
+  },
+  applePayButton: {
+    backgroundColor: Colors.black,
+  },
   payButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
+  },
+  alternativeButton: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.gray[100],
+  },
+  alternativeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.gray[600],
   },
   cancelButton: {
     paddingVertical: 16,

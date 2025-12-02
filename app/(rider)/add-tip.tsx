@@ -128,9 +128,19 @@ export default function AddTipScreen() {
   // This allows the rider to still add a tip even if the driver clicked "Finish Without Waiting"
   // The rider will navigate away after they add a tip or click skip
 
-  // If no trip, go home
+  // Redirect to home if no trip (use effect to avoid setState during render)
+  useEffect(() => {
+    if (!currentTrip) {
+      // Use setTimeout to ensure navigation happens after layout mount
+      const timer = setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [currentTrip, router]);
+
+  // If no trip, show loading while redirect happens
   if (!currentTrip) {
-    router.replace('/(tabs)');
     return null;
   }
 

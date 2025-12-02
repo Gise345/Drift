@@ -171,9 +171,10 @@ export const createStripePaymentIntent = onCall(async (request) => {
           userId,
           ...metadata,
         },
-        automatic_payment_methods: {
-          enabled: true,
-        },
+        // Explicitly enable card, Apple Pay, and Google Pay
+        payment_method_types: ['card', 'link'],
+        // Note: Apple Pay and Google Pay are handled automatically through 'card'
+        // when using the mobile Payment Sheet with applePay/googlePay config
       });
 
       // Save payment intent to Firestore
@@ -661,6 +662,113 @@ export const setDefaultStripePaymentMethod = onCall(async (request) => {
       }
 
       const message = error instanceof Error ? error.message : 'Failed to set default payment method';
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * UPDATE DRIVER EARNINGS
+ * Securely updates driver earnings after trip completion
+ * Called by the app when a trip is completed
+ */
+interface UpdateDriverEarningsRequest {
+  driverId: string;
+  tripId: string;
+  tripEarnings: number;
+  tipAmount: number;
+}
+
+export const updateDriverEarnings = onCall(async (request) => {
+    try {
+      // Verify authentication
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const data = request.data as UpdateDriverEarningsRequest;
+      const { driverId, tripId, tripEarnings, tipAmount } = data;
+
+      if (!driverId || !tripId) {
+        throw new HttpsError('invalid-argument', 'Driver ID and Trip ID are required');
+      }
+
+      if (tripEarnings < 0 || tipAmount < 0) {
+        throw new HttpsError('invalid-argument', 'Earnings and tip must be non-negative');
+      }
+
+      console.log('Updating driver earnings:', { driverId, tripId, tripEarnings, tipAmount });
+
+      // Verify the trip exists and belongs to this driver
+      const tripDoc = await admin.firestore().collection('trips').doc(tripId).get();
+      if (!tripDoc.exists) {
+        throw new HttpsError('not-found', 'Trip not found');
+      }
+
+      const tripData = tripDoc.data();
+      if (tripData?.driverId !== driverId) {
+        throw new HttpsError('permission-denied', 'Trip does not belong to this driver');
+      }
+
+      // Check if earnings were already updated for this trip
+      if (tripData?.earningsUpdated) {
+        console.log('Earnings already updated for trip:', tripId);
+        return { success: true, alreadyUpdated: true };
+      }
+
+      // Get current driver data
+      const driverRef = admin.firestore().collection('drivers').doc(driverId);
+      const driverDoc = await driverRef.get();
+
+      // If driver document doesn't exist, create it with initial earnings
+      // This handles cases where the driver document hasn't been created yet
+      if (!driverDoc.exists) {
+        console.log('Driver document not found, creating new one for:', driverId);
+        await driverRef.set({
+          todayEarnings: 0,
+          totalEarnings: 0,
+          totalTrips: 0,
+          totalTips: 0,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      const driverData = driverDoc.exists ? driverDoc.data() : {};
+      const currentTodayEarnings = driverData?.todayEarnings || 0;
+      const currentTotalEarnings = driverData?.totalEarnings || 0;
+      const currentTotalTrips = driverData?.totalTrips || 0;
+      const currentTotalTips = driverData?.totalTips || 0;
+
+      // Update driver earnings using transaction
+      await admin.firestore().runTransaction(async (transaction) => {
+        transaction.update(driverRef, {
+          todayEarnings: currentTodayEarnings + tripEarnings + tipAmount,
+          totalEarnings: currentTotalEarnings + tripEarnings + tipAmount,
+          totalTrips: currentTotalTrips + 1,
+          totalTips: currentTotalTips + tipAmount,
+          lastTripAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Mark trip as having earnings updated
+        transaction.update(admin.firestore().collection('trips').doc(tripId), {
+          earningsUpdated: true,
+          earningsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      console.log('Driver earnings updated successfully:', driverId);
+
+      return { success: true };
+    } catch (error: unknown) {
+      console.error('Error updating driver earnings:', error);
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      const message = error instanceof Error ? error.message : 'Failed to update driver earnings';
       throw new HttpsError('internal', message);
     }
   }

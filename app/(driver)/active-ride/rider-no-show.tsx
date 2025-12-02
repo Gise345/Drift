@@ -48,7 +48,7 @@ export default function RiderNoShow() {
       Alert.alert(
         'No-Show Confirmed',
         `You will receive CI$${fee.toFixed(2)} for waiting at the pickup location.`,
-        [{ text: 'OK', onPress: () => router.replace('/(driver)/dashboard/home') }]
+        [{ text: 'OK', onPress: () => router.replace('/(driver)/tabs') }]
       );
     } catch (error) {
       console.error('Failed to process no-show:', error);
