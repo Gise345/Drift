@@ -32,7 +32,12 @@ import * as Location from 'expo-location';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
+import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
+import { useRouteDeviation } from '@/src/hooks/useRouteDeviation';
+import { RouteDeviationModal } from '@/components/driver/RouteDeviationModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.42;
@@ -61,6 +66,13 @@ export default function NavigateToDestination() {
   const insets = useSafeAreaInsets();
   const { activeRide, updateLocation, setActiveRide } = useDriverStore();
   const { updateDriverLocation, subscribeToTrip, currentTrip } = useTripStore();
+  const { user } = useAuthStore();
+
+  // Speed monitoring hook
+  const speedMonitor = useSpeedMonitor(activeRide?.id || null, user?.id || null);
+
+  // Route deviation monitoring hook
+  const routeDeviation = useRouteDeviation(activeRide?.id || null);
 
   // Calculate insets-aware heights
   const bottomInset = Math.max(insets.bottom, 20);
@@ -170,6 +182,28 @@ export default function NavigateToDestination() {
     }
   }, [(currentTrip as any)?.pendingStopRequest]);
 
+  // Handle route deviation - trigger recalculation when hook signals it
+  useEffect(() => {
+    if (routeDeviation.shouldRecalculateRoute && currentLocation && activeRide && !isRecalculatingRoute) {
+      console.log('🔄 Route deviation detected, recalculating route...');
+      setIsRecalculatingRoute(true);
+
+      fetchRoute(currentLocation, {
+        latitude: activeRide.destination.lat,
+        longitude: activeRide.destination.lng,
+      }, (currentTrip as any)?.stops)
+        .then(() => {
+          routeDeviation.acknowledgeRouteRecalculation();
+        })
+        .catch((error) => {
+          console.error('Failed to recalculate route:', error);
+        })
+        .finally(() => {
+          setIsRecalculatingRoute(false);
+        });
+    }
+  }, [routeDeviation.shouldRecalculateRoute, currentLocation, activeRide, isRecalculatingRoute]);
+
   // Handle route deviation - recalculate route when driver goes off route
   const handleRouteDeviation = async (distanceFromRoute: number) => {
     const now = Date.now();
@@ -242,6 +276,10 @@ export default function NavigateToDestination() {
         // Decode polyline
         const points = decodePolyline(route.overview_polyline.points);
         setRouteCoordinates(points);
+
+        // Set planned route for deviation monitoring
+        routeDeviation.setPlannedRoute(points);
+        routeDeviation.setDestination(destination);
 
         // Set ETA and distance
         setEta(Math.ceil(leg.duration.value / 60));
@@ -361,14 +399,19 @@ export default function NavigateToDestination() {
             timeInterval: 3000,
             distanceInterval: 10,
           },
-          (loc) => {
+          async (loc) => {
             const { latitude, longitude, heading, speed } = loc.coords;
             setCurrentLocation({ latitude, longitude });
 
             // Update current speed (in m/s from GPS)
             if (speed !== null && speed >= 0) {
               setCurrentSpeed(speed);
+              // Update speed monitor with smoothing and limit checking
+              await speedMonitor.updateSpeed(speed, latitude, longitude);
             }
+
+            // Check for route deviation
+            await routeDeviation.checkLocation({ latitude, longitude });
 
             // Update driver location
             updateLocation({
@@ -673,12 +716,22 @@ export default function NavigateToDestination() {
         </View>
       </SafeAreaView>
 
-      {/* Stats Pills */}
+      {/* Stats Pills with Color-Coded Speed */}
       <View style={styles.statsPillContainer}>
-        <View style={styles.statPill}>
-          <Ionicons name="speedometer-outline" size={16} color={Colors.primary} />
-          <Text style={styles.statPillText}>{Math.round(currentSpeed * 2.237)} mph</Text>
+        {/* Speed Pill - Color coded based on limit */}
+        <View style={[styles.statPill, { backgroundColor: speedMonitor.speedColor + '20', borderColor: speedMonitor.speedColor, borderWidth: 2 }]}>
+          <Ionicons name="speedometer" size={16} color={speedMonitor.speedColor} />
+          <Text style={[styles.statPillText, { color: speedMonitor.speedColor, fontWeight: '700' }]}>
+            {speedMonitor.currentSpeed} mph
+          </Text>
         </View>
+        {/* Speed Limit Pill */}
+        {speedMonitor.speedLimit && (
+          <View style={styles.statPillLimit}>
+            <Text style={styles.limitText}>LIMIT</Text>
+            <Text style={styles.limitValue}>{speedMonitor.speedLimit}</Text>
+          </View>
+        )}
         <View style={styles.statPill}>
           <Ionicons name="time-outline" size={16} color={Colors.gray[600]} />
           <Text style={styles.statPillText}>{formatTime(elapsed)}</Text>
@@ -686,10 +739,6 @@ export default function NavigateToDestination() {
         <View style={[styles.statPill, styles.statPillPrimary]}>
           <Text style={styles.etaTime}>{eta ?? '--'}</Text>
           <Text style={styles.etaUnit}>min</Text>
-        </View>
-        <View style={styles.statPill}>
-          <Ionicons name="navigate-outline" size={16} color={Colors.gray[600]} />
-          <Text style={styles.statPillText}>{distance?.toFixed(1) ?? '--'} km</Text>
         </View>
       </View>
 
@@ -862,6 +911,22 @@ export default function NavigateToDestination() {
           </View>
         </View>
       </Modal>
+
+      {/* Speed Warning Modal */}
+      <SpeedWarningModal
+        visible={speedMonitor.shouldShowWarning}
+        currentSpeed={speedMonitor.currentSpeed}
+        speedLimit={speedMonitor.speedLimit || 0}
+        onDismiss={speedMonitor.dismissWarning}
+      />
+
+      {/* Route Deviation "Are you OK?" Modal */}
+      <RouteDeviationModal
+        visible={routeDeviation.shouldShowAlert}
+        deviationDistance={routeDeviation.deviationDistance}
+        onOkay={() => routeDeviation.handleAlertResponse('okay')}
+        onSOS={() => routeDeviation.handleAlertResponse('sos')}
+      />
     </View>
   );
 }
@@ -938,6 +1003,26 @@ const styles = StyleSheet.create({
   },
   statPillPrimary: {
     backgroundColor: Colors.primary,
+  },
+  statPillLimit: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#6B7280',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  limitText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+  },
+  limitValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#000000',
   },
   statPillText: {
     fontSize: 14,

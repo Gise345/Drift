@@ -177,7 +177,7 @@ export default function TripCompleteScreen() {
             {/* Cost Breakdown */}
             <View style={styles.costSection}>
               <View style={styles.costRow}>
-                <Text style={styles.costLabel}>Trip Fare</Text>
+                <Text style={styles.costLabel}>Trip Contribution</Text>
                 <Text style={styles.costValue}>CI${tripCost.toFixed(2)}</Text>
               </View>
               {tipAmount > 0 && (

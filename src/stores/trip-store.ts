@@ -112,6 +112,7 @@ export interface Trip {
   acceptedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
+  ratingDeadline?: Date; // 3-day window for rating/tipping after completion
 
   // Payment
   paymentMethod: string;

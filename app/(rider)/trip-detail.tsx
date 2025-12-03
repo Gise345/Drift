@@ -7,12 +7,19 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import firestore from '@react-native-firebase/firestore';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 interface StopData {
   name: string;
@@ -26,6 +33,7 @@ interface TripData {
   status: string;
   date: string;
   time: string;
+  completedAt: Date | null;
   from: {
     name: string;
     address: string;
@@ -39,9 +47,13 @@ interface TripData {
   stops: StopData[];
   distance: string;
   duration: string;
+  distanceRaw: number;
+  durationRaw: number;
   cost: string;
+  costRaw: number;
   tip?: number;
   totalCost: string;
+  totalCostRaw: number;
   driver: {
     name: string;
     photo?: string;
@@ -75,16 +87,18 @@ const formatTime = (date: Date | undefined): string => {
   });
 };
 
-// Helper to format distance
+// Helper to format distance (meters to miles)
 const formatDistance = (meters: number | undefined): string => {
-  if (!meters) return '0 km';
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
+  if (!meters) return '0 mi';
+  const miles = meters * 0.000621371;
+  if (miles < 0.1) return `${Math.round(meters * 3.28084)} ft`;
+  return `${miles.toFixed(1)} mi`;
 };
 
 // Helper to format duration
-const formatDuration = (minutes: number | undefined): string => {
-  if (!minutes) return '0 min';
+const formatDuration = (seconds: number | undefined): string => {
+  if (!seconds) return '0 min';
+  const minutes = seconds / 60;
   if (minutes < 60) return `${Math.round(minutes)} min`;
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
@@ -94,9 +108,20 @@ const formatDuration = (minutes: number | undefined): string => {
 export default function TripDetailScreen() {
   const router = useRouter();
   const { tripId } = useLocalSearchParams();
+  const { user } = useAuthStore();
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Report issue state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
+
+  // Check if within 24 hours of trip completion
+  const canReportIssue = trip?.completedAt
+    ? (Date.now() - trip.completedAt.getTime()) < 24 * 60 * 60 * 1000
+    : false;
 
   useEffect(() => {
     if (tripId) {
@@ -151,12 +176,17 @@ export default function TripDetailScreen() {
         completed: stop.completed || false,
       }));
 
+      // Raw values for receipt
+      const distanceRaw = data.distance || data.actualDistance || 0;
+      const durationRaw = data.duration || data.actualDuration || data.estimatedDuration || 0;
+
       // Build trip object
       const tripData: TripData = {
         id: tripDoc.id,
         status: data.status || 'UNKNOWN',
         date: formatDate(requestedAt),
         time: formatTime(requestedAt),
+        completedAt: completedAt ? new Date(completedAt) : null,
         from: {
           name: data.pickup?.placeName || 'Pickup',
           address: data.pickup?.address || 'Unknown location',
@@ -174,11 +204,15 @@ export default function TripDetailScreen() {
           },
         },
         stops,
-        distance: formatDistance(data.distance || data.actualDistance),
-        duration: formatDuration(data.duration || data.actualDuration || data.estimatedDuration),
+        distance: formatDistance(distanceRaw),
+        duration: formatDuration(durationRaw),
+        distanceRaw,
+        durationRaw,
         cost: `CI$${baseCost.toFixed(2)}`,
+        costRaw: baseCost,
         tip: tip,
         totalCost: `CI$${totalCost.toFixed(2)}`,
+        totalCostRaw: totalCost,
         driver: data.driverInfo ? {
           name: data.driverInfo.name || 'Driver',
           photo: data.driverInfo.photo,
@@ -215,6 +249,185 @@ export default function TripDetailScreen() {
         return { color: '#8B5CF6', text: 'Requested' };
       default:
         return { color: '#6B7280', text: status };
+    }
+  };
+
+  // Download receipt as PDF
+  const handleDownloadReceipt = async () => {
+    if (!trip) return;
+
+    try {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Drift Receipt</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: 0 auto; }
+              .header { text-align: center; margin-bottom: 30px; }
+              .logo { font-size: 32px; font-weight: bold; color: #5d1289; }
+              .receipt-title { font-size: 24px; margin-top: 10px; color: #333; }
+              .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
+              .row { display: flex; justify-content: space-between; padding: 8px 0; }
+              .label { color: #6b7280; }
+              .value { font-weight: 600; color: #000; }
+              .total-row { font-size: 18px; margin-top: 10px; }
+              .total-value { color: #5d1289; font-weight: 700; }
+              .section-title { font-size: 16px; font-weight: 600; margin-top: 20px; margin-bottom: 10px; }
+              .route-item { padding: 8px 0; }
+              .route-label { font-size: 12px; color: #6b7280; }
+              .route-address { font-weight: 500; }
+              .footer { text-align: center; margin-top: 40px; color: #6b7280; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="logo">Drift</div>
+              <div class="receipt-title">Trip Receipt</div>
+            </div>
+
+            <div class="row">
+              <span class="label">Trip ID</span>
+              <span class="value">${trip.id.substring(0, 8).toUpperCase()}</span>
+            </div>
+            <div class="row">
+              <span class="label">Date</span>
+              <span class="value">${trip.date} at ${trip.time}</span>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="section-title">Route</div>
+            <div class="route-item">
+              <div class="route-label">Pickup</div>
+              <div class="route-address">${trip.from.name}</div>
+              <div style="color: #6b7280; font-size: 12px;">${trip.from.address}</div>
+            </div>
+            ${trip.stops.map((stop, i) => `
+              <div class="route-item">
+                <div class="route-label">Stop ${i + 1}</div>
+                <div class="route-address">${stop.name}</div>
+                <div style="color: #6b7280; font-size: 12px;">${stop.address}</div>
+              </div>
+            `).join('')}
+            <div class="route-item">
+              <div class="route-label">Destination</div>
+              <div class="route-address">${trip.to.name}</div>
+              <div style="color: #6b7280; font-size: 12px;">${trip.to.address}</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="row">
+              <span class="label">Distance</span>
+              <span class="value">${trip.distance}</span>
+            </div>
+            <div class="row">
+              <span class="label">Duration</span>
+              <span class="value">${trip.duration}</span>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="section-title">Payment</div>
+            <div class="row">
+              <span class="label">Trip Contribution</span>
+              <span class="value">${trip.cost}</span>
+            </div>
+            ${trip.tip && trip.tip > 0 ? `
+              <div class="row">
+                <span class="label">Tip</span>
+                <span class="value" style="color: #10B981;">CI$${trip.tip.toFixed(2)}</span>
+              </div>
+            ` : ''}
+            <div class="row total-row">
+              <span class="label">Total</span>
+              <span class="value total-value">${trip.totalCost}</span>
+            </div>
+            <div class="row">
+              <span class="label">Payment Method</span>
+              <span class="value">${trip.paymentMethod}</span>
+            </div>
+
+            ${trip.driver ? `
+              <div class="divider"></div>
+              <div class="section-title">Driver</div>
+              <div class="row">
+                <span class="label">Name</span>
+                <span class="value">${trip.driver.name}</span>
+              </div>
+              <div class="row">
+                <span class="label">Vehicle</span>
+                <span class="value">${trip.driver.vehicle} • ${trip.driver.plate}</span>
+              </div>
+            ` : ''}
+
+            <div class="footer">
+              <p>Thank you for riding with Drift!</p>
+              <p>Questions? Contact support@drift-global.com</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Save Receipt',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Success', 'Receipt saved to your device');
+      }
+    } catch (err) {
+      console.error('Error generating receipt:', err);
+      Alert.alert('Error', 'Failed to generate receipt. Please try again.');
+    }
+  };
+
+  // Submit report issue
+  const handleSubmitReport = async () => {
+    if (!trip || !reportText.trim()) {
+      Alert.alert('Error', 'Please describe the issue');
+      return;
+    }
+
+    setSubmittingReport(true);
+
+    try {
+      await firestore().collection('tripIssues').add({
+        tripId: trip.id,
+        riderId: user?.id,
+        riderName: user?.name || user?.firstName || 'Unknown',
+        riderEmail: user?.email,
+        driverId: trip.driver?.name ? trip.id : null,
+        driverName: trip.driver?.name || 'Unknown',
+        issueDescription: reportText.trim(),
+        tripDate: trip.date,
+        tripCost: trip.totalCostRaw,
+        status: 'pending', // pending, reviewed, refunded, rejected, driver_suspended, driver_banned
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        adminAction: null,
+        adminNotes: null,
+        resolvedAt: null,
+      });
+
+      setShowReportModal(false);
+      setReportText('');
+      Alert.alert(
+        'Report Submitted',
+        'Thank you for your feedback. Our team will review your report and take appropriate action within 24-48 hours.',
+        [{ text: 'OK' }]
+      );
+    } catch (err) {
+      console.error('Error submitting report:', err);
+      Alert.alert('Error', 'Failed to submit report. Please try again.');
+    } finally {
+      setSubmittingReport(false);
     }
   };
 
@@ -418,7 +631,7 @@ export default function TripDetailScreen() {
         <View style={styles.paymentCard}>
           <Text style={styles.cardTitle}>Payment</Text>
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Trip Fare</Text>
+            <Text style={styles.paymentLabel}>Trip Contribution</Text>
             <Text style={styles.paymentValue}>{trip.cost}</Text>
           </View>
           {trip.tip !== undefined && trip.tip > 0 && (
@@ -454,16 +667,75 @@ export default function TripDetailScreen() {
 
         {/* Actions */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleDownloadReceipt}>
             <Ionicons name="download-outline" size={20} color="#5d1289" />
             <Text style={styles.actionText}>Download Receipt</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
-            <Ionicons name="flag-outline" size={20} color="#EF4444" />
-            <Text style={[styles.actionText, { color: '#EF4444' }]}>Report Issue</Text>
-          </TouchableOpacity>
+          {canReportIssue && (
+            <TouchableOpacity style={styles.actionButton} onPress={() => setShowReportModal(true)}>
+              <Ionicons name="flag-outline" size={20} color="#EF4444" />
+              <Text style={[styles.actionText, { color: '#EF4444' }]}>Report Issue</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
+
+      {/* Report Issue Modal */}
+      <Modal
+        visible={showReportModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowReportModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Report an Issue</Text>
+              <TouchableOpacity onPress={() => setShowReportModal(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Please describe the issue you experienced during this trip. Our team will review your report and take appropriate action.
+            </Text>
+
+            <TextInput
+              style={styles.reportInput}
+              placeholder="Describe the issue..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              value={reportText}
+              onChangeText={setReportText}
+              maxLength={1000}
+            />
+
+            <Text style={styles.charCount}>{reportText.length}/1000 characters</Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowReportModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, (!reportText.trim() || submittingReport) && styles.submitButtonDisabled]}
+                onPress={handleSubmitReport}
+                disabled={!reportText.trim() || submittingReport}
+              >
+                {submittingReport ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Submit Report</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -714,4 +986,82 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   actionText: { fontSize: 14, fontWeight: '600', color: '#5d1289' },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000',
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  reportInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#000',
+    minHeight: 150,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  charCount: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'right',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  submitButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#FCA5A5',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
 });

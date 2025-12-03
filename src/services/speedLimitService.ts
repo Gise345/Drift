@@ -1,6 +1,12 @@
 /**
  * DRIFT SPEED LIMIT SERVICE
  * Fetches speed limits from Google Roads API and manages speed monitoring
+ *
+ * Features:
+ * - Speed smoothing for accurate readings
+ * - Cached speed limits to reduce API calls
+ * - Violation tracking and logging
+ * - Driver profile violation recording
  */
 
 import {
@@ -17,13 +23,20 @@ const GOOGLE_ROADS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 // Speed violation thresholds
 const SPEED_WARNING_THRESHOLD = 3; // mph over limit = yellow warning
-const SPEED_DANGER_THRESHOLD = 6; // mph over limit = red danger (triggers alert)
+const SPEED_DANGER_THRESHOLD = 6; // mph over limit = red danger (triggers popup alert)
 const VIOLATION_DURATION_THRESHOLD = 10; // seconds to log as violation
 const STRIKES_PER_TRIP_THRESHOLD = 3; // violations per trip that trigger strike
+
+// Speed smoothing configuration
+const SPEED_SMOOTHING_WINDOW = 5; // Number of readings to average
+const SPEED_UPDATE_INTERVAL = 1000; // 1 second for smoother updates
 
 // Cache for speed limits to reduce API calls
 const speedLimitCache: Map<string, { speedLimit: number; timestamp: number }> = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Speed readings buffer for smoothing
+let speedReadingsBuffer: number[] = [];
 
 /**
  * Convert m/s to mph
@@ -37,6 +50,39 @@ export function metersPerSecondToMph(mps: number): number {
  */
 export function kmhToMph(kmh: number): number {
   return kmh * 0.621371;
+}
+
+/**
+ * Apply exponential smoothing to speed readings for more stable display
+ * Uses a weighted moving average to reduce GPS noise
+ */
+export function smoothSpeed(newSpeed: number): number {
+  // Add new reading to buffer
+  speedReadingsBuffer.push(newSpeed);
+
+  // Keep only the last N readings
+  if (speedReadingsBuffer.length > SPEED_SMOOTHING_WINDOW) {
+    speedReadingsBuffer = speedReadingsBuffer.slice(-SPEED_SMOOTHING_WINDOW);
+  }
+
+  // Calculate weighted average (more recent readings have higher weight)
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  speedReadingsBuffer.forEach((speed, index) => {
+    const weight = index + 1; // Weight increases with recency
+    weightedSum += speed * weight;
+    totalWeight += weight;
+  });
+
+  return totalWeight > 0 ? weightedSum / totalWeight : newSpeed;
+}
+
+/**
+ * Reset speed smoothing buffer (call when starting new trip)
+ */
+export function resetSpeedSmoothing(): void {
+  speedReadingsBuffer = [];
 }
 
 /**
@@ -243,7 +289,7 @@ export function processSpeedViolation(
 }
 
 /**
- * Log speed violation to Firestore
+ * Log speed violation to Firestore (trip + driver profile)
  */
 export async function logSpeedViolation(
   tripId: string,
@@ -258,6 +304,9 @@ export async function logSpeedViolation(
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
 
+    // Also record in driver's profile
+    await recordViolationInDriverProfile(violation);
+
     console.log('📊 Speed violation logged:', violation.id);
     return { success: true };
   } catch (error) {
@@ -266,6 +315,42 @@ export async function logSpeedViolation(
       success: false,
       error: 'Failed to log speed violation',
     };
+  }
+}
+
+/**
+ * Record speed violation in driver's profile for admin monitoring
+ */
+export async function recordViolationInDriverProfile(
+  violation: SpeedViolation
+): Promise<void> {
+  try {
+    const driverRef = firestore().collection('drivers').doc(violation.driverId);
+
+    // Create violation record for driver profile
+    const violationRecord = {
+      id: violation.id,
+      tripId: violation.tripId,
+      timestamp: firestore.FieldValue.serverTimestamp(),
+      maxSpeed: violation.maxSpeed,
+      speedLimit: violation.speedLimit,
+      maxExcessSpeed: violation.maxExcessSpeed,
+      duration: violation.duration,
+      severity: violation.severity,
+      location: violation.location,
+    };
+
+    // Update driver's speedViolations array and total count
+    await driverRef.update({
+      'safetyData.speedViolations': firestore.FieldValue.arrayUnion(violationRecord),
+      'safetyData.totalSpeedViolations': firestore.FieldValue.increment(1),
+      'safetyData.lastViolationAt': firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log('📊 Violation recorded in driver profile:', violation.driverId);
+  } catch (error) {
+    console.error('Failed to record violation in driver profile:', error);
   }
 }
 

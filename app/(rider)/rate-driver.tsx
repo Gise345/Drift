@@ -15,10 +15,12 @@ import { Colors } from '@/src/constants/theme';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { submitDriverRating } from '@/src/services/rating.service';
+import { canRateOrTipTrip } from '@/src/services/ride-request.service';
+import firestore from '@react-native-firebase/firestore';
 
 export default function RateDriverScreen() {
   const router = useRouter();
-  const { tripId } = useLocalSearchParams();
+  const { tripId, driverId: paramDriverId } = useLocalSearchParams();
   const { user } = useAuthStore();
   const { currentTrip } = useTripStore();
 
@@ -26,6 +28,12 @@ export default function RateDriverScreen() {
   const [feedback, setFeedback] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [tripData, setTripData] = useState<any>(null);
+  const [ratingStatus, setRatingStatus] = useState<{
+    canRate: boolean;
+    remainingTime?: string;
+  }>({ canRate: true });
 
   const feedbackTags = [
     'Great conversation',
@@ -38,11 +46,65 @@ export default function RateDriverScreen() {
     'Helpful',
   ];
 
-  // Get driver info from current trip or passed tripId
+  // Load trip data if we have a tripId param (coming from trip history)
+  useEffect(() => {
+    const loadTripData = async () => {
+      const actualTripId = typeof tripId === 'string' ? tripId : currentTrip?.id;
+
+      if (actualTripId && !currentTrip) {
+        try {
+          const tripDoc = await firestore().collection('trips').doc(actualTripId).get();
+          if (tripDoc.exists) {
+            const data = tripDoc.data();
+            setTripData(data);
+
+            // Check if rating window is still open
+            const status = canRateOrTipTrip({
+              completedAt: data?.completedAt,
+              ratingDeadline: data?.ratingDeadline,
+              driverRating: data?.driverRating,
+              tip: data?.tip,
+              status: data?.status,
+            });
+
+            setRatingStatus({
+              canRate: status.canRate,
+              remainingTime: status.remainingTime,
+            });
+
+            if (!status.canRate) {
+              if (status.hasRated) {
+                Alert.alert(
+                  'Already Rated',
+                  'You have already rated this trip.',
+                  [{ text: 'OK', onPress: () => router.back() }]
+                );
+              } else {
+                Alert.alert(
+                  'Rating Window Expired',
+                  'The 3-day rating window for this trip has expired.',
+                  [{ text: 'OK', onPress: () => router.back() }]
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error loading trip data:', error);
+        }
+      } else if (currentTrip) {
+        setTripData(currentTrip);
+      }
+      setInitialLoading(false);
+    };
+
+    loadTripData();
+  }, [tripId, currentTrip]);
+
+  // Get driver info from trip data or params
   const driver = {
-    id: currentTrip?.driverId || '',
-    name: currentTrip?.driverName || 'Driver',
-    photo: currentTrip?.driverPhoto || '👤',
+    id: tripData?.driverId || tripData?.driverInfo?.id || (typeof paramDriverId === 'string' ? paramDriverId : '') || currentTrip?.driverId || '',
+    name: tripData?.driverInfo?.name || tripData?.driverName || currentTrip?.driverName || 'Driver',
+    photo: tripData?.driverInfo?.photo || tripData?.driverPhoto || currentTrip?.driverPhoto || '👤',
   };
 
   const actualTripId = (typeof tripId === 'string' ? tripId : currentTrip?.id) || '';
@@ -102,6 +164,18 @@ export default function RateDriverScreen() {
     router.push('/(tabs)');
   };
 
+  // Show loading while fetching trip data
+  if (initialLoading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.container}>
@@ -116,6 +190,15 @@ export default function RateDriverScreen() {
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Remaining time banner */}
+        {ratingStatus.remainingTime && (
+          <View style={styles.remainingTimeBanner}>
+            <Text style={styles.remainingTimeText}>
+              {ratingStatus.remainingTime} to rate this trip
+            </Text>
+          </View>
+        )}
 
         <ScrollView
           style={styles.scroll}
@@ -399,5 +482,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: Colors.white,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: Colors.gray[600],
+  },
+  remainingTimeBanner: {
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  remainingTimeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#D97706',
   },
 });

@@ -330,6 +330,9 @@ export async function startTrip(tripId: string): Promise<void> {
  * Complete the trip - marks as AWAITING_TIP first to allow rider to add tip
  * Driver should call this when they arrive at destination
  *
+ * Rating/Tip Window: Riders have 3 days from trip completion to rate and tip
+ * After 3 days, the rating/tip option will no longer be available
+ *
  * @param tripId - The trip ID
  * @param finalCost - The final cost of the trip
  * @param actualDistance - The actual distance traveled (optional)
@@ -346,12 +349,17 @@ export async function completeTrip(
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
 
+    // Calculate 3-day rating/tip deadline
+    const now = new Date();
+    const ratingDeadline = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3 days from now
+
     const updateData: any = {
       status: 'AWAITING_TIP',
       finalCost,
       actualDistance,
       actualDuration,
       completedAt: serverTimestamp(),
+      ratingDeadline: firestore.Timestamp.fromDate(ratingDeadline),
       paymentStatus: 'PENDING',
       updatedAt: serverTimestamp(),
     };
@@ -363,6 +371,7 @@ export async function completeTrip(
 
     await updateDoc(tripRef, updateData);
     console.log('✅ Trip marked as AWAITING_TIP:', tripId);
+    console.log('📅 Rating/tip deadline:', ratingDeadline.toISOString());
   } catch (error) {
     console.error('Failed to complete trip:', error);
     throw error;
@@ -695,6 +704,173 @@ export function formatTime(minutes: number): string {
     return '< 1 min';
   }
   return `${Math.round(minutes)} min`;
+}
+
+/**
+ * Check if the rating/tip window is still open for a trip
+ * Riders have 3 days from trip completion to rate and tip
+ *
+ * @param tripData - The trip data object (must have completedAt and optionally ratingDeadline)
+ * @returns Object with canRate/canTip boolean and remaining time info
+ */
+export function canRateOrTipTrip(tripData: {
+  completedAt?: Date | { toDate?: () => Date };
+  ratingDeadline?: Date | { toDate?: () => Date };
+  driverRating?: number;
+  tip?: number;
+  status?: string;
+}): {
+  canRate: boolean;
+  canTip: boolean;
+  hasRated: boolean;
+  hasTipped: boolean;
+  remainingTime?: string;
+  deadlineDate?: Date;
+} {
+  // If no completedAt, trip isn't finished yet
+  if (!tripData.completedAt) {
+    return { canRate: false, canTip: false, hasRated: false, hasTipped: false };
+  }
+
+  const hasRated = tripData.driverRating !== undefined && tripData.driverRating > 0;
+  const hasTipped = tripData.tip !== undefined && tripData.tip > 0;
+
+  // Calculate deadline
+  let deadline: Date;
+  if (tripData.ratingDeadline) {
+    // Use stored deadline if available
+    deadline = typeof tripData.ratingDeadline === 'object' && 'toDate' in tripData.ratingDeadline && tripData.ratingDeadline.toDate
+      ? tripData.ratingDeadline.toDate()
+      : new Date(tripData.ratingDeadline as Date);
+  } else {
+    // Calculate 3 days from completion for legacy trips
+    const completedAt = typeof tripData.completedAt === 'object' && 'toDate' in tripData.completedAt && tripData.completedAt.toDate
+      ? tripData.completedAt.toDate()
+      : new Date(tripData.completedAt as Date);
+    deadline = new Date(completedAt.getTime() + 3 * 24 * 60 * 60 * 1000);
+  }
+
+  const now = new Date();
+  const isWithinWindow = now < deadline;
+
+  // Calculate remaining time
+  let remainingTime: string | undefined;
+  if (isWithinWindow) {
+    const diff = deadline.getTime() - now.getTime();
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+
+    if (days > 0) {
+      remainingTime = `${days} day${days > 1 ? 's' : ''} ${hours} hour${hours !== 1 ? 's' : ''} left`;
+    } else if (hours > 0) {
+      remainingTime = `${hours} hour${hours !== 1 ? 's' : ''} left`;
+    } else {
+      const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+      remainingTime = `${minutes} minute${minutes !== 1 ? 's' : ''} left`;
+    }
+  }
+
+  return {
+    canRate: isWithinWindow && !hasRated,
+    canTip: isWithinWindow && !hasTipped,
+    hasRated,
+    hasTipped,
+    remainingTime,
+    deadlineDate: deadline,
+  };
+}
+
+/**
+ * Add a late tip to a completed trip
+ * This is for trips that were already finalized but rider wants to tip within 3-day window
+ *
+ * @param tripId - The trip ID
+ * @param tipAmount - The tip amount
+ * @returns Success boolean and message
+ */
+export async function addLateTip(
+  tripId: string,
+  tipAmount: number
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!documentExists(tripDoc)) {
+      return { success: false, message: 'Trip not found' };
+    }
+
+    const tripData = tripDoc.data();
+
+    // Check if trip is completed
+    if (tripData?.status !== 'COMPLETED') {
+      return { success: false, message: 'Trip is not completed' };
+    }
+
+    // Check rating window
+    const ratingStatus = canRateOrTipTrip(tripData as any);
+    if (!ratingStatus.canTip) {
+      if (ratingStatus.hasTipped) {
+        return { success: false, message: 'You have already tipped for this trip' };
+      }
+      return { success: false, message: 'The 3-day tipping window has expired' };
+    }
+
+    // Get driver ID
+    const driverId = tripData?.driverId || tripData?.driverInfo?.id;
+    if (!driverId) {
+      return { success: false, message: 'Driver information not found' };
+    }
+
+    const finalCost = tripData?.finalCost || tripData?.estimatedCost || 0;
+    const existingTip = tripData?.tip || 0;
+    const newTotalTip = existingTip + tipAmount;
+
+    // Update trip with late tip
+    await updateDoc(tripRef, {
+      tip: newTotalTip,
+      totalWithTip: finalCost + newTotalTip,
+      lateTipAdded: true,
+      lateTipAmount: tipAmount,
+      lateTipAddedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // Update driver earnings
+    await updateDriverEarningsForLateTip(driverId, tripId, tipAmount);
+
+    console.log('✅ Late tip added to trip:', tripId, 'Amount:', tipAmount);
+    return { success: true, message: 'Tip added successfully!' };
+  } catch (error) {
+    console.error('Failed to add late tip:', error);
+    return { success: false, message: 'Failed to add tip. Please try again.' };
+  }
+}
+
+/**
+ * Update driver's earnings for a late tip
+ */
+async function updateDriverEarningsForLateTip(
+  driverId: string,
+  tripId: string,
+  tipAmount: number
+): Promise<void> {
+  try {
+    const updateEarnings = firebaseFunctions.httpsCallable('updateDriverEarnings');
+
+    await updateEarnings({
+      driverId,
+      tripId,
+      tripEarnings: 0, // No additional trip earnings, just tip
+      tipAmount,
+      isLateTip: true,
+    });
+
+    console.log('✅ Driver late tip earnings updated:', driverId, 'Tip:', tipAmount);
+  } catch (error) {
+    console.error('Failed to update driver late tip earnings:', error);
+    // Don't throw - earnings update failure shouldn't block tip submission
+  }
 }
 
 /**

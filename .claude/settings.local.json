@@ -34,7 +34,8 @@
       "Bash(powershell:*)",
       "Bash(find:*)",
       "Bash(npm install:*)",
-      "Bash(del \"C:\\Drift\\app\\(driver)\\registration\\background-check.tsx\")"
+      "Bash(del \"C:\\Drift\\app\\(driver)\\registration\\background-check.tsx\")",
+      "Bash(npx expo export:*)"
     ],
     "deny": [],
     "ask": []

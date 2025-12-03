@@ -37,7 +37,7 @@ const ISSUE_TYPES = {
   fare_issue: {
     title: 'Fare Issue',
     icon: 'cash-outline',
-    description: 'Report problems with your trip fare',
+    description: 'Report problems with your Trip Contribution',
     options: [
       'Charged more than expected',
       'Charged for a cancelled trip',

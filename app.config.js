@@ -1,6 +1,12 @@
+// Determine build environment from EAS or fallback
+const APP_VARIANT = process.env.APP_VARIANT || 'development';
+const IS_DEV = APP_VARIANT === 'development';
+const IS_PREVIEW = APP_VARIANT === 'preview';
+const IS_PRODUCTION = APP_VARIANT === 'production';
+
 module.exports = {
   expo: {
-    name: "Drift",
+    name: IS_PRODUCTION ? "Drift" : IS_PREVIEW ? "Drift (Preview)" : "Drift (Dev)",
     slug: "drift",
     version: "1.0.0",
     orientation: "portrait",
@@ -57,7 +63,7 @@ module.exports = {
       googleServicesFile: "./google-services.json",
       config: {
         googleMaps: {
-          apiKey: "AIzaSyDjk96AyKGgPJRhzBRH7VY2qTsEsuvIq0g"
+          apiKey: "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk"
         }
       },
       // Deep linking for Stripe callbacks
@@ -149,7 +155,12 @@ module.exports = {
       },
       eas: {
         projectId: "d7b6f22f-7d74-4cc2-b3c6-89ceece434fc"
-      }
+      },
+      // Environment configuration for logging
+      appVariant: APP_VARIANT,
+      isDevelopment: IS_DEV,
+      isPreview: IS_PREVIEW,
+      isProduction: IS_PRODUCTION,
     },
     runtimeVersion: {
       policy: "appVersion"

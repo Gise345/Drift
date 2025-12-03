@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
+  SectionList,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -17,19 +17,25 @@ import { useAuthStore } from '@/src/stores/auth-store';
 
 /**
  * Activity Tab Screen
- * Shows past trip history only (no upcoming trips feature)
+ * Shows past trip history grouped by month (most recent first)
  */
 
 interface Trip {
   id: string;
   date: string;
   time: string;
+  timestamp: Date; // For sorting
   from: string;
   to: string;
   driver: string;
   cost: string;
   status: 'completed' | 'cancelled';
   rating?: number;
+}
+
+interface TripSection {
+  title: string;
+  data: Trip[];
 }
 
 // Helper to format date
@@ -54,30 +60,73 @@ const formatTime = (date: Date | undefined): string => {
   });
 };
 
+// Helper to get month-year string for grouping
+const getMonthYear = (date: Date | undefined): string => {
+  if (!date) return 'Unknown';
+  const d = new Date(date);
+  return d.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
 // Convert Firebase trip to display format
-const convertTrip = (trip: TripData): Trip => ({
-  id: trip.id,
-  date: formatDate(trip.requestedAt || trip.createdAt),
-  time: formatTime(trip.requestedAt || trip.createdAt),
-  from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
-  to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
-  driver: trip.driverInfo?.name || 'Driver',
-  cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
-  status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
-  rating: trip.driverRating,
-});
+const convertTrip = (trip: TripData): Trip => {
+  const tripDate = trip.requestedAt || trip.createdAt;
+  return {
+    id: trip.id,
+    date: formatDate(tripDate),
+    time: formatTime(tripDate),
+    timestamp: tripDate ? new Date(tripDate) : new Date(0),
+    from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
+    to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
+    driver: trip.driverInfo?.name || 'Driver',
+    cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
+    status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
+    rating: trip.driverRating,
+  };
+};
 
 // Convert recent travel to display format
-const convertRecentTravel = (travel: RecentTravel): Trip => ({
-  id: travel.id,
-  date: formatDate(new Date(travel.timestamp)),
-  time: formatTime(new Date(travel.timestamp)),
-  from: travel.pickup.name || travel.pickup.address,
-  to: travel.destination.name || travel.destination.address,
-  driver: 'Driver',
-  cost: `$${travel.cost.toFixed(2)}`,
-  status: 'completed',
-});
+const convertRecentTravel = (travel: RecentTravel): Trip => {
+  const travelDate = new Date(travel.timestamp);
+  return {
+    id: travel.id,
+    date: formatDate(travelDate),
+    time: formatTime(travelDate),
+    timestamp: travelDate,
+    from: travel.pickup.name || travel.pickup.address,
+    to: travel.destination.name || travel.destination.address,
+    driver: 'Driver',
+    cost: `$${travel.cost.toFixed(2)}`,
+    status: 'completed',
+  };
+};
+
+// Group trips by month
+const groupTripsByMonth = (trips: Trip[]): TripSection[] => {
+  // Sort trips by timestamp (most recent first)
+  const sortedTrips = [...trips].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  // Group by month-year
+  const grouped: { [key: string]: Trip[] } = {};
+
+  sortedTrips.forEach(trip => {
+    const monthYear = getMonthYear(trip.timestamp);
+    if (!grouped[monthYear]) {
+      grouped[monthYear] = [];
+    }
+    grouped[monthYear].push(trip);
+  });
+
+  // Convert to sections array (already sorted since we sorted trips first)
+  const sections: TripSection[] = Object.entries(grouped).map(([title, data]) => ({
+    title,
+    data,
+  }));
+
+  return sections;
+};
 
 export default function ActivityScreen() {
   const router = useRouter();
@@ -89,60 +138,55 @@ export default function ActivityScreen() {
   const { user, getRecentTravels } = useUserStore();
   const { user: authUser } = useAuthStore();
 
+  // Group trips by month using useMemo for performance
+  const tripSections = useMemo(() => groupTripsByMonth(pastTrips), [pastTrips]);
+
+  // Fetch trips when user changes
   useEffect(() => {
-    loadTrips();
-  }, [user, authUser]);
-
-  const loadTrips = async () => {
-    if (!refreshing) {
+    const userId = authUser?.id || user?.id;
+    if (userId) {
       setLoading(true);
+      getTripHistory(userId).finally(() => setLoading(false));
     }
+  }, [authUser?.id, user?.id]);
 
-    try {
-      const userId = authUser?.id || user?.id;
+  // Update local state when store trips change
+  useEffect(() => {
+    const past = storePastTrips
+      .filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED')
+      .map(convertTrip);
 
-      if (userId) {
-        // Load from Firebase trip history
-        await getTripHistory(userId);
+    // Also get recent travels from user store
+    const recentTravels = getRecentTravels();
+    const recentTripsDisplay = recentTravels.map(convertRecentTravel);
 
-        // Convert completed/cancelled trips only
-        const past = storePastTrips
-          .filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED')
-          .map(convertTrip);
-
-        // Also get recent travels from user store
-        const recentTravels = getRecentTravels();
-        const recentTripsDisplay = recentTravels.map(convertRecentTravel);
-
-        // Merge recent travels with past trips (dedupe by id)
-        const mergedPast = [...past];
-        recentTripsDisplay.forEach(rt => {
-          if (!mergedPast.find(p => p.id === rt.id)) {
-            mergedPast.push(rt);
-          }
-        });
-
-        // Sort by date (most recent first)
-        mergedPast.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        setPastTrips(mergedPast);
-        console.log(`Loaded ${mergedPast.length} past trips`);
-      } else {
-        console.log('No user ID, showing empty trips');
-        setPastTrips([]);
+    // Merge recent travels with past trips (dedupe by id)
+    const mergedPast = [...past];
+    recentTripsDisplay.forEach(rt => {
+      if (!mergedPast.find(p => p.id === rt.id)) {
+        mergedPast.push(rt);
       }
-    } catch (error) {
-      console.error('Error loading trips:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+    });
+
+    setPastTrips(mergedPast);
+    console.log(`Loaded ${mergedPast.length} past trips from store`);
+    setRefreshing(false);
+  }, [storePastTrips]);
 
   const onRefresh = () => {
-    setRefreshing(true);
-    loadTrips();
+    const userId = authUser?.id || user?.id;
+    if (userId) {
+      setRefreshing(true);
+      getTripHistory(userId);
+    }
   };
+
+  const renderSectionHeader = ({ section }: { section: TripSection }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <Text style={styles.sectionCount}>{section.data.length} trip{section.data.length !== 1 ? 's' : ''}</Text>
+    </View>
+  );
 
   const renderTripCard = ({ item }: { item: Trip }) => (
     <TouchableOpacity
@@ -233,13 +277,15 @@ export default function ActivityScreen() {
       </View>
 
       {/* Trip List */}
-      {pastTrips.length > 0 ? (
-        <FlatList
-          data={pastTrips}
+      {tripSections.length > 0 ? (
+        <SectionList
+          sections={tripSections}
           renderItem={renderTripCard}
+          renderSectionHeader={renderSectionHeader}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          stickySectionHeadersEnabled={true}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -295,6 +341,27 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+    paddingTop: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  sectionCount: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   tripCard: {
     backgroundColor: '#FFF',

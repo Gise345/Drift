@@ -516,27 +516,29 @@ const SearchLocationScreen = () => {
     }
   };
 
-  const handleSelectSavedOrRecent = (item: { name: string; address: string; latitude: number; longitude: number }) => {
+  const handleSelectSavedOrRecent = (item: SavedAddress | RecentSearch) => {
+    const itemName = 'name' in item ? item.name : item.label;
+
     const location: RouteLocation = {
-      name: item.name,
+      name: itemName,
       address: item.address,
       latitude: item.latitude,
       longitude: item.longitude,
     };
 
     if (activeInput === 'pickup') {
-      setPickupQuery(item.name);
+      setPickupQuery(itemName);
       setPickupLocationState(location);
       setTimeout(() => {
         setActiveInput('destination');
         destinationInputRef.current?.focus();
       }, 100);
     } else if (activeInput === 'destination') {
-      setDestinationQuery(item.name);
+      setDestinationQuery(itemName);
       setDestinationLocationState(location);
     } else if (typeof activeInput === 'number') {
       const newQueries = [...stopQueries];
-      newQueries[activeInput] = item.name;
+      newQueries[activeInput] = itemName;
       setStopQueries(newQueries);
 
       const newLocations = [...stopLocations];

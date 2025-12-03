@@ -24,6 +24,7 @@ export default function AdminDashboard() {
     pendingApplications: 0,
     activeDrivers: 0,
     totalRiders: 0,
+    pendingIssues: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -51,10 +52,17 @@ export default function AdminDashboard() {
         .where('roles', 'array-contains', 'RIDER')
         .get();
 
+      // Get pending trip issues
+      const issuesSnapshot = await firestore()
+        .collection('tripIssues')
+        .where('status', '==', 'pending')
+        .get();
+
       setStats({
         pendingApplications: pendingSnapshot.size,
         activeDrivers: activeSnapshot.size,
         totalRiders: ridersSnapshot.size,
+        pendingIssues: issuesSnapshot.size,
       });
     } catch (error) {
       console.error('❌ Error loading admin stats:', error);
@@ -117,11 +125,33 @@ export default function AdminDashboard() {
       color: Colors.warning,
     },
     {
+      icon: 'flag-outline',
+      title: 'Trip Issues',
+      subtitle: 'Review rider complaints and issues',
+      route: '/(admin)/trip-issues',
+      color: Colors.warning,
+      badge: stats.pendingIssues > 0 ? String(stats.pendingIssues) : undefined,
+    },
+    {
+      icon: 'speedometer-outline',
+      title: 'Speed Violations',
+      subtitle: 'Monitor driver speeding & take action',
+      route: '/(admin)/speed-violations',
+      color: Colors.error,
+    },
+    {
       icon: 'shield-checkmark-outline',
       title: 'Safety & Reports',
       subtitle: 'Incident reports and safety issues',
       route: '/(admin)/safety',
       color: Colors.error,
+    },
+    {
+      icon: 'list-outline',
+      title: 'Activity Logs',
+      subtitle: 'Real-time app activity monitoring',
+      route: '/(admin)/activity-logs',
+      color: Colors.info,
     },
   ];
 

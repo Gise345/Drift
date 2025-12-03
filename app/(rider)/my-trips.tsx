@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTripStore, Trip as TripData } from '@/src/stores/trip-store';
 import { useUserStore, RecentTravel } from '@/src/stores/user-store';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { canRateOrTipTrip } from '@/src/services/ride-request.service';
 
 /**
  * My Trips Screen
@@ -27,9 +28,16 @@ interface Trip {
   from: string;
   to: string;
   driver: string;
+  driverId?: string;
   cost: string;
   status: 'completed' | 'cancelled';
   rating?: number;
+  // Rating/tip window info
+  canRate?: boolean;
+  canTip?: boolean;
+  hasRated?: boolean;
+  hasTipped?: boolean;
+  remainingTime?: string;
 }
 
 // Helper to format date
@@ -55,17 +63,35 @@ const formatTime = (date: Date | undefined): string => {
 };
 
 // Convert Firebase trip to display format
-const convertTrip = (trip: TripData): Trip => ({
-  id: trip.id,
-  date: formatDate(trip.requestedAt || trip.createdAt),
-  time: formatTime(trip.requestedAt || trip.createdAt),
-  from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
-  to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
-  driver: trip.driverInfo?.name || 'Driver',
-  cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
-  status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
-  rating: trip.driverRating,
-});
+const convertTrip = (trip: TripData): Trip => {
+  // Check rating/tip window status
+  const ratingStatus = canRateOrTipTrip({
+    completedAt: trip.completedAt,
+    ratingDeadline: trip.ratingDeadline,
+    driverRating: trip.driverRating,
+    tip: trip.tip,
+    status: trip.status,
+  });
+
+  return {
+    id: trip.id,
+    date: formatDate(trip.requestedAt || trip.createdAt),
+    time: formatTime(trip.requestedAt || trip.createdAt),
+    from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
+    to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
+    driver: trip.driverInfo?.name || 'Driver',
+    driverId: trip.driverInfo?.id || trip.driverId,
+    cost: `CI$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
+    status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
+    rating: trip.driverRating,
+    // Rating/tip window info
+    canRate: ratingStatus.canRate,
+    canTip: ratingStatus.canTip,
+    hasRated: ratingStatus.hasRated,
+    hasTipped: ratingStatus.hasTipped,
+    remainingTime: ratingStatus.remainingTime,
+  };
+};
 
 // Convert recent travel to display format
 const convertRecentTravel = (travel: RecentTravel): Trip => ({
@@ -144,71 +170,131 @@ export default function MyTripsScreen() {
     loadTrips();
   };
 
-  const renderTripCard = ({ item }: { item: Trip }) => (
-    <TouchableOpacity
-      style={styles.tripCard}
-      onPress={() => router.push({
-        pathname: '/(rider)/trip-detail',
-        params: { tripId: item.id }
-      })}
-      activeOpacity={0.7}
-    >
-      {/* Date Header */}
-      <View style={styles.dateHeader}>
-        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-        <Text style={styles.dateText}>{item.date} · {item.time}</Text>
-        {item.status === 'completed' && (
-          <View style={styles.completedBadge}>
-            <Text style={styles.badgeText}>Completed</Text>
+  const handleRateTrip = (tripId: string, driverId?: string) => {
+    router.push({
+      pathname: '/(rider)/rate-driver',
+      params: { tripId, driverId: driverId || '' }
+    });
+  };
+
+  const handleTipTrip = (tripId: string) => {
+    router.push({
+      pathname: '/(rider)/add-late-tip',
+      params: { tripId }
+    });
+  };
+
+  const renderTripCard = ({ item }: { item: Trip }) => {
+    const showPendingActions = item.status === 'completed' && (item.canRate || item.canTip);
+
+    return (
+      <TouchableOpacity
+        style={styles.tripCard}
+        onPress={() => router.push({
+          pathname: '/(rider)/trip-detail',
+          params: { tripId: item.id }
+        })}
+        activeOpacity={0.7}
+      >
+        {/* Date Header */}
+        <View style={styles.dateHeader}>
+          <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+          <Text style={styles.dateText}>{item.date} · {item.time}</Text>
+          {item.status === 'completed' && !showPendingActions && (
+            <View style={styles.completedBadge}>
+              <Text style={styles.badgeText}>Completed</Text>
+            </View>
+          )}
+          {item.status === 'completed' && showPendingActions && (
+            <View style={[styles.completedBadge, styles.pendingActionBadge]}>
+              <Text style={[styles.badgeText, styles.pendingActionText]}>Action Needed</Text>
+            </View>
+          )}
+          {item.status === 'cancelled' && (
+            <View style={[styles.completedBadge, styles.cancelledBadge]}>
+              <Text style={[styles.badgeText, styles.cancelledText]}>Cancelled</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Route */}
+        <View style={styles.routeContainer}>
+          <View style={styles.routeIconsContainer}>
+            <View style={styles.greenDot} />
+            <View style={styles.dottedLine} />
+            <View style={styles.purpleSquare} />
+          </View>
+          <View style={styles.addressesContainer}>
+            <Text style={styles.address} numberOfLines={1}>{item.from}</Text>
+            <Text style={styles.address} numberOfLines={1}>{item.to}</Text>
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <View style={styles.driverInfo}>
+            <Ionicons name="person-outline" size={16} color="#6B7280" />
+            <Text style={styles.driverName}>{item.driver}</Text>
+          </View>
+          <View style={styles.costContainer}>
+            <Text style={styles.costLabel}>Cost:</Text>
+            <Text style={styles.costValue}>{item.cost}</Text>
+          </View>
+          {item.rating && (
+            <View style={styles.ratingContainer}>
+              <Ionicons name="star" size={14} color="#F59E0B" />
+              <Text style={styles.ratingText}>{item.rating}.0</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Pending Actions (Rate/Tip) */}
+        {showPendingActions && (
+          <View style={styles.pendingActionsContainer}>
+            {item.remainingTime && (
+              <Text style={styles.remainingTimeText}>
+                <Ionicons name="time-outline" size={12} color="#F59E0B" /> {item.remainingTime}
+              </Text>
+            )}
+            <View style={styles.actionButtonsRow}>
+              {item.canRate && (
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleRateTrip(item.id, item.driverId);
+                  }}
+                >
+                  <Ionicons name="star-outline" size={16} color="#5d1289" />
+                  <Text style={styles.actionButtonText}>Rate Driver</Text>
+                </TouchableOpacity>
+              )}
+              {item.canTip && (
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.tipButton]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleTipTrip(item.id);
+                  }}
+                >
+                  <Ionicons name="heart-outline" size={16} color="#10B981" />
+                  <Text style={[styles.actionButtonText, styles.tipButtonText]}>Add Tip</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
-        {item.status === 'cancelled' && (
-          <View style={[styles.completedBadge, styles.cancelledBadge]}>
-            <Text style={[styles.badgeText, styles.cancelledText]}>Cancelled</Text>
-          </View>
-        )}
-      </View>
 
-      {/* Route */}
-      <View style={styles.routeContainer}>
-        <View style={styles.routeIconsContainer}>
-          <View style={styles.greenDot} />
-          <View style={styles.dottedLine} />
-          <View style={styles.purpleSquare} />
-        </View>
-        <View style={styles.addressesContainer}>
-          <Text style={styles.address} numberOfLines={1}>{item.from}</Text>
-          <Text style={styles.address} numberOfLines={1}>{item.to}</Text>
-        </View>
-      </View>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <View style={styles.driverInfo}>
-          <Ionicons name="person-outline" size={16} color="#6B7280" />
-          <Text style={styles.driverName}>{item.driver}</Text>
-        </View>
-        <View style={styles.costContainer}>
-          <Text style={styles.costLabel}>Cost:</Text>
-          <Text style={styles.costValue}>{item.cost}</Text>
-        </View>
-        {item.rating && (
-          <View style={styles.ratingContainer}>
-            <Ionicons name="star" size={14} color="#F59E0B" />
-            <Text style={styles.ratingText}>{item.rating}.0</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Chevron */}
-      <Ionicons
-        name="chevron-forward"
-        size={20}
-        color="#9CA3AF"
-        style={styles.chevron}
-      />
-    </TouchableOpacity>
-  );
+        {/* Chevron */}
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color="#9CA3AF"
+          style={styles.chevron}
+        />
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -360,6 +446,9 @@ const styles = StyleSheet.create({
   cancelledBadge: {
     backgroundColor: '#FEE2E2',
   },
+  pendingActionBadge: {
+    backgroundColor: '#FEF3C7',
+  },
   badgeText: {
     fontSize: 11,
     fontWeight: '600',
@@ -367,6 +456,9 @@ const styles = StyleSheet.create({
   },
   cancelledText: {
     color: '#DC2626',
+  },
+  pendingActionText: {
+    color: '#D97706',
   },
   routeContainer: {
     flexDirection: 'row',
@@ -500,5 +592,42 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#6B7280',
+  },
+  // Pending actions styles
+  pendingActionsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  remainingTimeText: {
+    fontSize: 12,
+    color: '#D97706',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3E8FF',
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  tipButton: {
+    backgroundColor: '#D1FAE5',
+  },
+  tipButtonText: {
+    color: '#059669',
   },
 });

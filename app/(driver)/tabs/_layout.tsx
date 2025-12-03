@@ -26,17 +26,6 @@ export default function DriverTabsLayout() {
 
   useEffect(() => {
     checkDriverRegistration();
-
-    // Safety timeout - if check takes longer than 10 seconds, redirect to rider home
-    const timeout = setTimeout(() => {
-      if (isChecking) {
-        console.log('⏰ Check timed out - redirecting to rider home');
-        setIsChecking(false);
-        router.replace('/(tabs)');
-      }
-    }, 10000);
-
-    return () => clearTimeout(timeout);
   }, [user?.id]);
 
   const checkDriverRegistration = async () => {
@@ -131,18 +120,23 @@ export default function DriverTabsLayout() {
         console.log('🔒 Permission denied - user may not have driver access');
         // Check if user has DRIVER role
         if (!user?.roles?.includes('DRIVER')) {
-          // User doesn't have driver role - redirect to rider profile or registration
+          // User doesn't have driver role - redirect to registration
           console.log('👤 User is not a driver - redirecting to registration welcome');
           router.replace('/(driver)/registration/welcome');
         } else {
-          // User has role but permission issue - redirect to rider home
-          console.log('⚠️ Permission issue - redirecting to rider home');
-          router.replace('/(tabs)');
+          // User has DRIVER role - allow access despite permission issue
+          console.log('✅ User has DRIVER role - allowing access despite error');
+          setIsRegistrationComplete(true);
         }
       } else {
-        // Other error - redirect to rider home to be safe
-        console.log('⚠️ Unknown error - redirecting to rider home');
-        router.replace('/(tabs)');
+        // Other error - if user has DRIVER role, allow access
+        if (user?.roles?.includes('DRIVER')) {
+          console.log('✅ User has DRIVER role - allowing access despite error');
+          setIsRegistrationComplete(true);
+        } else {
+          console.log('👤 User is not a driver - redirecting to registration welcome');
+          router.replace('/(driver)/registration/welcome');
+        }
       }
       setIsChecking(false);
     }

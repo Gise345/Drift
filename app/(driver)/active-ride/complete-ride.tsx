@@ -266,7 +266,7 @@ export default function CompleteRide() {
             <Text style={styles.earningsAmount}>CI${totalEarnings.toFixed(2)}</Text>
             <View style={styles.earningsBreakdown}>
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Trip Fare</Text>
+                <Text style={styles.breakdownLabel}>Trip Contribution</Text>
                 <Text style={styles.breakdownValue}>CI${baseFare.toFixed(2)}</Text>
               </View>
               {tipReceived !== null && tipReceived > 0 && (

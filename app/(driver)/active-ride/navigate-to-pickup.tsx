@@ -29,8 +29,11 @@ import * as Location from 'expo-location';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
+import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.45;
@@ -59,6 +62,10 @@ export default function NavigateToPickup() {
   const insets = useSafeAreaInsets();
   const { activeRide, updateLocation, arrivedAtPickup, setActiveRide } = useDriverStore();
   const { updateDriverLocation, subscribeToTrip } = useTripStore();
+  const { user } = useAuthStore();
+
+  // Speed monitoring hook
+  const speedMonitor = useSpeedMonitor(activeRide?.id || null, user?.id || null);
 
   // State
   const [eta, setEta] = useState<number | null>(null);

@@ -400,12 +400,12 @@ export default function TripDetailScreen() {
             </View>
             <View style={styles.statCard}>
               <Ionicons name="time-outline" size={20} color={Colors.primary} />
-              <Text style={styles.statValue}>{trip.duration} min</Text>
+              <Text style={styles.statValue}>{Math.round(trip.duration / 60)} min</Text>
               <Text style={styles.statLabel}>Duration</Text>
             </View>
             <View style={styles.statCard}>
               <Ionicons name="location-outline" size={20} color={Colors.primary} />
-              <Text style={styles.statValue}>{trip.distance.toFixed(1)} km</Text>
+              <Text style={styles.statValue}>{(trip.distance * 0.621371).toFixed(1)} mi</Text>
               <Text style={styles.statLabel}>Distance</Text>
             </View>
           </View>

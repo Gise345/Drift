@@ -24,7 +24,7 @@ export default function RiderNoShow() {
   // Get driver ID from driver profile
   const driverId = driver?.id;
 
-  // Calculate the cancellation fee (50% of trip fare)
+  // Calculate the cancellation fee (50% of Trip Contribution)
   const estimatedCost = activeRide?.estimatedEarnings || 0;
   const cancellationFee = Math.round((estimatedCost * 0.5) * 100) / 100;
 
@@ -75,7 +75,7 @@ export default function RiderNoShow() {
           <View style={styles.infoText}>
             <Text style={styles.infoTitle}>Cancellation Fee (50%)</Text>
             <Text style={styles.infoDescription}>
-              You'll receive 50% of the trip fare for your time, effort, and gas spent waiting at the pickup location.
+              You'll receive 50% of the Trip Contribution for your time, effort, and gas spent waiting at the pickup location.
             </Text>
           </View>
         </View>
