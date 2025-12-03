@@ -31,7 +31,9 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
+import { initializeMessaging } from '@/src/services/messaging.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { ChatModal, ChatButton } from '@/components/messaging';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 
@@ -77,7 +79,9 @@ export default function NavigateToPickup() {
   const [isSheetMinimized, setIsSheetMinimized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
   const lastRouteRecalculation = useRef<number>(0);
+  const messagingInitializedRef = useRef(false);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
   // Animation
@@ -120,6 +124,17 @@ export default function NavigateToPickup() {
       );
     }
   }, [currentTrip?.status]);
+
+  // Initialize messaging when driver accepts ride
+  useEffect(() => {
+    if (activeRide?.id && user?.id && !messagingInitializedRef.current) {
+      messagingInitializedRef.current = true;
+      const driverName = user.name || user.email?.split('@')[0] || 'Driver';
+      initializeMessaging(activeRide.id, driverName).catch((error) => {
+        console.error('Failed to initialize messaging:', error);
+      });
+    }
+  }, [activeRide?.id, user?.id]);
 
   // Handle route deviation - recalculate route when driver goes off route
   const handleRouteDeviation = async (distanceFromRoute: number) => {
@@ -455,6 +470,11 @@ export default function NavigateToPickup() {
     Alert.alert('Call Rider', 'Contact feature coming soon.');
   };
 
+  const handleMessageRider = () => {
+    if (!activeRide) return;
+    setShowChatModal(true);
+  };
+
   const handleCenterMap = () => {
     if (currentLocation && mapRef.current) {
       mapRef.current.animateToRegion({
@@ -610,6 +630,9 @@ export default function NavigateToPickup() {
                 </View>
               </View>
               <View style={styles.contactButtons}>
+                <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
+                  <Ionicons name="chatbubble" size={20} color={Colors.primary} />
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
                   <Ionicons name="call" size={20} color={Colors.primary} />
                 </TouchableOpacity>
@@ -642,6 +665,21 @@ export default function NavigateToPickup() {
           </View>
         )}
       </Animated.View>
+
+      {/* Chat Modal */}
+      {activeRide && user && (
+        <ChatModal
+          visible={showChatModal}
+          tripId={activeRide.id}
+          userId={user.id}
+          userName={user.name || user.email?.split('@')[0] || 'Driver'}
+          userPhoto={user.photoURL}
+          userType="driver"
+          otherUserName={activeRide.riderName}
+          onClose={() => setShowChatModal(false)}
+          isEnabled={true}
+        />
+      )}
     </View>
   );
 }

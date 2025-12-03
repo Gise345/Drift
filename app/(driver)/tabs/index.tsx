@@ -19,6 +19,7 @@ import {
   Platform,
   Alert,
   Animated,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -31,6 +32,10 @@ import RideRequestModal from '@/components/modal/RideRequestModal';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { Region } from 'react-native-maps';
 import { getActiveDriverTrip } from '@/src/services/ride-request.service';
+import {
+  initializeDriverNotifications,
+  setupDriverNotificationListener,
+} from '@/src/services/driver-notification.service';
 
 export default function DriverHomeScreen() {
   const router = useRouter();
@@ -49,6 +54,7 @@ export default function DriverHomeScreen() {
     processedRequestIds,
     activeRide,
     setActiveRide,
+    startListeningForRequests,
   } = useDriverStore();
   const { user } = useAuthStore();
 
@@ -78,6 +84,58 @@ export default function DriverHomeScreen() {
       loadDriverProfile(user.id);
     }
   }, [user?.id]);
+
+  // Initialize driver notifications
+  useEffect(() => {
+    initializeDriverNotifications();
+
+    // Set up notification response listener for accept/decline from notification
+    const subscription = setupDriverNotificationListener(
+      // On Accept from notification
+      async (requestId) => {
+        console.log('📲 Accept from notification:', requestId);
+        try {
+          await acceptRequest(requestId);
+          router.push('/(driver)/active-ride/navigate-to-pickup');
+        } catch (error) {
+          console.error('Failed to accept from notification:', error);
+        }
+      },
+      // On Decline from notification
+      async (requestId) => {
+        console.log('📲 Decline from notification:', requestId);
+        try {
+          await declineRequest(requestId, 'Declined from notification');
+        } catch (error) {
+          console.error('Failed to decline from notification:', error);
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  // Keep online status persistent - restart listener when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      // When app comes back to foreground and driver is online
+      if (nextAppState === 'active' && isOnline && !activeRide) {
+        console.log('📱 App came to foreground - checking listener status');
+        // Restart listening if we're online but not currently listening
+        const state = useDriverStore.getState();
+        if (!state.rideRequestListener && state.currentLocation) {
+          console.log('🔄 Restarting ride request listener...');
+          state.startListeningForRequests();
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isOnline, activeRide]);
 
   // Check for active trip on mount (persists across app restart/logout)
   useEffect(() => {

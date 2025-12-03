@@ -35,6 +35,7 @@ import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
+import { RiderSpeedingAlertContainer } from '@/components/rider/RiderSpeedingAlert';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.38;
@@ -918,6 +919,9 @@ export default function TripInProgressScreen() {
 
       {/* Safety Alert Modal (Are you okay?) */}
       <SafetyAlertContainer />
+
+      {/* Rider Speeding Alert (when driver is in red zone) */}
+      <RiderSpeedingAlertContainer />
 
       {/* Share Trip Modal */}
       {currentTrip && (

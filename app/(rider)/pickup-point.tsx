@@ -13,13 +13,17 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useTripStore } from '@/src/stores/trip-store';
+import { useUserStore } from '@/src/stores/user-store';
 import { cancelTrip } from '@/src/services/ride-request.service';
+import { ChatModal } from '@/components/messaging/ChatModal';
 
 export default function PickupPointScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { currentTrip, subscribeToTrip } = useTripStore();
+  const { user } = useUserStore();
   const [waitTime, setWaitTime] = useState(0); // Track wait time in seconds
+  const [showChatModal, setShowChatModal] = useState(false);
   const hasNavigatedRef = useRef(false);
 
   // If no current trip, redirect back
@@ -92,11 +96,8 @@ export default function PickupPointScreen() {
   };
 
   const handleMessage = () => {
-    if (!driver?.phone) {
-      Alert.alert('Error', 'Driver phone number not available');
-      return;
-    }
-    Linking.openURL(`sms:${driver.phone}`);
+    if (!driver || !currentTrip) return;
+    setShowChatModal(true);
   };
 
   const handleCancel = () => {
@@ -280,6 +281,21 @@ export default function PickupPointScreen() {
           <Text style={styles.cancelButtonText}>Cancel Ride</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Chat Modal */}
+      {currentTrip && driver && user && (
+        <ChatModal
+          visible={showChatModal}
+          tripId={currentTrip.id}
+          userId={user.id}
+          userName={user.name || 'Rider'}
+          userPhoto={user.profilePhoto}
+          userType="rider"
+          otherUserName={driver.name}
+          onClose={() => setShowChatModal(false)}
+          isEnabled={true}
+        />
+      )}
     </SafeAreaView>
   );
 }

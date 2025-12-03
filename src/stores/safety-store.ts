@@ -28,6 +28,15 @@ import {
   saveEmergencyContacts,
 } from '@/src/services/emergencyService';
 import {
+  initializeSafetyNotifications,
+  sendRiderSpeedAlertNotification,
+  sendRouteDeviationNotification,
+  setupNotificationResponseListener,
+  subscribeToSafetyAlerts,
+  markSafetyAlertResponded,
+  NOTIFICATION_ACTIONS,
+} from '@/src/services/safety-notification.service';
+import {
   getDriverSafetyProfile,
   getDriverStrikes,
   canDriverGoOnline,
@@ -70,6 +79,10 @@ interface SafetyStore {
   alertCountdown: number;
   countdownInterval: ReturnType<typeof setInterval> | null;
 
+  // Rider speeding alert
+  showRiderSpeedingAlert: boolean;
+  riderSpeedingAlertDismissed: boolean;
+
   // Emergency
   emergencyMode: boolean;
   emergencyAlert: EmergencyAlert | null;
@@ -80,6 +93,10 @@ interface SafetyStore {
 
   // Emergency contacts
   emergencyContacts: EmergencyContact[];
+
+  // Notification subscription
+  notificationUnsubscribe: (() => void) | null;
+  safetyAlertUnsubscribe: (() => void) | null;
 
   // Loading states
   loading: boolean;
@@ -120,6 +137,11 @@ interface SafetyStore {
   loadEmergencyContacts: (userId: string) => Promise<void>;
   saveContacts: (userId: string, contacts: Omit<EmergencyContact, 'id'>[]) => Promise<{ success: boolean }>;
 
+  // Actions - Notifications
+  initializeNotifications: () => Promise<void>;
+  showRiderSpeedAlert: () => void;
+  dismissRiderSpeedAlert: () => void;
+
   // Reset
   reset: () => void;
 }
@@ -149,11 +171,15 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
   earlyCompletion: null,
   alertCountdown: DEVIATION_CONSTANTS.ALERT_RESPONSE_TIMEOUT,
   countdownInterval: null,
+  showRiderSpeedingAlert: false,
+  riderSpeedingAlertDismissed: false,
   emergencyMode: false,
   emergencyAlert: null,
   driverProfile: null,
   driverStrikes: [],
   emergencyContacts: [],
+  notificationUnsubscribe: null,
+  safetyAlertUnsubscribe: null,
   loading: false,
 
   // Start safety monitoring for a trip
@@ -171,11 +197,23 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
     // Set up deviation alert callback
     routeMonitor.onDeviationAlert((deviation) => {
       get().showRouteDeviationAlert(deviation);
+      // Send notification to rider
+      sendRouteDeviationNotification(tripId, riderId, 'rider', deviation.deviationDistance);
     });
 
     // Set up early completion callback
     routeMonitor.onEarlyCompletionAlert((completion) => {
       get().showEarlyCompletionAlertModal(completion);
+    });
+
+    // Subscribe to safety alerts from Firebase (for cross-device sync)
+    const safetyUnsubscribe = subscribeToSafetyAlerts(tripId, (alert) => {
+      console.log('Safety alert received from Firebase:', alert);
+
+      if (alert.type === 'safety_message' && alert.messageType === 'slow_down_request') {
+        // Driver received a slow-down request from rider
+        console.log('Rider requested driver to slow down');
+      }
     });
 
     set({
@@ -188,15 +226,20 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       speedState: initialSpeedState,
       routeDeviationActive: false,
       currentDeviation: null,
+      safetyAlertUnsubscribe: safetyUnsubscribe,
     });
   },
 
   // Stop monitoring
   stopMonitoring: () => {
-    const { countdownInterval } = get();
+    const { countdownInterval, safetyAlertUnsubscribe } = get();
 
     if (countdownInterval) {
       clearInterval(countdownInterval);
+    }
+
+    if (safetyAlertUnsubscribe) {
+      safetyAlertUnsubscribe();
     }
 
     resetSpeedMonitor();
@@ -217,6 +260,9 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       earlyCompletion: null,
       alertCountdown: DEVIATION_CONSTANTS.ALERT_RESPONSE_TIMEOUT,
       countdownInterval: null,
+      showRiderSpeedingAlert: false,
+      riderSpeedingAlertDismissed: false,
+      safetyAlertUnsubscribe: null,
     });
 
     console.log('Safety monitoring stopped');
@@ -532,12 +578,100 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
     return result;
   },
 
+  // Initialize safety notifications
+  initializeNotifications: async () => {
+    try {
+      // Initialize notification categories and permissions
+      await initializeSafetyNotifications();
+
+      // Set up notification response listener
+      const notificationSubscription = setupNotificationResponseListener((response) => {
+        const actionId = response.actionIdentifier;
+        const data = response.notification.request.content.data as any;
+        const { tripId } = get();
+
+        console.log('Notification response received:', actionId, data);
+
+        // Handle notification actions
+        switch (actionId) {
+          case NOTIFICATION_ACTIONS.IM_OK:
+            // User pressed "I'm OK" from notification
+            if (data?.tripId && tripId === data.tripId) {
+              get().dismissAlert();
+              markSafetyAlertResponded(data.tripId, 'ok', data.userType || 'rider');
+            }
+            break;
+
+          case NOTIFICATION_ACTIONS.SLOW_DOWN:
+          case NOTIFICATION_ACTIONS.ACKNOWLEDGE_SPEED:
+            // Driver acknowledged speed warning from notification
+            if (data?.tripId) {
+              markSafetyAlertResponded(data.tripId, 'acknowledged', 'driver');
+            }
+            break;
+
+          case NOTIFICATION_ACTIONS.WARN_DRIVER:
+            // Rider wants to warn driver - show in-app alert
+            set({ showRiderSpeedingAlert: true });
+            break;
+
+          case NOTIFICATION_ACTIONS.END_RIDE:
+            // Rider wants to end ride - handled by app when foregrounded
+            set({ showRiderSpeedingAlert: true });
+            break;
+
+          case NOTIFICATION_ACTIONS.CALL_EMERGENCY:
+            // User wants to call emergency services
+            get().callEmergency();
+            break;
+        }
+      });
+
+      set({
+        notificationUnsubscribe: () => notificationSubscription.remove(),
+      });
+
+      console.log('Safety notifications initialized');
+    } catch (error) {
+      console.error('Failed to initialize safety notifications:', error);
+    }
+  },
+
+  // Show rider speeding alert
+  showRiderSpeedAlert: () => {
+    const { riderSpeedingAlertDismissed } = get();
+    if (!riderSpeedingAlertDismissed) {
+      set({ showRiderSpeedingAlert: true });
+    }
+  },
+
+  // Dismiss rider speeding alert
+  dismissRiderSpeedAlert: () => {
+    set({
+      showRiderSpeedingAlert: false,
+      riderSpeedingAlertDismissed: true,
+    });
+
+    // Reset dismissed flag after 60 seconds so alert can show again
+    setTimeout(() => {
+      set({ riderSpeedingAlertDismissed: false });
+    }, 60000);
+  },
+
   // Reset store
   reset: () => {
-    const { countdownInterval } = get();
+    const { countdownInterval, notificationUnsubscribe, safetyAlertUnsubscribe } = get();
 
     if (countdownInterval) {
       clearInterval(countdownInterval);
+    }
+
+    if (notificationUnsubscribe) {
+      notificationUnsubscribe();
+    }
+
+    if (safetyAlertUnsubscribe) {
+      safetyAlertUnsubscribe();
     }
 
     resetSpeedMonitor();
@@ -558,11 +692,15 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       earlyCompletion: null,
       alertCountdown: DEVIATION_CONSTANTS.ALERT_RESPONSE_TIMEOUT,
       countdownInterval: null,
+      showRiderSpeedingAlert: false,
+      riderSpeedingAlertDismissed: false,
       emergencyMode: false,
       emergencyAlert: null,
       driverProfile: null,
       driverStrikes: [],
       emergencyContacts: [],
+      notificationUnsubscribe: null,
+      safetyAlertUnsubscribe: null,
       loading: false,
     });
   },

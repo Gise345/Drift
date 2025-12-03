@@ -917,6 +917,8 @@ export default function NavigateToDestination() {
         visible={speedMonitor.shouldShowWarning}
         currentSpeed={speedMonitor.currentSpeed}
         speedLimit={speedMonitor.speedLimit || 0}
+        tripId={activeRide?.id}
+        driverId={user?.id}
         onDismiss={speedMonitor.dismissWarning}
       />
 

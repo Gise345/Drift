@@ -8,6 +8,11 @@ import {
 import { useTripStore } from './trip-store';
 import { firebaseDb } from '../config/firebase';
 import { doc, getDoc } from '@react-native-firebase/firestore';
+import {
+  sendRideRequestNotification,
+  dismissRideRequestNotifications,
+  isAppInBackground,
+} from '../services/driver-notification.service';
 
 /**
  * DRIVER STORE - Production Mode
@@ -530,6 +535,9 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       return defaultInfo;
     };
 
+    // Track notified request IDs to avoid duplicate notifications
+    const notifiedRequestIds = new Set<string>();
+
     // Start listening for ride requests within 10km
     // Pass driver ID to filter out requests this driver has declined
     const unsubscribe = listenForRideRequests(
@@ -575,9 +583,30 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
               estimatedEarnings: req.estimatedCost,
               requestedAt: req.requestedAt,
               expiresAt: new Date(req.requestedAt.getTime() + 5 * 60 * 1000), // 5 min expiry
+              distanceFromDriver: (req as any).distanceFromDriver,
             };
           })
         );
+
+        // Send push notification for NEW requests (not already notified)
+        // This ensures driver gets notified even when app is in background
+        for (const request of appRequests) {
+          if (!notifiedRequestIds.has(request.id) && !get().processedRequestIds.has(request.id)) {
+            notifiedRequestIds.add(request.id);
+
+            // Send push notification
+            sendRideRequestNotification(
+              request.id,
+              request.riderName,
+              request.pickup.address,
+              request.destination.address,
+              request.estimatedEarnings,
+              (request as any).distanceFromDriver || 0
+            );
+
+            console.log('🔔 Sent push notification for ride request:', request.id);
+          }
+        }
 
         set({ incomingRequests: appRequests });
       },
@@ -638,6 +667,9 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     // Mark as processed immediately to prevent re-showing
     get().markRequestProcessed(requestId);
 
+    // Dismiss any ride request notifications
+    dismissRideRequestNotifications();
+
     try {
       console.log('🚗 Accepting ride request in Firebase:', requestId);
 
@@ -660,11 +692,13 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
 
       // Stop listening for new requests while we have an active ride
       // This prevents other requests from coming in and confusing the UI
+      // NOTE: We do NOT change isOnline status - driver remains online
       get().stopListeningForRequests();
 
       set({
         activeRide,
         incomingRequests: [], // Clear all incoming requests - we only handle one at a time
+        // isOnline stays true - driver is still online, just busy with a ride
       });
 
       console.log('✅ Accepted ride request:', requestId);
@@ -741,6 +775,8 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   
   completeRide: async (earnings, tip = 0) => {
     const ride = get().activeRide;
+    const wasOnline = get().isOnline;
+
     if (ride) {
       const completedRide: ActiveRide = {
         ...ride,
@@ -749,7 +785,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         actualEarnings: earnings,
         tip,
       };
-      
+
       set((state) => ({
         activeRide: null,
         rideHistory: [completedRide, ...state.rideHistory],
@@ -768,9 +804,23 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
           totalTrips: state.stats.totalTrips + 1,
         }
       }));
-      
-      // TODO: Update Firebase
-      console.log('Completed ride:', completedRide);
+
+      // Clear processed request IDs so driver can receive new requests
+      get().clearProcessedRequests();
+
+      // If driver was online, restart listening for new requests immediately
+      // This fixes the issue where driver has to go offline/online to receive new requests
+      if (wasOnline) {
+        console.log('🔄 Ride completed - restarting listener for new requests...');
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          if (get().isOnline && get().currentLocation) {
+            get().startListeningForRequests();
+          }
+        }, 500);
+      }
+
+      console.log('✅ Completed ride:', completedRide.id);
     }
   },
   

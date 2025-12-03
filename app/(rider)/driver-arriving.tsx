@@ -14,15 +14,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { useUserStore } from '@/src/stores/user-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
+import { ChatModal } from '@/components/messaging/ChatModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
 export default function DriverArrivingScreen() {
   const { currentTrip, subscribeToTrip, startLocationTracking } = useTripStore();
   const { clearBookingFlow } = useCarpoolStore();
+  const { user } = useUserStore();
   const [eta, setEta] = useState(5); // minutes
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
   const hasNavigatedRef = React.useRef(false);
 
   // If no current trip, redirect back
@@ -142,9 +146,8 @@ export default function DriverArrivingScreen() {
   };
 
   const handleMessage = () => {
-    if (!driver) return;
-    const sms = Platform.OS === 'ios' ? 'sms:' : 'sms:';
-    Linking.openURL(`${sms}${driver.phone}`);
+    if (!driver || !currentTrip) return;
+    setShowChatModal(true);
   };
 
   const handleCancelRide = () => {
@@ -338,6 +341,21 @@ export default function DriverArrivingScreen() {
           visible={showShareModal}
           tripId={currentTrip.id}
           onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {/* Chat Modal */}
+      {currentTrip && driver && user && (
+        <ChatModal
+          visible={showChatModal}
+          tripId={currentTrip.id}
+          userId={user.id}
+          userName={user.name || 'Rider'}
+          userPhoto={user.profilePhoto}
+          userType="rider"
+          otherUserName={driver.name}
+          onClose={() => setShowChatModal(false)}
+          isEnabled={true}
         />
       )}
     </SafeAreaView>

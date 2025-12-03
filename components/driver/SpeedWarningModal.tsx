@@ -3,6 +3,11 @@
  *
  * Full-screen warning modal that appears when driver exceeds speed limit by 6+ mph
  * Shows a clear warning with the speed, limit, and consequences
+ *
+ * Features:
+ * - Push notification sent when in background
+ * - Actionable notification responses linked to in-app popup
+ * - Enhanced red-zone warning with persistent display
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -14,13 +19,20 @@ import {
   TouchableOpacity,
   Animated,
   Vibration,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  sendDriverSpeedWarningNotification,
+  isAppInBackground,
+} from '@/src/services/safety-notification.service';
 
 interface SpeedWarningModalProps {
   visible: boolean;
   currentSpeed: number;
   speedLimit: number;
+  tripId?: string;
+  driverId?: string;
   onDismiss: () => void;
 }
 
@@ -28,37 +40,93 @@ export function SpeedWarningModal({
   visible,
   currentSpeed,
   speedLimit,
+  tripId,
+  driverId,
   onDismiss,
 }: SpeedWarningModalProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const notificationSentRef = useRef(false);
   const excessSpeed = currentSpeed - speedLimit;
+  const isRedZone = excessSpeed >= 6; // Red zone: 6+ mph over limit (Cayman law)
 
-  // Pulse animation for the warning icon
+  // Send push notification when visible and app is in background
+  useEffect(() => {
+    if (visible && tripId && driverId && !notificationSentRef.current) {
+      // Send notification regardless of app state for immediate awareness
+      sendDriverSpeedWarningNotification(tripId, driverId, currentSpeed, speedLimit);
+      notificationSentRef.current = true;
+    }
+
+    // Reset notification flag when modal closes
+    if (!visible) {
+      notificationSentRef.current = false;
+    }
+  }, [visible, tripId, driverId, currentSpeed, speedLimit]);
+
+  // Pulse and shake animation for the warning icon
   useEffect(() => {
     if (visible) {
-      // Vibrate to get attention
-      Vibration.vibrate([0, 500, 200, 500]);
+      // Vibrate to get attention - more intense for red zone
+      if (isRedZone) {
+        Vibration.vibrate([0, 800, 200, 800, 200, 800]);
+      } else {
+        Vibration.vibrate([0, 500, 200, 500]);
+      }
 
       // Start pulse animation
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 500,
+            toValue: isRedZone ? 1.3 : 1.2,
+            duration: isRedZone ? 300 : 500,
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 500,
+            duration: isRedZone ? 300 : 500,
             useNativeDriver: true,
           }),
         ])
       );
       pulse.start();
 
-      return () => pulse.stop();
+      // Add shake animation for red zone
+      if (isRedZone) {
+        const shake = Animated.loop(
+          Animated.sequence([
+            Animated.timing(shakeAnim, {
+              toValue: 10,
+              duration: 50,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: -10,
+              duration: 50,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: 10,
+              duration: 50,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: 0,
+              duration: 50,
+              useNativeDriver: true,
+            }),
+            Animated.delay(500),
+          ])
+        );
+        shake.start();
+      }
+
+      return () => {
+        pulse.stop();
+        shakeAnim.setValue(0);
+      };
     }
-  }, [visible]);
+  }, [visible, isRedZone]);
 
   return (
     <Modal
@@ -67,23 +135,52 @@ export function SpeedWarningModal({
       animationType="fade"
       onRequestClose={onDismiss}
     >
-      <View style={styles.overlay}>
-        <View style={styles.container}>
+      <Animated.View
+        style={[
+          styles.overlay,
+          isRedZone && styles.redZoneOverlay,
+          { transform: [{ translateX: shakeAnim }] },
+        ]}
+      >
+        <View style={[styles.container, isRedZone && styles.redZoneContainer]}>
           {/* Pulsing Warning Icon */}
           <Animated.View
-            style={[styles.iconContainer, { transform: [{ scale: pulseAnim }] }]}
+            style={[
+              styles.iconContainer,
+              isRedZone && styles.redZoneIconContainer,
+              { transform: [{ scale: pulseAnim }] },
+            ]}
           >
-            <Ionicons name="warning" size={64} color="#FFFFFF" />
+            <Ionicons
+              name={isRedZone ? 'alert' : 'warning'}
+              size={isRedZone ? 72 : 64}
+              color="#FFFFFF"
+            />
           </Animated.View>
 
           {/* Title */}
-          <Text style={styles.title}>SLOW DOWN!</Text>
+          <Text style={[styles.title, isRedZone && styles.redZoneTitle]}>
+            {isRedZone ? '🚨 DANGER! SLOW DOWN NOW!' : 'SLOW DOWN!'}
+          </Text>
+
+          {/* Red Zone Extra Warning */}
+          {isRedZone && (
+            <View style={styles.dangerBanner}>
+              <Ionicons name="skull" size={20} color="#FFFFFF" />
+              <Text style={styles.dangerBannerText}>
+                CRITICALLY EXCEEDING SPEED LIMIT
+              </Text>
+              <Ionicons name="skull" size={20} color="#FFFFFF" />
+            </View>
+          )}
 
           {/* Speed Display */}
           <View style={styles.speedContainer}>
-            <View style={styles.speedBox}>
+            <View style={[styles.speedBox, isRedZone && styles.redZoneSpeedBox]}>
               <Text style={styles.speedLabel}>Current</Text>
-              <Text style={styles.speedValue}>{Math.round(currentSpeed)}</Text>
+              <Text style={[styles.speedValue, isRedZone && styles.redZoneSpeedValue]}>
+                {Math.round(currentSpeed)}
+              </Text>
               <Text style={styles.speedUnit}>MPH</Text>
             </View>
             <View style={styles.limitBox}>
@@ -94,8 +191,8 @@ export function SpeedWarningModal({
           </View>
 
           {/* Excess Speed */}
-          <View style={styles.excessContainer}>
-            <Text style={styles.excessText}>
+          <View style={[styles.excessContainer, isRedZone && styles.redZoneExcessContainer]}>
+            <Text style={[styles.excessText, isRedZone && styles.redZoneExcessText]}>
               {Math.round(excessSpeed)} MPH OVER LIMIT
             </Text>
           </View>
@@ -104,24 +201,42 @@ export function SpeedWarningModal({
           <View style={styles.messageContainer}>
             <Ionicons name="people" size={24} color="#FCA5A5" style={styles.messageIcon} />
             <Text style={styles.messageText}>
-              We have special cargo in the car. Please drive safely for our riders.
+              {isRedZone
+                ? 'Your rider feels unsafe! This is being reported and may affect your driver status.'
+                : 'We have special cargo in the car. Please drive safely for our riders.'}
             </Text>
           </View>
 
           {/* Consequences Warning */}
-          <View style={styles.consequencesContainer}>
-            <Ionicons name="alert-circle" size={20} color="#FEF3C7" />
-            <Text style={styles.consequencesText}>
-              Continued speeding violations may result in suspension or permanent ban from the platform.
+          <View style={[styles.consequencesContainer, isRedZone && styles.redZoneConsequences]}>
+            <Ionicons name="alert-circle" size={20} color={isRedZone ? '#FFFFFF' : '#FEF3C7'} />
+            <Text style={[styles.consequencesText, isRedZone && styles.redZoneConsequencesText]}>
+              {isRedZone
+                ? 'IMMEDIATE ACTION REQUIRED: This violation is being logged and your rider has been notified. Multiple red-zone violations will result in immediate suspension.'
+                : 'Continued speeding violations may result in suspension or permanent ban from the platform.'}
             </Text>
           </View>
 
+          {/* Rider Notification Badge */}
+          {isRedZone && (
+            <View style={styles.riderNotifiedBadge}>
+              <Ionicons name="notifications" size={16} color="#FFFFFF" />
+              <Text style={styles.riderNotifiedText}>Rider has been notified</Text>
+            </View>
+          )}
+
           {/* Dismiss Button */}
-          <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
-            <Text style={styles.dismissText}>I Understand - Slowing Down</Text>
+          <TouchableOpacity
+            style={[styles.dismissButton, isRedZone && styles.redZoneDismissButton]}
+            onPress={onDismiss}
+          >
+            <Ionicons name="speedometer" size={20} color={isRedZone ? '#FFFFFF' : '#DC2626'} />
+            <Text style={[styles.dismissText, isRedZone && styles.redZoneDismissText]}>
+              {isRedZone ? 'I Will Slow Down Immediately' : 'I Understand - Slowing Down'}
+            </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -259,5 +374,95 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#DC2626',
+  },
+
+  // Red Zone Styles (10+ mph over limit)
+  redZoneOverlay: {
+    backgroundColor: 'rgba(127, 29, 29, 0.98)', // Darker, more intense red
+  },
+  redZoneContainer: {
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+  },
+  redZoneIconContainer: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#7F1D1D',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+  },
+  redZoneTitle: {
+    fontSize: 32,
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 6,
+  },
+  dangerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 10,
+  },
+  dangerBannerText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FF0000',
+    letterSpacing: 2,
+  },
+  redZoneSpeedBox: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderWidth: 3,
+    borderColor: '#FF0000',
+  },
+  redZoneSpeedValue: {
+    fontSize: 56,
+    color: '#FF6B6B',
+  },
+  redZoneExcessContainer: {
+    backgroundColor: '#000000',
+    borderWidth: 2,
+    borderColor: '#FF0000',
+  },
+  redZoneExcessText: {
+    fontSize: 20,
+    color: '#FF0000',
+  },
+  redZoneConsequences: {
+    backgroundColor: '#7F1D1D',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  redZoneConsequencesText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  riderNotifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E40AF',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginBottom: 16,
+    gap: 8,
+  },
+  riderNotifiedText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  redZoneDismissButton: {
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  redZoneDismissText: {
+    color: '#FFFFFF',
   },
 });

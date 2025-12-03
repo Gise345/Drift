@@ -32,7 +32,10 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing, Shadows } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 import { startTrip } from '@/src/services/ride-request.service';
+import { endMessaging } from '@/src/services/messaging.service';
+import { ChatModal } from '@/components/messaging/ChatModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.55;
@@ -43,8 +46,10 @@ export default function ArrivedAtPickup() {
   const insets = useSafeAreaInsets();
   const { activeRide, startRide, setActiveRide } = useDriverStore();
   const { subscribeToTrip, currentTrip } = useTripStore();
+  const { user } = useAuthStore();
   const [waitTime, setWaitTime] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
   const maxWaitTime = 300; // 5 minutes in seconds
 
   // Animation for pulsing effect
@@ -134,14 +139,18 @@ export default function ArrivedAtPickup() {
   };
 
   const handleMessageRider = () => {
-    const phone = (activeRide as any).riderPhone || '+13455551234';
-    Linking.openURL(`sms:${phone}`);
+    if (!activeRide) return;
+    setShowChatModal(true);
   };
 
   const handleStartRide = async () => {
     setIsStarting(true);
 
     try {
+      // End messaging before starting the trip
+      await endMessaging(activeRide.id);
+      console.log('✅ Messaging ended for trip');
+
       // Update trip status to IN_PROGRESS in Firebase
       // This will trigger the rider's screen to navigate to trip-in-progress
       await startTrip(activeRide.id);
@@ -350,6 +359,21 @@ export default function ArrivedAtPickup() {
           </Text>
         </View>
       </View>
+
+      {/* Chat Modal */}
+      {activeRide && user && (
+        <ChatModal
+          visible={showChatModal}
+          tripId={activeRide.id}
+          userId={user.id}
+          userName={user.name || user.email?.split('@')[0] || 'Driver'}
+          userPhoto={user.photoURL}
+          userType="driver"
+          otherUserName={activeRide.riderName}
+          onClose={() => setShowChatModal(false)}
+          isEnabled={true}
+        />
+      )}
     </View>
   );
 }
