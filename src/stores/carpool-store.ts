@@ -70,6 +70,7 @@ interface CarpoolState {
   vehicleType: string | null;
   estimatedCost: EstimatedCost | null;
   selectedPaymentMethod: string | null;
+  womenOnlyRide: boolean; // Women-only ride preference
 
   // ============================================================================
   // PRICING STATE - Zone-Based Pricing
@@ -100,6 +101,7 @@ interface CarpoolState {
   setVehicleType: (vehicleType: string | null) => void;
   setEstimatedCost: (cost: EstimatedCost | null) => void;
   setSelectedPaymentMethod: (method: string | null) => void;
+  setWomenOnlyRide: (enabled: boolean) => void;
   clearBookingFlow: () => void;
 
   // ============================================================================
@@ -142,12 +144,13 @@ const initialState = {
   vehicleType: null,
   estimatedCost: null,
   selectedPaymentMethod: null,
-  
+  womenOnlyRide: false,
+
   // Pricing initial state
   pricing: null,
   zoneInfo: null,
   lockedContribution: null,
-  
+
   recentActivity: [],
   savedRoutes: [],
   totalTrips: 0,
@@ -190,7 +193,9 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
   setEstimatedCost: (cost) => set({ estimatedCost: cost }),
   
   setSelectedPaymentMethod: (method) => set({ selectedPaymentMethod: method }),
-  
+
+  setWomenOnlyRide: (enabled) => set({ womenOnlyRide: enabled }),
+
   clearBookingFlow: () => set({
     pickupLocation: null,
     destination: null,
@@ -199,6 +204,7 @@ export const useCarpoolStore = create<CarpoolState>((set) => ({
     vehicleType: null,
     estimatedCost: null,
     selectedPaymentMethod: null,
+    womenOnlyRide: false,
     pricing: null,
     zoneInfo: null,
     lockedContribution: null,

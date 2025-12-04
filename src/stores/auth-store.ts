@@ -45,6 +45,7 @@ interface User {
   photoURL?: string;
   profilePhoto?: string; // Alternative field name used by some screens
   roles: string[];
+  gender?: 'male' | 'female' | null;
   hasAcceptedTerms: boolean;
   emailVerified?: boolean;
   rating?: number;

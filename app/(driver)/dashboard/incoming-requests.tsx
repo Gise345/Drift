@@ -158,13 +158,21 @@ export default function IncomingRequests() {
                     />
                   </View>
 
+                  {/* Women-Only Badge */}
+                  {(request as any).womenOnlyRide && (
+                    <View style={styles.womenOnlyBanner}>
+                      <Ionicons name="shield-checkmark" size={14} color="#FFFFFF" />
+                      <Text style={styles.womenOnlyBannerText}>Women-Only Ride Request</Text>
+                    </View>
+                  )}
+
                   {/* Header */}
                   <TouchableOpacity
                     style={styles.requestHeader}
                     onPress={() => router.push(`/(driver)/requests/request-detail?id=${request.id}`)}
                   >
                     <View style={styles.riderInfo}>
-                      <Ionicons name="person-circle" size={40} color={Colors.primary} />
+                      <Ionicons name="person-circle" size={40} color={(request as any).womenOnlyRide ? '#EC4899' : Colors.primary} />
                       <View style={styles.riderDetails}>
                         <Text style={styles.riderName}>{request.riderName}</Text>
                         <View style={styles.ratingRow}>
@@ -302,6 +310,14 @@ export default function IncomingRequests() {
                       </Text>
                     </View>
                   )}
+
+                  {/* Age Restriction Warning */}
+                  <View style={styles.ageWarning}>
+                    <Ionicons name="alert-circle" size={14} color={Colors.warning} />
+                    <Text style={styles.ageWarningText}>
+                Children under 16 must be accompanied by an adult. You must refuse unaccompanied minors. Violations result in account suspension or  permanent ban.
+                    </Text>
+                  </View>
 
                   {/* Actions */}
                   <View style={styles.actions}>
@@ -661,5 +677,33 @@ const styles = StyleSheet.create({
     ...Typography.body,
     fontWeight: '600',
     color: Colors.white,
+  },
+  ageWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.warning + '15',
+    gap: 6,
+  },
+  ageWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.warning,
+    fontWeight: '500',
+    lineHeight: 15,
+  },
+  womenOnlyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EC4899',
+    paddingVertical: Spacing.sm,
+    gap: 6,
+  },
+  womenOnlyBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

@@ -130,20 +130,8 @@ export default function DriverArrivingScreen() {
 
   const toRad = (degrees: number) => degrees * (Math.PI / 180);
 
-  const handleCall = () => {
-    if (!driver) return;
-    Alert.alert(
-      'Call Driver',
-      `Call ${driver.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Call', 
-          onPress: () => Linking.openURL(`tel:${driver.phone}`)
-        },
-      ]
-    );
-  };
+  // Call button removed for safety - users should use in-app messaging instead
+  // Phone numbers are not shared between riders and drivers for privacy
 
   const handleMessage = () => {
     if (!driver || !currentTrip) return;
@@ -309,15 +297,11 @@ export default function DriverArrivingScreen() {
           </View>
         </View>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - Message only (call removed for safety) */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-            <Ionicons name="call" size={24} color="white" />
-            <Text style={styles.actionButtonText}>Call</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
-            <Ionicons name="chatbubble" size={24} color="white" />
-            <Text style={styles.actionButtonText}>Message</Text>
+          <TouchableOpacity style={[styles.actionButton, styles.messageButton]} onPress={handleMessage}>
+            <Ionicons name="chatbubble-ellipses" size={24} color="white" />
+            <Text style={styles.actionButtonText}>Message Driver</Text>
           </TouchableOpacity>
         </View>
 
@@ -532,6 +516,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  messageButton: {
+    backgroundColor: '#5d1289',
   },
   actionButtonText: {
     color: 'white',

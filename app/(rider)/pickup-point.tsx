@@ -87,13 +87,8 @@ export default function PickupPointScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleCall = () => {
-    if (!driver?.phone) {
-      Alert.alert('Error', 'Driver phone number not available');
-      return;
-    }
-    Linking.openURL(`tel:${driver.phone}`);
-  };
+  // Call button removed for safety - use in-app messaging instead
+  // Phone numbers are not shared between riders and drivers for privacy
 
   const handleMessage = () => {
     if (!driver || !currentTrip) return;
@@ -226,21 +221,13 @@ export default function PickupPointScreen() {
             </View>
           </View>
 
-          {/* Contact buttons */}
-          <View style={styles.contactButtons}>
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleMessage}
-            >
-              <Ionicons name="chatbubble-outline" size={20} color="#5d1289ff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.contactButton}
-              onPress={handleCall}
-            >
-              <Ionicons name="call-outline" size={20} color="#10B981" />
-            </TouchableOpacity>
-          </View>
+          {/* Message button only - call removed for safety */}
+          <TouchableOpacity
+            style={styles.contactButton}
+            onPress={handleMessage}
+          >
+            <Ionicons name="chatbubble-ellipses" size={22} color="#5d1289ff" />
+          </TouchableOpacity>
         </View>
 
         {/* Vehicle Info */}

@@ -370,21 +370,84 @@ export async function initializeMessaging(
 }
 
 /**
- * Send a push notification for a new message
+ * Send a push notification for a new message via Cloud Function
  */
 export async function sendMessageNotification(
-  recipientName: string,
+  tripId: string,
+  recipientId: string,
+  recipientType: 'rider' | 'driver',
   senderName: string,
   messageText: string
-): Promise<void> {
-  // Note: This is a placeholder for push notification integration
-  // In production, you would call your Cloud Function or notification service
-  // to send a push notification to the recipient device
-  console.log(
-    `📱 Message notification: ${senderName} to ${recipientName}: "${messageText.substring(0, 50)}${
-      messageText.length > 50 ? '...' : ''
-    }"`
+): Promise<boolean> {
+  try {
+    const functions = require('@react-native-firebase/functions').default;
+
+    // Call Cloud Function to send push notification
+    const sendNotification = functions().httpsCallable('sendMessageNotification');
+
+    await sendNotification({
+      tripId,
+      recipientId,
+      recipientType,
+      title: `New message from ${senderName}`,
+      body: messageText.length > 100 ? messageText.substring(0, 97) + '...' : messageText,
+      data: {
+        type: 'CHAT_MESSAGE',
+        tripId,
+        senderName,
+      },
+    });
+
+    console.log('📱 Push notification sent for message');
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send message notification:', error);
+    // Don't throw - notification failure shouldn't break the chat
+    return false;
+  }
+}
+
+/**
+ * Subscribe to unread message count (real-time)
+ * Returns unsubscribe function
+ */
+export function subscribeToUnreadCount(
+  tripId: string,
+  userId: string,
+  callback: (count: number) => void
+): () => void {
+  const messagesRef = collection(firebaseDb, 'trips', tripId, 'messages');
+
+  // Note: Firestore doesn't support != and 'in' in the same query,
+  // so we fetch all messages and filter client-side
+  const q = query(
+    messagesRef,
+    orderBy('timestamp', 'desc'),
+    limit(50)
   );
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      let unreadCount = 0;
+
+      snapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        // Count messages not from this user that are unread
+        if (data.senderId !== userId && data.status !== 'read') {
+          unreadCount++;
+        }
+      });
+
+      callback(unreadCount);
+    },
+    (error) => {
+      console.error('❌ Error subscribing to unread count:', error);
+      callback(0);
+    }
+  );
+
+  return unsubscribe;
 }
 
 export default {
@@ -399,4 +462,5 @@ export default {
   endMessaging,
   initializeMessaging,
   sendMessageNotification,
+  subscribeToUnreadCount,
 };

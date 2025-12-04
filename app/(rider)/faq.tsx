@@ -42,7 +42,7 @@ export default function FAQScreen() {
     {
       id: 7,
       question: 'How do I contact my driver?',
-      answer: 'Once matched, you can call or message your driver directly through the app using the contact buttons.',
+      answer: 'Once matched, you can message your driver securely through the app using the chat button. For your safety, phone numbers are not shared between riders and drivers.',
     },
     {
       id: 8,

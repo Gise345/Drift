@@ -466,9 +466,8 @@ export default function NavigateToPickup() {
     ]);
   };
 
-  const handleCallRider = () => {
-    Alert.alert('Call Rider', 'Contact feature coming soon.');
-  };
+  // Call button removed for safety - use in-app messaging instead
+  // Phone numbers are not shared between riders and drivers for privacy
 
   const handleMessageRider = () => {
     if (!activeRide) return;
@@ -629,14 +628,10 @@ export default function NavigateToPickup() {
                   <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
                 </View>
               </View>
-              <View style={styles.contactButtons}>
-                <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
-                  <Ionicons name="chatbubble" size={20} color={Colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
-                  <Ionicons name="call" size={20} color={Colors.primary} />
-                </TouchableOpacity>
-              </View>
+              {/* Message button only - call removed for safety */}
+              <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
+                <Ionicons name="chatbubble-ellipses" size={22} color={Colors.primary} />
+              </TouchableOpacity>
             </View>
 
             {/* Pickup Location */}

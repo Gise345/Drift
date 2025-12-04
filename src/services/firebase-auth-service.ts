@@ -66,6 +66,7 @@ export interface DriftUser {
   phone?: string;
   photoURL?: string;
   roles: UserRole[];
+  gender?: 'male' | 'female' | null;
   hasAcceptedTerms: boolean;
   emailVerified: boolean;
   rating: number;
@@ -82,6 +83,7 @@ export interface RegistrationData {
   fullName: string;
   phone?: string;
   role: UserRole;
+  gender?: 'male' | 'female';
 }
 
 // ============================================================================
@@ -160,6 +162,7 @@ export async function registerWithEmail(
       phone: data.phone || '',
       photoURL: firebaseUser.photoURL || '',
       roles: [data.role],
+      gender: data.gender || null, // Gender for women-only ride feature
       hasAcceptedTerms: true,
       emailVerified: false,
       rating: 5.0,

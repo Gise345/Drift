@@ -193,7 +193,7 @@ export default function RideRequestModal({
         <View style={styles.container}>
           {/* Header with Timer */}
           <LinearGradient
-            colors={[Colors.primary, Colors.primaryDark]}
+            colors={request.womenOnlyRide ? ['#EC4899', '#BE185D'] : [Colors.primary, Colors.primaryDark]}
             style={styles.header}
           >
             <View style={styles.headerContent}>
@@ -204,13 +204,31 @@ export default function RideRequestModal({
               </View>
 
               <View style={styles.headerTextContainer}>
-                <Text style={styles.headerTitle}>New Ride Request</Text>
+                <View style={styles.headerTitleRow}>
+                  <Text style={styles.headerTitle}>New Ride Request</Text>
+                  {request.womenOnlyRide && (
+                    <View style={styles.womenOnlyBadge}>
+                      <Ionicons name="shield-checkmark" size={12} color="#FFFFFF" />
+                      <Text style={styles.womenOnlyBadgeText}>Women-Only</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.headerSubtitle}>
                   {request.riderName} • {request.riderRating}⭐
                 </Text>
               </View>
             </View>
           </LinearGradient>
+
+          {/* Women-Only Ride Alert */}
+          {request.womenOnlyRide && (
+            <View style={styles.womenOnlyAlert}>
+              <Ionicons name="information-circle" size={18} color="#BE185D" />
+              <Text style={styles.womenOnlyAlertText}>
+                This is a women-only ride request. The rider expects a female driver. If a male presents themselves, you may cancel with zero penalty and receive 50% cancellation fee.
+              </Text>
+            </View>
+          )}
 
           {/* Earnings Banner */}
           <View style={styles.earningsBanner}>
@@ -277,6 +295,14 @@ export default function RideRequestModal({
                 <Text style={styles.notesText}>{request.notes}</Text>
               </View>
             )}
+
+            {/* Age Restriction Warning */}
+            <View style={styles.ageWarningContainer}>
+              <Ionicons name="alert-circle" size={18} color={Colors.warning} />
+              <Text style={styles.ageWarningText}>
+                Children under 16 must be accompanied by an adult. You must refuse unaccompanied minors. Violations result in account suspension or  permanent ban.
+              </Text>
+            </View>
           </View>
 
           {/* Action Buttons */}
@@ -318,7 +344,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: BorderRadius['2xl'],
     borderTopRightRadius: BorderRadius['2xl'],
     maxHeight: height * 0.85,
-    ...Shadows['2xl'],
+    ...(Shadows as any)['2xl'],
   },
 
   // Header
@@ -534,5 +560,71 @@ const styles = StyleSheet.create({
 
   textDisabled: {
     color: Colors.gray[400],
+  },
+
+  // Age Warning
+  ageWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.warning + '15',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+
+  ageWarningText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.warning,
+    lineHeight: 18,
+  },
+
+  // Women-Only Styles
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
+  },
+
+  womenOnlyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+
+  womenOnlyBadgeText: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.bold,
+    color: '#FFFFFF',
+  },
+
+  womenOnlyAlert: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: '#FDF2F8',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: '#FBCFE8',
+  },
+
+  womenOnlyAlertText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
+    color: '#9D174D',
+    lineHeight: 18,
   },
 });

@@ -675,6 +675,16 @@ const SelectDestinationScreen = () => {
         </View>
       )}
 
+      {/* Age Restriction Notice */}
+      <View style={styles.ageNoticeContainer}>
+        <View style={styles.ageNotice}>
+          <Ionicons name="warning" size={18} color="#F59E0B" />
+          <Text style={styles.ageNoticeText}>
+            Children under 16 must be accompanied by an adult. Unaccompanied minors are prohibited.
+          </Text>
+        </View>
+      </View>
+
       {/* Route Info Card */}
       {!loading && routeCoordinates.length > 0 && (
         <View style={[styles.infoCard, { bottom: insets.bottom + 16 }]}>
@@ -996,6 +1006,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#000',
     textAlign: 'center',
+  },
+  ageNoticeContainer: {
+    position: 'absolute',
+    top: 70,
+    left: 16,
+    right: 16,
+    zIndex: 100,
+  },
+  ageNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  ageNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#92400E',
+    lineHeight: 16,
   },
 });
 

@@ -63,6 +63,16 @@ interface TripData {
   } | null;
   rating?: number;
   paymentMethod: string;
+  // Cancellation info
+  cancellation?: {
+    cancelledBy: 'DRIVER' | 'RIDER';
+    reason: string;
+    reasonType: string;
+    fee: number;
+    refundAmount: number;
+    wasRiderFault: boolean;
+    wasDriverFault: boolean;
+  };
 }
 
 // Helper to format date
@@ -180,6 +190,17 @@ export default function TripDetailScreen() {
       const distanceRaw = data.distance || data.actualDistance || 0;
       const durationRaw = data.duration || data.actualDuration || data.estimatedDuration || 0;
 
+      // Parse cancellation data if trip was cancelled
+      const cancellation = data.status === 'CANCELLED' ? {
+        cancelledBy: data.cancelledBy || 'UNKNOWN',
+        reason: data.cancellationReason || 'No reason provided',
+        reasonType: data.cancellationReasonType || 'OTHER',
+        fee: data.cancellationFee || 0,
+        refundAmount: data.refundAmount || baseCost,
+        wasRiderFault: data.wasRiderFault || false,
+        wasDriverFault: data.wasDriverFault || false,
+      } : undefined;
+
       // Build trip object
       const tripData: TripData = {
         id: tripDoc.id,
@@ -222,6 +243,7 @@ export default function TripDetailScreen() {
         } : null,
         rating: data.driverRating,
         paymentMethod: data.paymentMethod || 'Card',
+        cancellation,
       };
 
       setTrip(tripData);
@@ -401,7 +423,7 @@ export default function TripDetailScreen() {
       await firestore().collection('tripIssues').add({
         tripId: trip.id,
         riderId: user?.id,
-        riderName: user?.name || user?.firstName || 'Unknown',
+        riderName: user?.name || 'Unknown',
         riderEmail: user?.email,
         driverId: trip.driver?.name ? trip.id : null,
         driverName: trip.driver?.name || 'Unknown',
@@ -664,6 +686,75 @@ export default function TripDetailScreen() {
             </View>
           )}
         </View>
+
+        {/* Cancellation Info Card */}
+        {trip.cancellation && (
+          <View style={styles.cancellationCard}>
+            <View style={styles.cancellationHeader}>
+              <Ionicons
+                name={trip.cancellation.wasDriverFault ? 'checkmark-circle' : 'close-circle'}
+                size={24}
+                color={trip.cancellation.wasDriverFault ? '#10B981' : '#EF4444'}
+              />
+              <Text style={styles.cancellationTitle}>
+                {trip.cancellation.wasDriverFault ? 'Trip Cancelled - Full Refund' : 'Trip Cancelled'}
+              </Text>
+            </View>
+
+            {/* Reason */}
+            <View style={styles.cancellationRow}>
+              <Text style={styles.cancellationLabel}>Cancelled by</Text>
+              <Text style={styles.cancellationValue}>
+                {trip.cancellation.cancelledBy === 'DRIVER' ? 'Driver' : 'You'}
+              </Text>
+            </View>
+
+            <View style={styles.cancellationRow}>
+              <Text style={styles.cancellationLabel}>Reason</Text>
+              <Text style={styles.cancellationValue}>{trip.cancellation.reason}</Text>
+            </View>
+
+            {/* Fee breakdown */}
+            {trip.cancellation.fee > 0 && (
+              <View style={styles.cancellationFeeSection}>
+                <View style={styles.cancellationRow}>
+                  <Text style={styles.cancellationLabel}>Cancellation Fee (50%)</Text>
+                  <Text style={[styles.cancellationValue, { color: '#EF4444' }]}>
+                    CI${trip.cancellation.fee.toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.cancellationRow}>
+                  <Text style={styles.cancellationLabel}>Refund Amount</Text>
+                  <Text style={[styles.cancellationValue, { color: '#10B981' }]}>
+                    CI${trip.cancellation.refundAmount.toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Full refund notice */}
+            {trip.cancellation.wasDriverFault && (
+              <View style={styles.refundNotice}>
+                <Ionicons name="information-circle" size={18} color="#10B981" />
+                <Text style={styles.refundNoticeText}>
+                  The driver cancelled due to their own circumstances. You received a full refund of CI${trip.cancellation.refundAmount.toFixed(2)}.
+                </Text>
+              </View>
+            )}
+
+            {/* Rider charged notice */}
+            {trip.cancellation.fee > 0 && !trip.cancellation.wasDriverFault && (
+              <View style={[styles.refundNotice, { backgroundColor: '#FEF2F2' }]}>
+                <Ionicons name="information-circle" size={18} color="#EF4444" />
+                <Text style={[styles.refundNoticeText, { color: '#DC2626' }]}>
+                  {trip.cancellation.cancelledBy === 'RIDER'
+                    ? 'You cancelled after the driver was already on the way. A 50% cancellation fee has been applied.'
+                    : 'The trip was cancelled due to rider issues. A 50% cancellation fee has been applied.'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Actions */}
         <View style={styles.actions}>
@@ -1063,5 +1154,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
+  },
+  // Cancellation card styles
+  cancellationCard: {
+    backgroundColor: '#FFF',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+  },
+  cancellationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  cancellationTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  cancellationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  cancellationLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  cancellationValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  cancellationFeeSection: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  refundNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+  },
+  refundNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#065F46',
+    lineHeight: 18,
   },
 });

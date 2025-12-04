@@ -34,6 +34,7 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedRole, setSelectedRole] = useState<UserRole>('RIDER');
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -79,6 +80,11 @@ export default function SignUpScreen() {
       return;
     }
 
+    if (!selectedGender) {
+      Alert.alert('Error', 'Please select your gender to continue');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -87,6 +93,7 @@ export default function SignUpScreen() {
         password,
         fullName: fullName.trim(),
         role: selectedRole,
+        gender: selectedGender!,
       };
 
       const { user, needsVerification } = await registerWithEmail(registrationData);
@@ -184,7 +191,8 @@ export default function SignUpScreen() {
     validateEmail(email) &&
     validatePassword(password) &&
     !!passwordsMatch &&
-    acceptedTerms;
+    acceptedTerms &&
+    selectedGender !== null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -347,6 +355,71 @@ export default function SignUpScreen() {
                 showValidation={confirmPassword.length > 0}
                 isValid={!!passwordsMatch}
               />
+
+              {/* Gender Selection */}
+              <View style={styles.genderSection}>
+                <Text style={styles.genderTitle}>Gender</Text>
+                <Text style={styles.genderSubtitle}>
+                  Required for safety features like women-only rides
+                </Text>
+                <View style={styles.genderOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.genderOption,
+                      selectedGender === 'female' && styles.genderOptionSelected,
+                    ]}
+                    onPress={() => setSelectedGender('female')}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.genderRadio,
+                        selectedGender === 'female' && styles.genderRadioSelected,
+                      ]}
+                    >
+                      {selectedGender === 'female' && (
+                        <View style={styles.genderRadioInner} />
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.genderLabel,
+                        selectedGender === 'female' && styles.genderLabelSelected,
+                      ]}
+                    >
+                      Female
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.genderOption,
+                      selectedGender === 'male' && styles.genderOptionSelected,
+                    ]}
+                    onPress={() => setSelectedGender('male')}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.genderRadio,
+                        selectedGender === 'male' && styles.genderRadioSelected,
+                      ]}
+                    >
+                      {selectedGender === 'male' && (
+                        <View style={styles.genderRadioInner} />
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.genderLabel,
+                        selectedGender === 'male' && styles.genderLabelSelected,
+                      ]}
+                    >
+                      Male
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               {/* Terms */}
               <View style={styles.termsContainer}>
@@ -676,5 +749,66 @@ const styles = StyleSheet.create({
   legalBold: {
     fontWeight: '700',
     color: Colors.gray[50],
+  },
+  // Gender Selection Styles
+  genderSection: {
+    marginBottom: Spacing.lg,
+  },
+  genderTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.gray[100],
+    marginBottom: Spacing.xs,
+  },
+  genderSubtitle: {
+    fontSize: Typography.fontSize.xs,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: Spacing.md,
+  },
+  genderOptions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  genderOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    padding: Spacing.md,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.16)',
+    gap: 10,
+  },
+  genderOptionSelected: {
+    backgroundColor: Colors.purple + '30',
+    borderColor: Colors.purple,
+  },
+  genderRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  genderRadioSelected: {
+    borderColor: Colors.purple,
+  },
+  genderRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.purple,
+  },
+  genderLabel: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '500',
+    color: Colors.gray[100],
+  },
+  genderLabelSelected: {
+    color: Colors.white,
+    fontWeight: '600',
   },
 });

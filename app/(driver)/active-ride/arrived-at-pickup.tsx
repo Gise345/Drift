@@ -130,13 +130,8 @@ export default function ArrivedAtPickup() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleCallRider = () => {
-    const phone = (activeRide as any).riderPhone || '+13455551234';
-    Alert.alert('Call Rider', `Call ${activeRide.riderName}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Call', onPress: () => Linking.openURL(`tel:${phone}`) },
-    ]);
-  };
+  // Call button removed for safety - use in-app messaging instead
+  // Phone numbers are not shared between riders and drivers for privacy
 
   const handleMessageRider = () => {
     if (!activeRide) return;
@@ -286,14 +281,10 @@ export default function ArrivedAtPickup() {
               <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
             </View>
           </View>
-          <View style={styles.contactButtons}>
-            <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
-              <Ionicons name="chatbubble" size={20} color={Colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton} onPress={handleCallRider}>
-              <Ionicons name="call" size={20} color={Colors.success} />
-            </TouchableOpacity>
-          </View>
+          {/* Message button only - call removed for safety */}
+          <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
+            <Ionicons name="chatbubble-ellipses" size={22} color={Colors.primary} />
+          </TouchableOpacity>
         </View>
 
         {/* Pickup Location */}
@@ -350,6 +341,46 @@ export default function ArrivedAtPickup() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Women-Only Ride Alert */}
+        {(activeRide as any).womenOnlyRide && (
+          <View style={styles.womenOnlyAlert}>
+            <Ionicons name="shield-checkmark" size={16} color="#BE185D" />
+            <View style={styles.womenOnlyAlertContent}>
+              <Text style={styles.womenOnlyAlertTitle}>Women-Only Ride</Text>
+              <Text style={styles.womenOnlyAlertText}>
+                This rider requested a female driver. If a male presents themselves instead, you may cancel without penalty.
+              </Text>
+              <TouchableOpacity
+                style={styles.genderViolationButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Gender Safety Cancellation',
+                    'Are you cancelling because a male presented themselves instead of the expected female rider?\n\nYou will receive 50% of the ride fare as compensation.',
+                    [
+                      { text: 'No, Go Back', style: 'cancel' },
+                      {
+                        text: 'Yes, Cancel Ride',
+                        style: 'destructive',
+                        onPress: () => {
+                          // In a real implementation, this would call a service to handle the cancellation
+                          Alert.alert(
+                            'Ride Cancelled',
+                            'The ride has been cancelled due to a gender safety violation. You will receive 50% compensation.',
+                            [{ text: 'OK', onPress: () => router.replace('/(driver)/tabs') }]
+                          );
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Ionicons name="close-circle" size={14} color="#BE185D" />
+                <Text style={styles.genderViolationButtonText}>Cancel - Wrong Gender</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Safety Info */}
         <View style={styles.safetyInfo}>
@@ -691,5 +722,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.gray[500],
     marginLeft: 6,
+  },
+  // Women-Only Styles
+  womenOnlyAlert: {
+    flexDirection: 'row',
+    backgroundColor: '#FDF2F8',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FBCFE8',
+    gap: 10,
+  },
+  womenOnlyAlertContent: {
+    flex: 1,
+  },
+  womenOnlyAlertTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#BE185D',
+    marginBottom: 4,
+  },
+  womenOnlyAlertText: {
+    fontSize: 11,
+    color: '#9D174D',
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  genderViolationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FBCFE8',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+  },
+  genderViolationButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#BE185D',
   },
 });

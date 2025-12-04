@@ -210,7 +210,7 @@ export default function LegalConsent() {
         <View style={styles.genderSection}>
           <Text style={styles.genderTitle}>Gender Assigned at Birth</Text>
           <Text style={styles.genderSubtitle}>
-            This helps us offer future safety features like allowing female riders to request female drivers only.
+            This helps us offer safety features like allowing female riders to request female drivers only.
           </Text>
 
           <View style={styles.genderOptions}>

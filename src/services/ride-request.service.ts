@@ -537,23 +537,145 @@ export async function finalizeTrip(tripId: string): Promise<void> {
   }
 }
 
+// Cancellation reason types for determining fee applicability
+export type CancellationReason =
+  // Rider-fault reasons (50% fee applies)
+  | 'RIDER_CANCELLED_AFTER_DRIVER_LEFT'
+  | 'RIDER_NO_SHOW'
+  | 'RIDER_NOT_RESPONDING'
+  | 'RIDER_REQUESTED_CANCELLATION'
+  // Driver-fault reasons (full refund)
+  | 'DRIVER_EMERGENCY'
+  | 'DRIVER_VEHICLE_ISSUE'
+  | 'DRIVER_CANCELLED_OWN_FAULT'
+  // No fee reasons (before driver accepts or en route)
+  | 'RIDER_CANCELLED_WHILE_SEARCHING'
+  | 'DRIVER_DECLINED'
+  | 'NO_DRIVERS_AVAILABLE'
+  | 'OTHER';
+
+// Reasons that incur 50% cancellation fee for rider
+const RIDER_FAULT_REASONS: CancellationReason[] = [
+  'RIDER_CANCELLED_AFTER_DRIVER_LEFT',
+  'RIDER_NO_SHOW',
+  'RIDER_NOT_RESPONDING',
+  'RIDER_REQUESTED_CANCELLATION',
+];
+
+// Reasons that give full refund (driver fault)
+const DRIVER_FAULT_REASONS: CancellationReason[] = [
+  'DRIVER_EMERGENCY',
+  'DRIVER_VEHICLE_ISSUE',
+  'DRIVER_CANCELLED_OWN_FAULT',
+];
+
 /**
- * Cancel the trip
+ * Cancel the trip with intelligent fee logic
+ *
+ * Fee Logic:
+ * - If rider cancels BEFORE driver accepts: No fee
+ * - If rider cancels AFTER driver accepts but before driver leaves: No fee
+ * - If rider cancels AFTER driver has left/is en route: 50% fee
+ * - If driver cancels due to rider fault (no show, not responding): 50% fee
+ * - If driver cancels due to own fault (emergency, vehicle issue): Full refund
  */
 export async function cancelTrip(
   tripId: string,
   cancelledBy: 'DRIVER' | 'RIDER',
-  reason: string
-): Promise<void> {
+  reason: string,
+  cancellationReason?: CancellationReason
+): Promise<{ cancellationFee: number; refundAmount: number; driverCompensation: number }> {
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!documentExists(tripDoc)) {
+      throw new Error('Trip not found');
+    }
+
+    const tripData = tripDoc.data();
+    const status = tripData?.status;
+    const driverId = tripData?.driverId || tripData?.driverInfo?.id;
+    const estimatedCost = tripData?.lockedContribution || tripData?.estimatedCost || tripData?.pricing?.suggestedContribution || 0;
+
+    let cancellationFee = 0;
+    let refundAmount = estimatedCost;
+    let driverCompensation = 0;
+    let shouldChargeFee = false;
+    let fullRefund = false;
+
+    // Determine if fee should be charged based on status and reason
+    const driverHasAccepted = ['ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status);
+
+    if (cancelledBy === 'RIDER') {
+      // Rider cancellation logic
+      if (driverHasAccepted && (status === 'DRIVER_ARRIVING' || status === 'DRIVER_ARRIVED')) {
+        // Driver is on the way or has arrived - charge 50% fee
+        shouldChargeFee = true;
+      } else if (cancellationReason && RIDER_FAULT_REASONS.includes(cancellationReason)) {
+        shouldChargeFee = true;
+      }
+    } else if (cancelledBy === 'DRIVER') {
+      // Driver cancellation logic
+      if (cancellationReason && RIDER_FAULT_REASONS.includes(cancellationReason)) {
+        // Driver cancelling due to rider's fault - charge rider 50%
+        shouldChargeFee = true;
+      } else if (cancellationReason && DRIVER_FAULT_REASONS.includes(cancellationReason)) {
+        // Driver cancelling due to own fault - full refund
+        fullRefund = true;
+      }
+    }
+
+    // Calculate fees
+    if (shouldChargeFee) {
+      cancellationFee = Math.round((estimatedCost * 0.5) * 100) / 100;
+      refundAmount = Math.round((estimatedCost - cancellationFee) * 100) / 100;
+      driverCompensation = cancellationFee; // Driver gets the fee
+    } else if (fullRefund) {
+      cancellationFee = 0;
+      refundAmount = estimatedCost;
+      driverCompensation = 0;
+    }
+
+    console.log('💰 Cancellation calculation:', {
+      tripId,
+      status,
+      cancelledBy,
+      cancellationReason,
+      estimatedCost,
+      cancellationFee,
+      refundAmount,
+      driverCompensation,
+    });
+
+    // Update trip with cancellation details
     await updateDoc(tripRef, {
       status: 'CANCELLED',
       cancelledBy,
       cancellationReason: reason,
+      cancellationReasonType: cancellationReason || 'OTHER',
+      cancellationFee,
+      refundAmount,
+      driverCompensation,
+      // For displaying in trip details
+      wasRiderFault: shouldChargeFee && cancelledBy === 'DRIVER',
+      wasDriverFault: fullRefund && cancelledBy === 'DRIVER',
       cancelledAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    // Credit driver compensation if applicable
+    if (driverId && driverCompensation > 0) {
+      await updateDriverCancellationEarnings(driverId, driverCompensation);
+    }
+
+    console.log('✅ Trip cancelled:', {
+      tripId,
+      cancellationFee,
+      refundAmount,
+    });
+
+    return { cancellationFee, refundAmount, driverCompensation };
   } catch (error) {
     console.error('Failed to cancel trip:', error);
     throw error;
@@ -1092,6 +1214,53 @@ export async function getActiveDriverTrip(driverId: string): Promise<RideRequest
   } catch (error) {
     console.error('❌ Error fetching active driver trip:', error);
     return null;
+  }
+}
+
+/**
+ * Resend a ride request to notify drivers again
+ * Used when no driver accepts within the timeout period
+ * Clears the declinedBy array and updates the requestedAt timestamp
+ *
+ * @param tripId - The trip ID to resend
+ * @returns boolean indicating success
+ */
+export async function resendRideRequest(tripId: string): Promise<boolean> {
+  try {
+    const tripRef = doc(firebaseDb, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
+
+    if (!documentExists(tripDoc)) {
+      console.error('❌ Trip not found for resend:', tripId);
+      return false;
+    }
+
+    const tripData = tripDoc.data();
+
+    // Only resend if still in REQUESTED status
+    if (tripData?.status !== 'REQUESTED') {
+      console.log('⚠️ Cannot resend - trip status is:', tripData?.status);
+      return false;
+    }
+
+    // Update trip to reset for new drivers
+    await updateDoc(tripRef, {
+      declinedBy: [], // Clear declined drivers so they can see it again
+      requestedAt: serverTimestamp(), // Reset timestamp so it appears fresh
+      resendCount: (tripData?.resendCount || 0) + 1,
+      lastResendAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log('🔄 Ride request resent:', tripId, 'Count:', (tripData?.resendCount || 0) + 1);
+
+    // TODO: Trigger push notification to nearby drivers
+    // This would call a Cloud Function to send FCM notifications
+
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to resend ride request:', error);
+    return false;
   }
 }
 

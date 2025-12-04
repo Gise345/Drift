@@ -1,6 +1,7 @@
 /**
  * SELECT PAYMENT SCREEN
  * Production implementation with Stripe integration
+ * Shows KYD pricing with USD conversion
  *
  * EXPO SDK 52 - Firebase + Stripe
  */
@@ -18,34 +19,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { StripeCheckout } from '@/components/StripeCheckout';
 import { StripeService, StripePaymentMethod } from '@/src/services/stripe.service';
 import { firebaseAuth } from '@/src/config/firebase';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 
-const Colors = {
-  primary: '#D4E700',
-  purple: '#5d1289ff',
-  black: '#000000',
-  white: '#FFFFFF',
-  gray: {
-    50: '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
-    400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
-  },
-  success: '#10B981',
-  error: '#EF4444',
-  stripe: '#635BFF',
-};
+// KYD to USD conversion rate (fixed rate for Cayman Islands)
+const KYD_TO_USD_RATE = 1.20; // 1 KYD = 1.20 USD approximately
 
 interface PaymentMethod {
   id: string;
@@ -59,7 +43,14 @@ interface PaymentMethod {
 
 export default function SelectPaymentScreen() {
   const router = useRouter();
-  const { setSelectedPaymentMethod, estimatedCost, pickupLocation, destination, vehicleType } = useCarpoolStore();
+  const {
+    setSelectedPaymentMethod,
+    lockedContribution,
+    pickupLocation,
+    destination,
+    vehicleType,
+    pricing,
+  } = useCarpoolStore();
   const { createTrip, setCurrentTrip } = useTripStore();
   const { user } = useAuthStore();
 
@@ -70,6 +61,24 @@ export default function SelectPaymentScreen() {
   const [showStripeCheckout, setShowStripeCheckout] = useState(false);
   const [paymentProcessed, setPaymentProcessed] = useState(false);
   const paymentProcessedRef = useRef(false);
+
+  // Format KYD price
+  const formatKYD = (amount: number): string => {
+    return `$${amount.toFixed(2)} KYD`;
+  };
+
+  // Get USD equivalent
+  const getUSDAmount = (kydAmount: number): number => {
+    return Math.round(kydAmount * KYD_TO_USD_RATE * 100) / 100;
+  };
+
+  const formatUSD = (amount: number): string => {
+    return `$${amount.toFixed(2)} USD`;
+  };
+
+  // Get the locked contribution amount (this is what will be charged)
+  const chargeAmountKYD = lockedContribution || 0;
+  const chargeAmountUSD = getUSDAmount(chargeAmountKYD);
 
   // Load saved Stripe payment methods
   useEffect(() => {
@@ -97,7 +106,6 @@ export default function SelectPaymentScreen() {
   };
 
   // Production payment methods
-  // Google Pay and Apple Pay are available through Stripe Payment Sheet
   const paymentMethods: PaymentMethod[] = [
     {
       id: 'stripe-new',
@@ -113,7 +121,7 @@ export default function SelectPaymentScreen() {
       name: 'Apple Pay',
       details: 'Quick and secure via Stripe',
       icon: 'logo-apple',
-      connected: true, // Available through Stripe Payment Sheet
+      connected: true,
     },
     {
       id: 'google-pay',
@@ -121,7 +129,7 @@ export default function SelectPaymentScreen() {
       name: 'Google Pay',
       details: 'Fast checkout via Stripe',
       icon: 'logo-google',
-      connected: true, // Available through Stripe Payment Sheet
+      connected: true,
     },
   ];
 
@@ -134,25 +142,13 @@ export default function SelectPaymentScreen() {
     console.log('Checking auth state...');
     const currentUser = firebaseAuth.currentUser;
     console.log('User:', currentUser?.uid);
-    console.log('Email:', currentUser?.email);
-
-    if (currentUser) {
-      try {
-        const token = await currentUser.getIdToken();
-        console.log('Token length:', token.length);
-      } catch (error) {
-        console.error('Failed to get token:', error);
-      }
-    } else {
-      console.error('NO USER LOGGED IN!');
-    }
 
     if (!selectedPayment) {
       Alert.alert('Select Payment', 'Please select a payment method');
       return;
     }
 
-    if (!user || !pickupLocation || !destination || !estimatedCost) {
+    if (!user || !pickupLocation || !destination || !lockedContribution) {
       Alert.alert('Error', 'Missing required trip information');
       return;
     }
@@ -164,8 +160,7 @@ export default function SelectPaymentScreen() {
       return;
     }
 
-    // If any Stripe-based payment is selected (card, Google Pay, Apple Pay), show checkout
-    // The Stripe Payment Sheet automatically shows all available payment methods
+    // If any Stripe-based payment is selected, show checkout
     if (selectedPayment === 'stripe-new' ||
         selectedPayment === 'apple-pay' ||
         selectedPayment === 'google-pay' ||
@@ -174,7 +169,7 @@ export default function SelectPaymentScreen() {
       return;
     }
 
-    // Otherwise, create trip without payment (cash, etc.)
+    // Otherwise, create trip without payment
     await createTripRequest();
   };
 
@@ -183,7 +178,7 @@ export default function SelectPaymentScreen() {
     status?: string;
     paymentMethod?: string;
   }) => {
-    if (!user || !pickupLocation || !destination || !estimatedCost) return;
+    if (!user || !pickupLocation || !destination || !lockedContribution) return;
 
     setLoading(true);
 
@@ -217,7 +212,10 @@ export default function SelectPaymentScreen() {
         vehicleType: vehicleType || 'standard',
         distance: (pickupLocation as any).distance || 0,
         duration: (pickupLocation as any).duration || 0,
-        estimatedCost: estimatedCost.max || 0,
+        // Use locked contribution - this is the exact amount
+        estimatedCost: lockedContribution,
+        estimatedCostKYD: lockedContribution,
+        estimatedCostUSD: chargeAmountUSD,
         paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
         ...(paymentDetails ? {
           paymentMethod: `stripe:${paymentDetails.paymentIntentId}`,
@@ -286,7 +284,7 @@ export default function SelectPaymentScreen() {
   if (loadingMethods) {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <View style={[styles.container, styles.loadingContainer]}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading payment methods...</Text>
         </View>
@@ -297,37 +295,69 @@ export default function SelectPaymentScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header with Gradient */}
+        <LinearGradient
+          colors={[Colors.purple, Colors.primary]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back" size={24} color={Colors.black} />
+            <Ionicons name="arrow-back" size={24} color={Colors.white} />
           </TouchableOpacity>
 
-          <Text style={styles.title}>Select Payment</Text>
+          <Text style={styles.title}>Payment</Text>
 
           <View style={styles.headerSpacer} />
-        </View>
+        </LinearGradient>
 
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Cost Summary */}
+          {/* Cost Summary Card */}
           <View style={styles.costCard}>
-            <View style={styles.costRow}>
-              <Text style={styles.costLabel}>Estimated Cost</Text>
-              <Text style={styles.costValue}>
-                CI${estimatedCost?.max?.toFixed(2) || '0.00'}
+            <View style={styles.costHeader}>
+              <Ionicons name="receipt-outline" size={20} color={Colors.primary} />
+              <Text style={styles.costTitle}>Payment Summary</Text>
+            </View>
+
+            {/* Main Amount in KYD */}
+            <View style={styles.mainAmountContainer}>
+              <Text style={styles.mainAmountLabel}>Total Contribution</Text>
+              <Text style={styles.mainAmount}>{formatKYD(chargeAmountKYD)}</Text>
+            </View>
+
+            {/* USD Conversion Notice */}
+            <View style={styles.conversionContainer}>
+              <View style={styles.conversionRow}>
+                <View style={styles.conversionIcon}>
+                  <Ionicons name="swap-horizontal" size={16} color={Colors.white} />
+                </View>
+                <View style={styles.conversionInfo}>
+                  <Text style={styles.conversionLabel}>You will be charged in USD</Text>
+                  <Text style={styles.conversionAmount}>{formatUSD(chargeAmountUSD)}</Text>
+                </View>
+              </View>
+              <Text style={styles.conversionNote}>
+                Rate: 1 KYD = {KYD_TO_USD_RATE.toFixed(2)} USD
               </Text>
             </View>
-            <Text style={styles.costNote}>
-              Final amount may vary based on actual distance
-            </Text>
+
+            {/* Trip Summary */}
+            {pricing && (
+              <View style={styles.tripSummary}>
+                <Text style={styles.tripSummaryText}>{pricing.displayText}</Text>
+                <Text style={styles.tripType}>
+                  {pricing.isWithinZone ? 'Within-zone' : pricing.isAirportTrip ? 'Airport' : 'Cross-zone'} trip
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Saved Cards */}
@@ -360,9 +390,12 @@ export default function SelectPaymentScreen() {
                       )}
                     </View>
                   </View>
-                  {selectedPayment === `card-${method.id}` && (
-                    <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
-                  )}
+                  <View style={[
+                    styles.radioOuter,
+                    selectedPayment === `card-${method.id}` && styles.radioOuterSelected
+                  ]}>
+                    {selectedPayment === `card-${method.id}` && <View style={styles.radioInner} />}
+                  </View>
                 </TouchableOpacity>
               ))}
             </>
@@ -403,23 +436,49 @@ export default function SelectPaymentScreen() {
                   )}
                 </View>
               </View>
-              {selectedPayment === method.id && method.connected && (
-                <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+              {method.connected && (
+                <View style={[
+                  styles.radioOuter,
+                  selectedPayment === method.id && styles.radioOuterSelected
+                ]}>
+                  {selectedPayment === method.id && <View style={styles.radioInner} />}
+                </View>
               )}
             </TouchableOpacity>
           ))}
 
+          {/* Currency Notice */}
+          <View style={styles.currencyNotice}>
+            <Ionicons name="information-circle" size={18} color={Colors.info} />
+            <Text style={styles.currencyNoticeText}>
+              Stripe does not support KYD currency. Your card will be charged{' '}
+              <Text style={styles.currencyBold}>{formatUSD(chargeAmountUSD)}</Text>{' '}
+              (equivalent to {formatKYD(chargeAmountKYD)}).
+            </Text>
+          </View>
+
           {/* Legal Disclaimer */}
           <View style={styles.disclaimer}>
-            <Ionicons name="information-circle-outline" size={20} color={Colors.gray[600]} />
             <Text style={styles.disclaimerText}>
-              This is a voluntary cost-sharing contribution for a private carpool ride, not a commercial fare. By proceeding, you agree to Drift's peer-to-peer terms of service.
+              This is a voluntary cost-sharing contribution for a private carpool ride, not a commercial fare.
+              By proceeding, you agree to Drift's peer-to-peer terms of service.
             </Text>
           </View>
         </ScrollView>
 
-        {/* Confirm Button */}
+        {/* Bottom Confirm Section */}
         <View style={styles.bottomContainer}>
+          <View style={styles.bottomSummary}>
+            <View>
+              <Text style={styles.bottomLabel}>Total to Pay</Text>
+              <Text style={styles.bottomKYD}>{formatKYD(chargeAmountKYD)}</Text>
+            </View>
+            <View style={styles.bottomRight}>
+              <Text style={styles.bottomUSDLabel}>Charged as</Text>
+              <Text style={styles.bottomUSD}>{formatUSD(chargeAmountUSD)}</Text>
+            </View>
+          </View>
+
           <TouchableOpacity
             style={[
               styles.confirmButton,
@@ -428,24 +487,36 @@ export default function SelectPaymentScreen() {
             onPress={handleConfirmPayment}
             disabled={!selectedPayment || loading}
           >
-            {loading ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : (
-              <>
-                <Text style={styles.confirmButtonText}>
-                  Confirm Payment Method
-                </Text>
-                <Ionicons name="arrow-forward" size={20} color={Colors.white} />
-              </>
-            )}
+            <LinearGradient
+              colors={(!selectedPayment || loading) ? [Colors.gray[300], Colors.gray[400]] : [Colors.purple, Colors.primary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.confirmButtonGradient}
+            >
+              {loading ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <>
+                  <Ionicons name="shield-checkmark" size={20} color={Colors.white} />
+                  <Text style={styles.confirmButtonText}>
+                    Pay {formatUSD(chargeAmountUSD)}
+                  </Text>
+                </>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
+
+          <View style={styles.secureNote}>
+            <Ionicons name="lock-closed" size={12} color={Colors.gray[500]} />
+            <Text style={styles.secureNoteText}>Secured by Stripe</Text>
+          </View>
         </View>
 
         {/* Stripe Checkout Modal */}
-        {showStripeCheckout && estimatedCost && (
+        {showStripeCheckout && lockedContribution && (
           <StripeCheckout
             visible={showStripeCheckout}
-            amount={estimatedCost.max}
+            amount={chargeAmountUSD} // Charge in USD
             currency="USD"
             description={`Drift Carpool: ${(pickupLocation as any)?.placeName || pickupLocation?.address || 'Pickup'} to ${(destination as any)?.placeName || destination?.address || 'Destination'}`}
             onSuccess={handleStripeSuccess}
@@ -460,6 +531,8 @@ export default function SelectPaymentScreen() {
               pickup: (pickupLocation as any)?.placeName || pickupLocation?.address,
               destination: (destination as any)?.placeName || destination?.address,
               vehicleType,
+              amountKYD: chargeAmountKYD,
+              amountUSD: chargeAmountUSD,
             }}
           />
         )}
@@ -471,30 +544,35 @@ export default function SelectPaymentScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.gray[50],
   },
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[200],
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    paddingTop: Spacing.md,
   },
   backButton: {
     width: 40,
     height: 40,
+    borderRadius: BorderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   title: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.black,
+    fontSize: Typography.fontSize.xl,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.white,
     textAlign: 'center',
   },
   headerSpacer: {
@@ -504,46 +582,110 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 120,
+    padding: Spacing.lg,
+    paddingBottom: 220,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 14,
+    marginTop: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[600],
   },
   costCard: {
-    backgroundColor: Colors.gray[50],
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    ...Shadows.md,
   },
-  costRow: {
+  costHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
-  costLabel: {
-    fontSize: 14,
+  costTitle: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.black,
+  },
+  mainAmountContainer: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  mainAmountLabel: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[600],
+    marginBottom: Spacing.xs,
+  },
+  mainAmount: {
+    fontSize: Typography.fontSize['4xl'],
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.purple,
+  },
+  conversionContainer: {
+    backgroundColor: Colors.primary + '15',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  conversionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  conversionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  conversionInfo: {
+    flex: 1,
+  },
+  conversionLabel: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
     color: Colors.gray[600],
   },
-  costValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.black,
+  conversionAmount: {
+    fontSize: Typography.fontSize.xl,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.purple,
   },
-  costNote: {
-    fontSize: 12,
+  conversionNote: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],
-    fontStyle: 'italic',
+    textAlign: 'right',
+    marginTop: Spacing.sm,
+  },
+  tripSummary: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[100],
+    paddingTop: Spacing.md,
+  },
+  tripSummaryText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[700],
+  },
+  tripType: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.gray[500],
+    marginTop: 2,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
     color: Colors.black,
-    marginBottom: 12,
-    marginTop: 8,
+    marginBottom: Spacing.md,
+    marginTop: Spacing.sm,
   },
   paymentCard: {
     flexDirection: 'row',
@@ -552,13 +694,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderWidth: 2,
     borderColor: Colors.gray[200],
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    ...Shadows.sm,
   },
   paymentCardSelected: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '10',
+    backgroundColor: Colors.primaryLight + '15',
   },
   paymentCardDisabled: {
     opacity: 0.6,
@@ -571,13 +714,13 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   stripeBg: {
-    backgroundColor: Colors.stripe,
+    backgroundColor: '#635BFF',
   },
   appleBg: {
     backgroundColor: Colors.white,
@@ -591,49 +734,86 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.semibold,
     color: Colors.black,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   paymentDetails: {
-    fontSize: 13,
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[600],
   },
   defaultBadge: {
     backgroundColor: Colors.success + '20',
-    paddingHorizontal: 8,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: BorderRadius.full,
     alignSelf: 'flex-start',
-    marginTop: 4,
+    marginTop: Spacing.xs,
   },
   defaultText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.semibold,
     color: Colors.success,
   },
   comingSoon: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
     color: Colors.gray[500],
     fontStyle: 'italic',
     marginTop: 2,
   },
-  disclaimer: {
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.gray[300],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioOuterSelected: {
+    borderColor: Colors.primary,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.primary,
+  },
+  currencyNotice: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    padding: Spacing.md,
+    backgroundColor: Colors.infoLight,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  currencyNoticeText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.info,
+    lineHeight: 18,
+  },
+  currencyBold: {
+    fontFamily: Typography.fontFamily.bold,
+  },
+  disclaimer: {
+    padding: Spacing.md,
     backgroundColor: Colors.gray[50],
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
+    borderRadius: BorderRadius.lg,
+    marginTop: Spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.purple,
   },
   disclaimerText: {
-    flex: 1,
-    fontSize: 11,
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[600],
-    lineHeight: 16,
-    marginLeft: 8,
+    lineHeight: 18,
   },
   bottomContainer: {
     position: 'absolute',
@@ -643,29 +823,71 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.gray[200],
-    padding: 16,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
+    padding: Spacing.lg,
+    ...Shadows.lg,
+  },
+  bottomSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  bottomLabel: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[600],
+  },
+  bottomKYD: {
+    fontSize: Typography.fontSize.xl,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.purple,
+  },
+  bottomRight: {
+    alignItems: 'flex-end',
+  },
+  bottomUSDLabel: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.gray[500],
+  },
+  bottomUSD: {
+    fontSize: Typography.fontSize.lg,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.black,
   },
   confirmButton: {
-    flexDirection: 'row',
-    backgroundColor: Colors.black,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    borderRadius: BorderRadius['2xl'],
+    overflow: 'hidden',
   },
   confirmButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.7,
+  },
+  confirmButtonGradient: {
+    flexDirection: 'row',
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
   },
   confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: Typography.fontSize.lg,
+    fontFamily: Typography.fontFamily.bold,
     color: Colors.white,
+  },
+  secureNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+  },
+  secureNoteText: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.gray[500],
   },
 });

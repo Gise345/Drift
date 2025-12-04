@@ -110,6 +110,7 @@ export interface RideRequest {
   riderName: string;
   riderPhoto?: string;
   riderRating: number;
+  riderGender?: 'male' | 'female';
   pickup: {
     lat: number;
     lng: number;
@@ -133,6 +134,7 @@ export interface RideRequest {
   riderTrips?: number;
   passengers?: number;
   notes?: string;
+  womenOnlyRide?: boolean; // Women-only ride request flag
 }
 
 export interface ActiveRide extends RideRequest {
