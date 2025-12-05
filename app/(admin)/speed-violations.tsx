@@ -117,25 +117,30 @@ export default function SpeedViolationsScreen() {
         if (filter === 'recent') {
           const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
           filteredViolations = violations.filter(
-            (v: any) => v.timestamp?.toDate?.() > oneDayAgo
+            (v: any) => v.timestamp > oneDayAgo
           );
         } else if (filter === 'severe') {
           filteredViolations = violations.filter((v: any) => v.severity === 'severe');
         }
 
         if (filteredViolations.length > 0 || filter === 'all') {
+          // Sort violations by timestamp descending
+          const sortedViolations = filteredViolations.sort(
+            (a: any, b: any) => b.timestamp.getTime() - a.timestamp.getTime()
+          );
+
           driversList.push({
-            driverId: doc.id,
-            driverName: `${data.firstName || ''} ${data.lastName || ''}`.trim() || 'Unknown Driver',
-            totalViolations: safetyData.totalSpeedViolations || 0,
-            lastViolationAt: safetyData.lastViolationAt?.toDate?.() || null,
-            violations: filteredViolations.map((v: any) => ({
-              ...v,
-              timestamp: v.timestamp?.toDate?.() || new Date(),
-            })),
+            driverId,
+            driverName,
+            totalViolations: violations.length,
+            lastViolationAt: sortedViolations.length > 0 ? sortedViolations[0].timestamp : null,
+            violations: sortedViolations,
           });
         }
-      });
+      }
+
+      // Sort drivers by total violations (descending)
+      driversList.sort((a, b) => b.totalViolations - a.totalViolations);
 
       setDrivers(driversList);
     } catch (error) {

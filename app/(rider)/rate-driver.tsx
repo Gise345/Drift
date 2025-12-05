@@ -272,22 +272,26 @@ export default function RateDriverScreen() {
             </View>
           )}
 
-          {/* Written Feedback */}
+          {/* Written Feedback - Always visible after rating */}
           {rating > 0 && (
             <View style={styles.feedbackContainer}>
               <Text style={styles.feedbackTitle}>
-                Additional Comments (Optional)
+                Leave a message for your driver
               </Text>
               <TextInput
                 style={styles.feedbackInput}
-                placeholder="Share more details about your experience..."
+                placeholder="Thanks for the ride! Share your thoughts..."
                 placeholderTextColor={Colors.gray[400]}
                 value={feedback}
                 onChangeText={setFeedback}
                 multiline
                 numberOfLines={4}
                 textAlignVertical="top"
+                maxLength={500}
               />
+              <Text style={styles.characterCount}>
+                {feedback.length}/500
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -501,6 +505,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.black,
     minHeight: 100,
+  },
+  characterCount: {
+    fontSize: 12,
+    color: Colors.gray[400],
+    textAlign: 'right',
+    marginTop: 4,
   },
   bottomContainer: {
     position: 'absolute',

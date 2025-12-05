@@ -12,6 +12,17 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/images/app-icon.png",
     userInterfaceStyle: "automatic",
+    // Android navigation bar configuration
+    androidNavigationBar: {
+      visible: "sticky-immersive",
+      backgroundColor: "#ffffff"
+    },
+    // Status bar configuration
+    androidStatusBar: {
+      backgroundColor: "#ffffff",
+      barStyle: "dark-content",
+      translucent: false
+    },
     splash: {
       image: "./assets/images/drift-logo.png",
       resizeMode: "contain",

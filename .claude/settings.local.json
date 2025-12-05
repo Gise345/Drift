@@ -40,7 +40,8 @@
       "Bash(npm run firebase:deploy:all:*)",
       "Bash(cmd /c \"gradlew.bat signingReport\")",
       "Bash(adb devices:*)",
-      "Bash(npx firebase deploy:*)"
+      "Bash(npx firebase deploy:*)",
+      "Bash(npm run build)"
     ],
     "deny": [],
     "ask": []

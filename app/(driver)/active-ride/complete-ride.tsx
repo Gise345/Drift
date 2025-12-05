@@ -25,8 +25,10 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useTripStore } from '@/src/stores/trip-store';
 import { completeTrip, finalizeTrip } from '@/src/services/ride-request.service';
 import { firebaseDb } from '@/src/config/firebase';
 import { doc, onSnapshot, getDoc } from '@react-native-firebase/firestore';
@@ -34,6 +36,7 @@ import { doc, onSnapshot, getDoc } from '@react-native-firebase/firestore';
 export default function CompleteRide() {
   const router = useRouter();
   const { activeRide, completeRide: completeRideInStore, setActiveRide } = useDriverStore();
+  const { stopLocationTracking } = useTripStore();
   const [completing, setCompleting] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
   const [tipReceived, setTipReceived] = useState<number | null>(null);
@@ -176,6 +179,15 @@ export default function CompleteRide() {
     try {
       setCompleting(true);
 
+      // Stop location tracking and dismiss foreground notification
+      try {
+        await stopLocationTracking();
+        await Notifications.dismissAllNotificationsAsync();
+        console.log('✅ Location tracking stopped and notifications dismissed');
+      } catch (trackingError) {
+        console.warn('Could not stop location tracking:', trackingError);
+      }
+
       // If not yet finalized, finalize now
       if (!tripFinalized && activeRide?.id) {
         await finalizeTrip(activeRide.id);
@@ -193,7 +205,11 @@ export default function CompleteRide() {
       }, 100);
     } catch (error) {
       console.error('Failed to finish trip:', error);
-      // Still navigate away - clear state first, then navigate
+      // Still stop tracking and clear state
+      try {
+        await stopLocationTracking();
+        await Notifications.dismissAllNotificationsAsync();
+      } catch {}
       setActiveRide(null);
       setTimeout(() => {
         router.replace('/(driver)/tabs');

@@ -151,7 +151,10 @@ export default function AllTripsScreen() {
   };
 
   const renderTrip = ({ item }: { item: Trip }) => (
-    <TouchableOpacity style={styles.tripCard}>
+    <TouchableOpacity
+      style={styles.tripCard}
+      onPress={() => router.push({ pathname: '/(admin)/trip-detail', params: { tripId: item.id } })}
+    >
       <View style={styles.tripHeader}>
         <View style={styles.tripInfo}>
           <Text style={styles.tripId}>Trip #{item.id.slice(-6).toUpperCase()}</Text>

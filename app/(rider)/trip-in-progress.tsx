@@ -582,37 +582,85 @@ export default function TripInProgressScreen() {
     setShowShareModal(true);
   };
 
-  // Handle stop request from driver (listener would update pendingStopRequest)
-  const handleApproveStopRequest = () => {
+  // Handle stop request from driver
+  const handleApproveStopRequest = async () => {
     if (!pendingStopRequest || !currentTrip) return;
 
-    Alert.alert(
-      'Stop Request Approved',
-      `The stop at ${pendingStopRequest.address} has been added to your trip.${
-        pendingStopRequest.additionalCost
-          ? ` Additional cost: $${pendingStopRequest.additionalCost.toFixed(2)}`
-          : ''
-      }`,
-      [{ text: 'OK' }]
-    );
+    try {
+      const tripData = currentTrip as any;
+      const stopRequest = tripData.pendingStopRequest;
+      const additionalCost = stopRequest?.estimatedAdditionalCost || pendingStopRequest.additionalCost || 0;
 
-    // TODO: Update trip in Firebase with approved stop
-    setPendingStopRequest(null);
-    setShowStopRequestModal(false);
+      // Build the new stop object
+      const newStop = {
+        address: pendingStopRequest.address,
+        coordinates: pendingStopRequest.coordinates,
+        placeName: stopRequest?.placeName,
+        addedBy: 'driver',
+        approvedAt: new Date(),
+        completed: false,
+      };
+
+      // Get existing stops or initialize empty array
+      const existingStops = currentTrip.stops || [];
+
+      // Update trip with approved stop
+      await updateTrip(currentTrip.id, {
+        pendingStopRequest: {
+          ...stopRequest,
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+        stops: [...existingStops, newStop],
+        estimatedCost: (currentTrip.estimatedCost || 0) + additionalCost,
+      });
+
+      Alert.alert(
+        'Stop Request Approved',
+        `The stop at ${pendingStopRequest.address} has been added to your trip.${
+          additionalCost > 0
+            ? ` Additional cost: CI$${additionalCost.toFixed(2)}`
+            : ''
+        }`,
+        [{ text: 'OK' }]
+      );
+
+      setPendingStopRequest(null);
+      setShowStopRequestModal(false);
+    } catch (error) {
+      console.error('Failed to approve stop request:', error);
+      Alert.alert('Error', 'Failed to approve stop request. Please try again.');
+    }
   };
 
-  const handleDeclineStopRequest = () => {
+  const handleDeclineStopRequest = async () => {
     if (!currentTrip) return;
 
-    Alert.alert(
-      'Stop Request Declined',
-      'The driver has been notified that you declined the stop request.',
-      [{ text: 'OK' }]
-    );
+    try {
+      const tripData = currentTrip as any;
+      const stopRequest = tripData.pendingStopRequest;
 
-    // TODO: Update trip in Firebase with declined stop request
-    setPendingStopRequest(null);
-    setShowStopRequestModal(false);
+      // Update trip with declined stop request
+      await updateTrip(currentTrip.id, {
+        pendingStopRequest: {
+          ...stopRequest,
+          status: 'declined',
+          declinedAt: new Date(),
+        },
+      });
+
+      Alert.alert(
+        'Stop Request Declined',
+        'The driver has been notified that you declined the stop request.',
+        [{ text: 'OK' }]
+      );
+
+      setPendingStopRequest(null);
+      setShowStopRequestModal(false);
+    } catch (error) {
+      console.error('Failed to decline stop request:', error);
+      Alert.alert('Error', 'Failed to decline stop request. Please try again.');
+    }
   };
 
   // Emergency call - directly opens phone dialer with 911

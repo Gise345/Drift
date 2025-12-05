@@ -24,6 +24,7 @@ import {
   Platform,
   ActivityIndicator,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -38,7 +39,8 @@ import { endMessaging } from '@/src/services/messaging.service';
 import { ChatModal } from '@/components/messaging/ChatModal';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.55;
+const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.6;
+const BOTTOM_SHEET_MIN_HEIGHT = SCREEN_HEIGHT * 0.45;
 
 export default function ArrivedAtPickup() {
   const router = useRouter();
@@ -252,159 +254,166 @@ export default function ArrivedAtPickup() {
       </SafeAreaView>
 
       {/* Bottom Sheet */}
-      <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+      <View style={[styles.bottomSheet, { maxHeight: BOTTOM_SHEET_MAX_HEIGHT }]}>
         {/* Handle */}
         <View style={styles.sheetHandle}>
           <View style={styles.handleBar} />
         </View>
 
-        {/* Wait Progress */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${waitPercentage}%`,
-                  backgroundColor: isNearLimit ? Colors.warning : Colors.primary,
-                },
-              ]}
-            />
-          </View>
-          <Text style={[styles.progressText, isNearLimit && styles.progressTextWarning]}>
-            {isNearLimit
-              ? 'Rider has less than 1 minute remaining'
-              : `Rider has ${Math.max(0, Math.floor((maxWaitTime - waitTime) / 60))} min to arrive`}
-          </Text>
-        </View>
-
-        {/* Rider Card */}
-        <View style={styles.riderCard}>
-          {(activeRide as any).riderPhoto ? (
-            <Image
-              source={{ uri: (activeRide as any).riderPhoto }}
-              style={styles.riderPhoto}
-            />
-          ) : (
-            <View style={styles.riderAvatar}>
-              <Ionicons name="person" size={28} color={Colors.primary} />
+        <ScrollView
+          style={styles.sheetScrollView}
+          contentContainerStyle={[styles.sheetScrollContent, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Wait Progress */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${waitPercentage}%`,
+                    backgroundColor: isNearLimit ? Colors.warning : Colors.primary,
+                  },
+                ]}
+              />
             </View>
-          )}
-          <View style={styles.riderInfo}>
-            <Text style={styles.riderName}>{activeRide.riderName}</Text>
-            <View style={styles.riderRating}>
-              <Ionicons name="star" size={14} color={Colors.rating} />
-              <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
-            </View>
-          </View>
-          {/* Message button only - call removed for safety */}
-          <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
-            <Ionicons name="chatbubble-ellipses" size={22} color={Colors.primary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Pickup Location */}
-        <View style={styles.locationCard}>
-          <View style={styles.locationDot} />
-          <View style={styles.locationInfo}>
-            <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
-            <Text style={styles.locationAddress} numberOfLines={2}>
-              {activeRide.pickup.address}
+            <Text style={[styles.progressText, isNearLimit && styles.progressTextWarning]}>
+              {isNearLimit
+                ? 'Rider has less than 1 minute remaining'
+                : `Rider has ${Math.max(0, Math.floor((maxWaitTime - waitTime) / 60))} min to arrive`}
             </Text>
           </View>
-        </View>
 
-        {/* Destination Preview */}
-        <View style={styles.destinationPreview}>
-          <View style={styles.destinationDot} />
-          <View style={styles.destinationInfo}>
-            <Text style={styles.destinationLabel}>GOING TO</Text>
-            <Text style={styles.destinationAddress} numberOfLines={1}>
-              {activeRide.destination.address}
-            </Text>
-          </View>
-          <View style={styles.tripInfo}>
-            <Text style={styles.tripDistance}>
-              {(activeRide.distance || 0).toFixed(1)} km
-            </Text>
-            <Text style={styles.tripEarnings}>
-              CI${(activeRide.estimatedEarnings || 0).toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          {canReportNoShow && (
-            <TouchableOpacity style={styles.noShowButton} onPress={handleNoShow}>
-              <Ionicons name="close-circle-outline" size={18} color={Colors.error} />
-              <Text style={styles.noShowText}>No-Show</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[styles.startButton, !canReportNoShow && styles.startButtonFull]}
-            onPress={handleStartRide}
-            disabled={isStarting}
-          >
-            {isStarting ? (
-              <ActivityIndicator size="small" color={Colors.white} />
+          {/* Rider Card */}
+          <View style={styles.riderCard}>
+            {(activeRide as any).riderPhoto ? (
+              <Image
+                source={{ uri: (activeRide as any).riderPhoto }}
+                style={styles.riderPhoto}
+              />
             ) : (
-              <>
-                <Ionicons name="car" size={22} color={Colors.white} />
-                <Text style={styles.startButtonText}>Start Ride</Text>
-              </>
+              <View style={styles.riderAvatar}>
+                <Ionicons name="person" size={28} color={Colors.primary} />
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
+            <View style={styles.riderInfo}>
+              <Text style={styles.riderName}>{activeRide.riderName}</Text>
+              <View style={styles.riderRating}>
+                <Ionicons name="star" size={14} color={Colors.rating} />
+                <Text style={styles.ratingText}>{activeRide.riderRating}</Text>
+              </View>
+            </View>
+            {/* Message button only - call removed for safety */}
+            <TouchableOpacity style={styles.contactButton} onPress={handleMessageRider}>
+              <Ionicons name="chatbubble-ellipses" size={22} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
 
-        {/* Women-Only Ride Alert */}
-        {(activeRide as any).womenOnlyRide && (
-          <View style={styles.womenOnlyAlert}>
-            <Ionicons name="shield-checkmark" size={16} color="#BE185D" />
-            <View style={styles.womenOnlyAlertContent}>
-              <Text style={styles.womenOnlyAlertTitle}>Women-Only Ride</Text>
-              <Text style={styles.womenOnlyAlertText}>
-                This rider requested a female driver. If a male presents themselves instead, you may cancel without penalty.
+          {/* Pickup Location */}
+          <View style={styles.locationCard}>
+            <View style={styles.locationDot} />
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationLabel}>PICKUP LOCATION</Text>
+              <Text style={styles.locationAddress} numberOfLines={2}>
+                {activeRide.pickup.address}
               </Text>
-              <TouchableOpacity
-                style={styles.genderViolationButton}
-                onPress={() => {
-                  Alert.alert(
-                    'Gender Safety Cancellation',
-                    'Are you cancelling because a male presented themselves instead of the expected female rider?\n\nYou will receive 50% of the ride fare as compensation.',
-                    [
-                      { text: 'No, Go Back', style: 'cancel' },
-                      {
-                        text: 'Yes, Cancel Ride',
-                        style: 'destructive',
-                        onPress: () => {
-                          // In a real implementation, this would call a service to handle the cancellation
-                          Alert.alert(
-                            'Ride Cancelled',
-                            'The ride has been cancelled due to a gender safety violation. You will receive 50% compensation.',
-                            [{ text: 'OK', onPress: () => router.replace('/(driver)/tabs') }]
-                          );
-                        },
-                      },
-                    ]
-                  );
-                }}
-              >
-                <Ionicons name="close-circle" size={14} color="#BE185D" />
-                <Text style={styles.genderViolationButtonText}>Cancel - Wrong Gender</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        )}
 
-        {/* Safety Info */}
-        <View style={styles.safetyInfo}>
-          <Ionicons name="information-circle-outline" size={16} color={Colors.gray[500]} />
-          <Text style={styles.safetyText}>
-            Verify rider identity before starting the trip
-          </Text>
-        </View>
+          {/* Destination Preview */}
+          <View style={styles.destinationPreview}>
+            <View style={styles.destinationDot} />
+            <View style={styles.destinationInfo}>
+              <Text style={styles.destinationLabel}>GOING TO</Text>
+              <Text style={styles.destinationAddress} numberOfLines={1}>
+                {activeRide.destination.address}
+              </Text>
+            </View>
+            <View style={styles.tripInfo}>
+              <Text style={styles.tripDistance}>
+                {(activeRide.distance || 0).toFixed(1)} km
+              </Text>
+              <Text style={styles.tripEarnings}>
+                CI${(activeRide.estimatedEarnings || 0).toFixed(2)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            {canReportNoShow && (
+              <TouchableOpacity style={styles.noShowButton} onPress={handleNoShow}>
+                <Ionicons name="close-circle-outline" size={18} color={Colors.error} />
+                <Text style={styles.noShowText}>No-Show</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.startButton, !canReportNoShow && styles.startButtonFull]}
+              onPress={handleStartRide}
+              disabled={isStarting}
+            >
+              {isStarting ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <>
+                  <Ionicons name="car" size={22} color={Colors.white} />
+                  <Text style={styles.startButtonText}>Start Ride</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Women-Only Ride Alert */}
+          {(activeRide as any).womenOnlyRide && (
+            <View style={styles.womenOnlyAlert}>
+              <Ionicons name="shield-checkmark" size={16} color="#BE185D" />
+              <View style={styles.womenOnlyAlertContent}>
+                <Text style={styles.womenOnlyAlertTitle}>Women-Only Ride</Text>
+                <Text style={styles.womenOnlyAlertText}>
+                  This rider requested a female driver. If a male presents themselves instead, you may cancel without penalty.
+                </Text>
+                <TouchableOpacity
+                  style={styles.genderViolationButton}
+                  onPress={() => {
+                    Alert.alert(
+                      'Gender Safety Cancellation',
+                      'Are you cancelling because a male presented themselves instead of the expected female rider?\n\nYou will receive 50% of the ride fare as compensation.',
+                      [
+                        { text: 'No, Go Back', style: 'cancel' },
+                        {
+                          text: 'Yes, Cancel Ride',
+                          style: 'destructive',
+                          onPress: () => {
+                            // In a real implementation, this would call a service to handle the cancellation
+                            Alert.alert(
+                              'Ride Cancelled',
+                              'The ride has been cancelled due to a gender safety violation. You will receive 50% compensation.',
+                              [{ text: 'OK', onPress: () => router.replace('/(driver)/tabs') }]
+                            );
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Ionicons name="close-circle" size={14} color="#BE185D" />
+                  <Text style={styles.genderViolationButtonText}>Cancel - Wrong Gender</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Safety Info */}
+          <View style={styles.safetyInfo}>
+            <Ionicons name="information-circle-outline" size={16} color={Colors.gray[500]} />
+            <Text style={styles.safetyText}>
+              Verify rider identity before starting the trip
+            </Text>
+          </View>
+        </ScrollView>
       </View>
 
       {/* Chat Modal */}
@@ -513,16 +522,21 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: BOTTOM_SHEET_HEIGHT,
     backgroundColor: Colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: 20,
     ...Shadows.xl,
   },
   sheetHandle: {
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  sheetScrollView: {
+    flex: 1,
+  },
+  sheetScrollContent: {
+    paddingHorizontal: 20,
   },
   handleBar: {
     width: 40,

@@ -39,3 +39,17 @@ export {
   getTrackingSession,
   cleanupExpiredSessions,
 } from './tracking';
+
+// Export Messaging functions
+export {
+  sendMessageNotification,
+  onNewMessage,
+} from './messaging';
+
+// Export Ride Notification functions
+export {
+  onRideRequested,
+  onRideResent,
+  onStopRequested,
+  onStopDecision,
+} from './rideNotifications';
