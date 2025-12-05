@@ -11,7 +11,6 @@ export default function NotificationsScreen() {
   const { user } = useAuthStore();
   const [settings, setSettings] = useState({
     rideUpdates: true,
-    promotions: false,
     driverMessages: true,
     paymentAlerts: true,
     tripReminders: true,
@@ -39,7 +38,6 @@ export default function NotificationsScreen() {
         const data = doc.data();
         setSettings({
           rideUpdates: data?.rideUpdates ?? true,
-          promotions: data?.promotions ?? false,
           driverMessages: data?.driverMessages ?? true,
           paymentAlerts: data?.paymentAlerts ?? true,
           tripReminders: data?.tripReminders ?? true,

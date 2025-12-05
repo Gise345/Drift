@@ -23,8 +23,7 @@ import { NotificationService, NotificationPreferences } from '@/src/services/not
  * - Push notifications on/off
  * - Ride requests
  * - Earnings updates
- * - Promotions
- * - System updates
+* - System updates
  * - Sound and vibration
  */
 
@@ -70,13 +69,7 @@ export default function NotificationPreferencesScreen() {
       enabled: true,
       icon: 'cash',
     },
-    {
-      id: 'promotions',
-      title: 'Promotions',
-      description: 'Special offers and bonuses',
-      enabled: true,
-      icon: 'pricetag',
-    },
+
     {
       id: 'tips',
       title: 'Tips & Feedback',
@@ -128,8 +121,6 @@ export default function NotificationPreferencesScreen() {
               return { ...setting, enabled: prefs.rideUpdates };
             case 'earnings':
               return { ...setting, enabled: prefs.earnings };
-            case 'promotions':
-              return { ...setting, enabled: prefs.promotions };
             case 'tips':
               return { ...setting, enabled: prefs.tips };
             case 'system':
@@ -191,7 +182,6 @@ export default function NotificationPreferencesScreen() {
       const rideRequestsSetting = settings.find(s => s.id === 'ride_requests');
       const rideUpdatesSetting = settings.find(s => s.id === 'ride_updates');
       const earningsSetting = settings.find(s => s.id === 'earnings');
-      const promotionsSetting = settings.find(s => s.id === 'promotions');
       const tipsSetting = settings.find(s => s.id === 'tips');
       const systemSetting = settings.find(s => s.id === 'system');
       const remindersSetting = settings.find(s => s.id === 'reminders');
@@ -202,7 +192,6 @@ export default function NotificationPreferencesScreen() {
         rideRequests: rideRequestsSetting?.enabled ?? true,
         rideUpdates: rideUpdatesSetting?.enabled ?? true,
         earnings: earningsSetting?.enabled ?? true,
-        promotions: promotionsSetting?.enabled ?? true,
         tips: tipsSetting?.enabled ?? true,
         system: systemSetting?.enabled ?? true,
         reminders: remindersSetting?.enabled ?? true,

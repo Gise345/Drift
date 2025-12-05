@@ -27,7 +27,6 @@ export interface NotificationPreferences {
   rideRequests: boolean;
   rideUpdates: boolean;
   earnings: boolean;
-  promotions: boolean;
   tips: boolean;
   system: boolean;
   reminders: boolean;
@@ -227,7 +226,6 @@ export const NotificationService = {
           rideRequests: true,
           rideUpdates: true,
           earnings: true,
-          promotions: true,
           tips: true,
           system: true,
           reminders: true,
@@ -245,7 +243,6 @@ export const NotificationService = {
         rideRequests: data.rideRequests ?? true,
         rideUpdates: data.rideUpdates ?? true,
         earnings: data.earnings ?? true,
-        promotions: data.promotions ?? true,
         tips: data.tips ?? true,
         system: data.system ?? true,
         reminders: data.reminders ?? true,
@@ -275,7 +272,6 @@ export const NotificationService = {
           rideRequests: preferences.rideRequests,
           rideUpdates: preferences.rideUpdates,
           earnings: preferences.earnings,
-          promotions: preferences.promotions,
           tips: preferences.tips,
           system: preferences.system,
           reminders: preferences.reminders,

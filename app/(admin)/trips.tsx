@@ -55,17 +55,54 @@ export default function AllTripsScreen() {
 
       const snapshot = await query.get();
 
+      // Get all unique rider and driver IDs
+      const riderIds = new Set<string>();
+      const driverIds = new Set<string>();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.riderId) riderIds.add(data.riderId);
+        if (data.driverId) driverIds.add(data.driverId);
+      });
+
+      // Fetch rider names from users collection
+      const riderNames: Record<string, string> = {};
+      for (const riderId of riderIds) {
+        try {
+          const userDoc = await firestore().collection('users').doc(riderId).get();
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            riderNames[riderId] = userData?.name || userData?.displayName || 'Unknown Rider';
+          }
+        } catch (e) {
+          console.log('Error fetching rider:', riderId);
+        }
+      }
+
+      // Fetch driver names from drivers collection
+      const driverNames: Record<string, string> = {};
+      for (const driverId of driverIds) {
+        try {
+          const driverDoc = await firestore().collection('drivers').doc(driverId).get();
+          if (driverDoc.exists) {
+            const driverData = driverDoc.data();
+            driverNames[driverId] = `${driverData?.firstName || ''} ${driverData?.lastName || ''}`.trim() || 'Unknown Driver';
+          }
+        } catch (e) {
+          console.log('Error fetching driver:', driverId);
+        }
+      }
+
       const tripsList: Trip[] = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
-          riderName: data.riderInfo?.name || 'Unknown Rider',
-          driverName: data.driverInfo?.name || 'Unknown Driver',
+          riderName: data.riderInfo?.name || riderNames[data.riderId] || 'Unknown Rider',
+          driverName: data.driverInfo?.name || driverNames[data.driverId] || 'Unknown Driver',
           pickup: data.pickup?.address || 'Unknown',
           destination: data.destination?.address || 'Unknown',
           status: data.status,
-          finalCost: data.finalCost || 0,
-          distance: data.distance || 0,
+          finalCost: data.finalCost || data.fare?.total || 0,
+          distance: data.distance || data.route?.distance || 0,
           completedAt: data.completedAt?.toDate(),
           createdAt: data.createdAt?.toDate() || new Date(),
         };

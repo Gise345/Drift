@@ -76,19 +76,41 @@ export default function SpeedViolationsScreen() {
     try {
       setLoading(true);
 
-      // Get all drivers with speed violations
-      const driversSnapshot = await firestore()
-        .collection('drivers')
-        .where('safetyData.totalSpeedViolations', '>', 0)
-        .orderBy('safetyData.totalSpeedViolations', 'desc')
+      // Get all speed violations from the speedViolations collection
+      const violationsSnapshot = await firestore()
+        .collection('speedViolations')
+        .orderBy('startTime', 'desc')
+        .limit(500)
         .get();
 
+      // Group violations by driver
+      const violationsByDriver: Record<string, any[]> = {};
+      violationsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const driverId = data.driverId;
+        if (!violationsByDriver[driverId]) {
+          violationsByDriver[driverId] = [];
+        }
+        violationsByDriver[driverId].push({
+          id: doc.id,
+          tripId: data.tripId,
+          maxSpeed: data.maxSpeed || 0,
+          speedLimit: data.speedLimit || 25,
+          maxExcessSpeed: data.excessSpeed || (data.maxSpeed - (data.speedLimit || 25)),
+          severity: data.severity || 'minor',
+          timestamp: data.startTime?.toDate?.() || new Date(),
+        });
+      });
+
+      // Fetch driver info for each driver with violations
       const driversList: DriverViolation[] = [];
 
-      driversSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const safetyData = data.safetyData || {};
-        const violations = safetyData.speedViolations || [];
+      for (const [driverId, violations] of Object.entries(violationsByDriver)) {
+        const driverDoc = await firestore().collection('drivers').doc(driverId).get();
+        const driverData = driverDoc.data();
+        const driverName = driverData
+          ? `${driverData.firstName || ''} ${driverData.lastName || ''}`.trim() || 'Unknown Driver'
+          : 'Unknown Driver';
 
         // Apply filters
         let filteredViolations = violations;

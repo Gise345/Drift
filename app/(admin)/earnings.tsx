@@ -71,14 +71,22 @@ export default function EarningsScreen() {
 
   const loadDriverEarnings = async () => {
     try {
-      // Get all approved drivers
+      // Get all drivers and filter for approved/active ones
+      // This supports both registrationStatus='approved' and status='active'
       const driversSnapshot = await firestore()
         .collection('drivers')
-        .where('registrationStatus', '==', 'approved')
         .get();
 
+      // Filter to only approved/active drivers
+      const approvedDriverDocs = driversSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return data.registrationStatus === 'approved' ||
+               data.status === 'active' ||
+               data.status === 'approved';
+      });
+
       const earningsList: DriverEarnings[] = await Promise.all(
-        driversSnapshot.docs.map(async (doc) => {
+        approvedDriverDocs.map(async (doc) => {
           const data = doc.data();
 
           // Get driver's total earnings

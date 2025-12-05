@@ -50,7 +50,6 @@ export default function DevMenuScreen() {
     { name: 'Notifications', route: '/(driver)/dashboard/notifications', category: 'Dashboard' },
     { name: 'Stats', route: '/(driver)/dashboard/stats', category: 'Dashboard' },
     { name: 'Preferences', route: '/(driver)/dashboard/preferences', category: 'Dashboard' },
-    { name: 'Promotions', route: '/(driver)/dashboard/promotions', category: 'Dashboard' },
     { name: 'Referrals', route: '/(driver)/dashboard/referrals', category: 'Dashboard' },
     { name: 'Feedback', route: '/(driver)/dashboard/feedback', category: 'Dashboard' },
     { name: 'Schedule', route: '/(driver)/dashboard/schedule', category: 'Dashboard' },

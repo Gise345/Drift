@@ -299,7 +299,6 @@ export default function Notifications() {
 
               <View style={styles.settingDivider} />
               <View style={styles.settingRow}>
-                <Text style={styles.settingSubLabel}>Promotions</Text>
                 <Switch
                   value={promotionNotifications}
                   onValueChange={(value) => {

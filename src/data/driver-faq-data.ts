@@ -102,13 +102,7 @@ export const driverFAQs: FAQItem[] = [
     category: 'Earnings',
     keywords: ['estimate', 'see earnings', 'before accept', 'preview'],
   },
-  {
-    id: 'earn-8',
-    question: 'What are promotions and bonuses?',
-    answer: 'Drift offers various earnings bonuses: (1) New driver bonus: Complete 20 trips in your first 30 days for CI$100 bonus, (2) Streak bonuses: Complete 3 trips in a row for extra CI$5-10, (3) Peak hour bonuses: Extra CI$3-5 per trip during specified times, (4) Weekend warrior: Complete 15 trips on weekends for CI$50 bonus, (5) Referral bonus: Earn CI$150 for each new driver you refer. Check Dashboard > Promotions for active offers.',
-    category: 'Earnings',
-    keywords: ['bonus', 'promotion', 'incentive', 'extra', 'reward'],
-  },
+ 
 
   // ==================== ACCEPTING & COMPLETING RIDES ====================
   {
@@ -365,7 +359,7 @@ export const driverFAQs: FAQItem[] = [
   {
     id: 'tips-1',
     question: 'How can I increase my earnings?',
-    answer: 'Top strategies to maximize earnings: (1) Drive during peak hours (mornings, evenings, cruise ship days), (2) Position yourself near popular pickup areas (hotels, airport, port), (3) Accept most rides to get more requests, (4) Provide excellent service for better tips, (5) Keep vehicle clean and comfortable, (6) Take advantage of bonuses and promotions, (7) Track your best days/times and repeat. Top earners drive 20-30 hours during peak times.',
+    answer: 'Top strategies to maximize earnings: (1) Drive during peak hours (mornings, evenings, cruise ship days), (2) Position yourself near popular pickup areas (hotels, airport, port), (3) Accept most rides to get more requests, (4) Provide excellent service for better tips, (5) Keep vehicle clean and comfortable, (6) Track your best days/times and repeat. Top earners drive 20-30 hours during peak times.',
     category: 'Tips',
     keywords: ['maximize', 'increase earnings', 'make more', 'earn more'],
   },
