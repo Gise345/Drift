@@ -35,7 +35,12 @@
       "Bash(find:*)",
       "Bash(npm install:*)",
       "Bash(del \"C:\\Drift\\app\\(driver)\\registration\\background-check.tsx\")",
-      "Bash(npx expo export:*)"
+      "Bash(npx expo export:*)",
+      "Bash(wc:*)",
+      "Bash(npm run firebase:deploy:all:*)",
+      "Bash(cmd /c \"gradlew.bat signingReport\")",
+      "Bash(adb devices:*)",
+      "Bash(npx firebase deploy:*)"
     ],
     "deny": [],
     "ask": []

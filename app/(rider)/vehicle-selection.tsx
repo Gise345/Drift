@@ -37,42 +37,32 @@ interface VehicleOption {
 
 const VEHICLE_OPTIONS: VehicleOption[] = [
   {
-    id: 'economy',
-    name: 'Drift Economy',
-    description: 'Share with up to 3 riders',
-    icon: 'car-outline',
-    maxPassengers: 3,
-    multiplier: 0.85, // 15% cheaper
-    eta: '5-8 min',
-    eco: true,
-  },
-  {
     id: 'standard',
     name: 'Drift Standard',
-    description: 'Comfortable ride, 2 riders max',
+    description: 'Standard car, up to 4 riders',
     icon: 'car-sport-outline',
-    maxPassengers: 2,
+    maxPassengers: 4,
     multiplier: 1.0, // Base price
     eta: '3-5 min',
     popular: true,
   },
   {
-    id: 'comfort',
-    name: 'Drift Comfort',
-    description: 'Premium vehicle, extra space',
-    icon: 'car',
-    maxPassengers: 2,
-    multiplier: 1.25, // 25% more
-    eta: '5-7 min',
-  },
-  {
     id: 'xl',
     name: 'Drift XL',
-    description: 'For groups up to 5 riders',
+    description: 'Larger vehicle, up to 6 riders',
+    icon: 'car',
+    maxPassengers: 6,
+    multiplier: 1.25, // 25% more
+    eta: '5-8 min',
+  },
+  {
+    id: 'van',
+    name: 'Drift Van',
+    description: 'Spacious van, up to 8 riders',
     icon: 'bus-outline',
-    maxPassengers: 5,
+    maxPassengers: 8,
     multiplier: 1.5, // 50% more
-    eta: '8-10 min',
+    eta: '8-12 min',
   },
 ];
 
@@ -94,6 +84,9 @@ export default function VehicleSelectionScreen() {
     setWomenOnlyRide,
   } = useCarpoolStore();
   const { user } = useAuthStore();
+
+  // Debug: Log user gender for women-only feature
+  console.log('👤 Vehicle Selection - User gender:', user?.gender, 'Show women-only:', user?.gender === 'female');
 
   const [selectedVehicle, setSelectedVehicle] = useState<string>('standard');
   const [loading, setLoading] = useState(false);

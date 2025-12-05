@@ -29,8 +29,8 @@ import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
  */
 
 // Google Directions API Key
-const GOOGLE_DIRECTIONS_API_KEY = 
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || 
+const GOOGLE_DIRECTIONS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
   process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
 const SelectDestinationScreen = () => {

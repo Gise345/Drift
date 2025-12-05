@@ -78,7 +78,7 @@ export default function AboutScreen() {
           <Text style={styles.sectionTitle}>Get in Touch</Text>
           <TouchableOpacity style={styles.contactItem}>
             <Ionicons name="mail-outline" size={20} color="#5d1289ff" />
-            <Text style={styles.contactText}>support@driftcayman.com</Text>
+            <Text style={styles.contactText}>info@drift-global.com</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.contactItem}>
             <Ionicons name="globe-outline" size={20} color="#5d1289ff" />

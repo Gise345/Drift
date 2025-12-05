@@ -123,7 +123,7 @@ export default function PendingApproval() {
         {/* Footer */}
         <Text style={styles.footerText}>
           Questions? Contact us at{' '}
-          <Text style={styles.footerLink}>support@driftcayman.com</Text>
+          <Text style={styles.footerLink}>info@drift-global.com</Text>
         </Text>
       </ScrollView>
     </SafeAreaView>

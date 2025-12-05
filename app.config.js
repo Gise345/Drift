@@ -10,7 +10,7 @@ module.exports = {
     slug: "drift",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/images/drift-logo.png",
+    icon: "./assets/images/app-icon.png",
     userInterfaceStyle: "automatic",
     splash: {
       image: "./assets/images/drift-logo.png",
@@ -49,9 +49,10 @@ module.exports = {
     },
     android: {
       package: "com.drift.global",
+      versionCode: 6,
       adaptiveIcon: {
-        foregroundImage: "./assets/images/drift-logo.png",
-        backgroundColor: "#5d1289"
+        foregroundImage: "./assets/images/app-icon.png",
+        backgroundColor: "#000000"
       },
       permissions: [
         "ACCESS_FINE_LOCATION",

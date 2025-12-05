@@ -50,6 +50,7 @@ export default function SelectPaymentScreen() {
     destination,
     vehicleType,
     pricing,
+    womenOnlyRide,
   } = useCarpoolStore();
   const { createTrip, setCurrentTrip } = useTripStore();
   const { user } = useAuthStore();
@@ -192,6 +193,7 @@ export default function SelectPaymentScreen() {
         riderName: user.name || 'Rider',
         riderPhoto: user.profilePhoto,
         riderProfileRating: user.rating || 5.0,
+        riderGender: user.gender,
         status: 'REQUESTED',
         pickup: {
           address: pickupLocation.address || '',
@@ -221,6 +223,8 @@ export default function SelectPaymentScreen() {
           paymentMethod: `stripe:${paymentDetails.paymentIntentId}`,
           paymentStatus: paymentDetails.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
         } : {}),
+        // Women-only ride request
+        womenOnlyRide: womenOnlyRide || false,
         requestedAt: new Date(),
       });
 

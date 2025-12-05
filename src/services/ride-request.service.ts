@@ -20,6 +20,7 @@ import firestore, {
 } from '@react-native-firebase/firestore';
 import { Trip } from '../stores/trip-store';
 import type { PricingResult } from '../stores/carpool-store';
+import { getCompleteBlockList, hasMutualBlock } from './blocking.service';
 
 /**
  * Helper to check if document exists
@@ -46,6 +47,7 @@ export interface RideRequest extends Trip {
  * - Within a reasonable distance from driver
  * - Not declined by this driver
  * - Not cancelled
+ * - NOT from users blocked by this driver (or who have blocked this driver)
  */
 export function listenForRideRequests(
   driverLocation: { latitude: number; longitude: number },
@@ -54,6 +56,27 @@ export function listenForRideRequests(
   driverId?: string // Pass driver ID to filter out declined requests
 ): () => void {
   const tripsRef = collection(firebaseDb, 'trips');
+
+  // Cache for blocked users - updated periodically
+  let blockedUserIds: string[] = [];
+  let blockListLastUpdated = 0;
+  const BLOCK_LIST_CACHE_TTL = 60000; // 1 minute cache
+
+  // Function to update blocked users list
+  const updateBlockList = async () => {
+    if (driverId && Date.now() - blockListLastUpdated > BLOCK_LIST_CACHE_TTL) {
+      try {
+        blockedUserIds = await getCompleteBlockList(driverId);
+        blockListLastUpdated = Date.now();
+        console.log('🚫 Updated block list for driver:', blockedUserIds.length, 'blocked users');
+      } catch (error) {
+        console.error('❌ Error fetching block list:', error);
+      }
+    }
+  };
+
+  // Initial fetch of block list
+  updateBlockList();
 
   // Query for requested trips (not yet accepted)
   const q = query(
@@ -65,7 +88,10 @@ export function listenForRideRequests(
 
   const unsubscribe = onSnapshot(
     q,
-    (snapshot) => {
+    async (snapshot) => {
+      // Refresh block list periodically
+      await updateBlockList();
+
       const requests: RideRequest[] = [];
 
       snapshot.forEach((doc) => {
@@ -86,6 +112,12 @@ export function listenForRideRequests(
             console.log('⏭️ Skipping declined request:', doc.id);
             return; // Skip this request
           }
+        }
+
+        // Skip requests from blocked riders (or riders who blocked this driver)
+        if (driverId && data.riderId && blockedUserIds.includes(data.riderId)) {
+          console.log('🚫 Skipping request from blocked rider:', doc.id, 'riderId:', data.riderId);
+          return; // Skip blocked user's request
         }
 
         // Skip cancelled requests (double-check even though query filters by REQUESTED)
@@ -199,6 +231,7 @@ export async function acceptRideRequest(
     vehiclePlate: string;
     vehicleColor: string;
     rating: number;
+    photo?: string;
   }
 ): Promise<void> {
   try {
@@ -215,6 +248,15 @@ export async function acceptRideRequest(
       throw new Error('Ride has already been accepted by another driver');
     }
 
+    // Check if driver and rider have blocked each other
+    if (tripData?.riderId) {
+      const isBlocked = await hasMutualBlock(driverId, tripData.riderId);
+      if (isBlocked) {
+        console.log('🚫 Cannot accept ride - mutual block exists between driver and rider');
+        throw new Error('You cannot accept rides from this user');
+      }
+    }
+
     // ✅ NEW: Log the locked contribution amount
     if (tripData?.lockedContribution) {
       console.log('💰 Driver accepting ride with locked contribution:', tripData.lockedContribution);
@@ -228,7 +270,7 @@ export async function acceptRideRequest(
     const model = vehicleModelParts.slice(1).join(' ') || 'Unknown';
 
     // Format driver info to match Trip interface
-    const formattedDriverInfo = {
+    const formattedDriverInfo: any = {
       id: driverId,
       name: driverInfo.name,
       phone: driverInfo.phone,
@@ -242,6 +284,11 @@ export async function acceptRideRequest(
         plate: driverInfo.vehiclePlate,
       },
     };
+
+    // Include photo if provided
+    if (driverInfo.photo) {
+      formattedDriverInfo.photo = driverInfo.photo;
+    }
 
     // Accept the ride and set status to DRIVER_ARRIVING
     // This immediately transitions the rider to the "driver arriving" screen
@@ -338,13 +385,15 @@ export async function startTrip(tripId: string): Promise<void> {
  * @param actualDistance - The actual distance traveled (optional)
  * @param actualDuration - The actual duration of the trip (optional)
  * @param driverFinalLocation - The driver's final location for safety check (optional)
+ * @param routeHistory - Array of coordinates representing the actual route taken (optional)
  */
 export async function completeTrip(
   tripId: string,
   finalCost: number,
   actualDistance?: number,
   actualDuration?: number,
-  driverFinalLocation?: { latitude: number; longitude: number } | null
+  driverFinalLocation?: { latitude: number; longitude: number } | null,
+  routeHistory?: Array<{ latitude: number; longitude: number }>
 ): Promise<void> {
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
@@ -367,6 +416,21 @@ export async function completeTrip(
     // Include driver's final location for safety check on rider side
     if (driverFinalLocation) {
       updateData.driverFinalLocation = driverFinalLocation;
+    }
+
+    // Include route history for safety/investigation purposes
+    // Store the actual path taken during the trip
+    if (routeHistory && routeHistory.length > 0) {
+      // Limit to 500 points to avoid Firestore document size limits
+      // Sample points if there are too many
+      const maxPoints = 500;
+      if (routeHistory.length > maxPoints) {
+        const samplingRate = Math.ceil(routeHistory.length / maxPoints);
+        updateData.routeHistory = routeHistory.filter((_, index) => index % samplingRate === 0);
+      } else {
+        updateData.routeHistory = routeHistory;
+      }
+      console.log(`📍 Saving ${updateData.routeHistory.length} route points for trip ${tripId}`);
     }
 
     await updateDoc(tripRef, updateData);

@@ -31,11 +31,14 @@
     },
     "production": {
       "android": {
-        "buildType": "app-bundle" 
+        "buildType": "app-bundle"
       },
       "env": {
         "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk",
         "EXPO_PUBLIC_GOOGLE_PLACES_API_KEY": "AIzaSyA6o3LcssB-jT0qosUEsmVG3rQ-6uWyncc",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "693488691443-qhna03104b55i4ib58jv67rf0ugbk5mt.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "693488691443-apptk3ch39tlek643asp72ihj9tadl9d.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "693488691443-pmjrvmemkudlbma58u4bkivfppf55t66.apps.googleusercontent.com",
         "NODE_ENV": "production"
       },
       "channel": "production"

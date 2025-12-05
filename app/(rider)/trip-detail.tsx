@@ -20,6 +20,7 @@ import firestore from '@react-native-firebase/firestore';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { BlockUserModal } from '@/components/modal/BlockUserModal';
 
 interface StopData {
   name: string;
@@ -55,6 +56,7 @@ interface TripData {
   totalCost: string;
   totalCostRaw: number;
   driver: {
+    id: string;
     name: string;
     photo?: string;
     rating: number;
@@ -63,6 +65,8 @@ interface TripData {
   } | null;
   rating?: number;
   paymentMethod: string;
+  // Route history for safety/investigation
+  routeHistory?: Array<{ latitude: number; longitude: number }>;
   // Cancellation info
   cancellation?: {
     cancelledBy: 'DRIVER' | 'RIDER';
@@ -128,6 +132,10 @@ export default function TripDetailScreen() {
   const [reportText, setReportText] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
 
+  // Block user state
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [driverId, setDriverId] = useState<string | null>(null);
+
   // Check if within 24 hours of trip completion
   const canReportIssue = trip?.completedAt
     ? (Date.now() - trip.completedAt.getTime()) < 24 * 60 * 60 * 1000
@@ -186,9 +194,12 @@ export default function TripDetailScreen() {
         completed: stop.completed || false,
       }));
 
-      // Raw values for receipt
-      const distanceRaw = data.distance || data.actualDistance || 0;
-      const durationRaw = data.duration || data.actualDuration || data.estimatedDuration || 0;
+      // Raw values for receipt - prefer actual values recorded at trip completion
+      const distanceRaw = data.actualDistance || data.distance || 0;
+      const durationRaw = data.actualDuration || data.duration || data.estimatedDuration || 0;
+
+      // Load route history for accurate polyline display
+      const routeHistory: Array<{ latitude: number; longitude: number }> = data.routeHistory || [];
 
       // Parse cancellation data if trip was cancelled
       const cancellation = data.status === 'CANCELLED' ? {
@@ -200,6 +211,12 @@ export default function TripDetailScreen() {
         wasRiderFault: data.wasRiderFault || false,
         wasDriverFault: data.wasDriverFault || false,
       } : undefined;
+
+      // Set driver ID for blocking - use driverId from trip or from driverInfo
+      const driverIdFromData = data.driverId || data.driverInfo?.id;
+      if (driverIdFromData) {
+        setDriverId(driverIdFromData);
+      }
 
       // Build trip object
       const tripData: TripData = {
@@ -235,14 +252,16 @@ export default function TripDetailScreen() {
         totalCost: `CI$${totalCost.toFixed(2)}`,
         totalCostRaw: totalCost,
         driver: data.driverInfo ? {
+          id: driverIdFromData || '',
           name: data.driverInfo.name || 'Driver',
-          photo: data.driverInfo.photo,
+          photo: data.driverInfo.photo || data.driverInfo.profilePhoto,
           rating: data.driverInfo.rating || 5.0,
           vehicle: `${data.driverInfo.vehicle?.color || ''} ${data.driverInfo.vehicle?.make || ''} ${data.driverInfo.vehicle?.model || ''}`.trim() || 'Vehicle',
           plate: data.driverInfo.vehicle?.plate || '',
         } : null,
         rating: data.driverRating,
         paymentMethod: data.paymentMethod || 'Card',
+        routeHistory,
         cancellation,
       };
 
@@ -494,8 +513,28 @@ export default function TripDetailScreen() {
 
   const statusBadge = getStatusBadge(trip.status);
 
+  // Determine polyline coordinates - use routeHistory if available, otherwise fallback to waypoints
+  const polylineCoordinates = trip.routeHistory && trip.routeHistory.length > 0
+    ? trip.routeHistory
+    : [
+        trip.from.coords,
+        ...trip.stops.map(s => s.coords),
+        trip.to.coords,
+      ];
+
+  // Calculate map region to fit all points
+  const allCoords = [trip.from.coords, trip.to.coords, ...trip.stops.map(s => s.coords), ...(trip.routeHistory || [])];
+  const latitudes = allCoords.map(c => c.latitude);
+  const longitudes = allCoords.map(c => c.longitude);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+  const latDelta = Math.max((maxLat - minLat) * 1.3, 0.02);
+  const lngDelta = Math.max((maxLng - minLng) * 1.3, 0.02);
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#000" />
@@ -506,17 +545,17 @@ export default function TripDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Map */}
         <View style={styles.mapContainer}>
           <MapView
             provider={PROVIDER_GOOGLE}
             style={styles.map}
             initialRegion={{
-              latitude: (trip.from.coords.latitude + trip.to.coords.latitude) / 2,
-              longitude: (trip.from.coords.longitude + trip.to.coords.longitude) / 2,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
+              latitude: (minLat + maxLat) / 2,
+              longitude: (minLng + maxLng) / 2,
+              latitudeDelta: latDelta,
+              longitudeDelta: lngDelta,
             }}
           >
             <Marker coordinate={trip.from.coords} title="Pickup">
@@ -541,13 +580,9 @@ export default function TripDetailScreen() {
                 <Ionicons name="location" size={20} color="#EF4444" />
               </View>
             </Marker>
-            {/* Polyline through all points */}
+            {/* Polyline - uses actual route history if available */}
             <Polyline
-              coordinates={[
-                trip.from.coords,
-                ...trip.stops.map(s => s.coords),
-                trip.to.coords,
-              ]}
+              coordinates={polylineCoordinates}
               strokeColor="#5d1289"
               strokeWidth={3}
             />
@@ -555,6 +590,13 @@ export default function TripDetailScreen() {
           <View style={[styles.statusBadge, { backgroundColor: statusBadge.color }]}>
             <Text style={styles.statusText}>{statusBadge.text}</Text>
           </View>
+          {/* Route history indicator */}
+          {trip.routeHistory && trip.routeHistory.length > 0 && (
+            <View style={styles.routeHistoryBadge}>
+              <Ionicons name="shield-checkmark" size={12} color="#10B981" />
+              <Text style={styles.routeHistoryText}>Verified Route</Text>
+            </View>
+          )}
         </View>
 
         {/* Trip Info */}
@@ -769,6 +811,17 @@ export default function TripDetailScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Block Driver Option - Always available */}
+        {trip.driver && driverId && (
+          <TouchableOpacity
+            style={styles.blockDriverButton}
+            onPress={() => setShowBlockModal(true)}
+          >
+            <Ionicons name="ban-outline" size={18} color="#EF4444" />
+            <Text style={styles.blockDriverText}>Block this driver from future rides</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Report Issue Modal */}
@@ -827,12 +880,38 @@ export default function TripDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Block User Modal */}
+      {user && driverId && trip?.driver && (
+        <BlockUserModal
+          visible={showBlockModal}
+          onClose={() => setShowBlockModal(false)}
+          onBlocked={() => {
+            // Show success and close the modal
+            setShowBlockModal(false);
+            Alert.alert(
+              'Driver Blocked',
+              `${trip.driver?.name} has been blocked. You will no longer be matched with this driver.`
+            );
+          }}
+          blockerId={user.id}
+          blockerName={user.name || 'Rider'}
+          blockerType="rider"
+          blockedId={driverId}
+          blockedName={trip.driver.name}
+          blockedType="driver"
+          tripId={trip.id}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
+  scrollContent: {
+    paddingBottom: 40,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -918,6 +997,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   statusText: { fontSize: 12, fontWeight: '600', color: '#FFF' },
+  routeHistoryBadge: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  routeHistoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10B981',
+  },
   infoCard: {
     backgroundColor: '#FFF',
     marginHorizontal: 16,
@@ -1217,5 +1315,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#065F46',
     lineHeight: 18,
+  },
+  blockDriverButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+    marginBottom: 40,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    borderRadius: 12,
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+  },
+  blockDriverText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
   },
 });

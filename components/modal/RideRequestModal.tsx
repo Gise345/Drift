@@ -18,6 +18,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -189,9 +190,9 @@ export default function RideRequestModal({
       statusBarTranslucent
       onRequestClose={handleDecline}
     >
-      <View style={styles.overlay}>
-        <View style={styles.container}>
-          {/* Header with Timer */}
+      <View style={[styles.overlay, { paddingTop: insets.top }]}>
+        <View style={[styles.container, { maxHeight: height - insets.top - 20 }]}>
+          {/* Header with Timer - Fixed at top */}
           <LinearGradient
             colors={request.womenOnlyRide ? ['#EC4899', '#BE185D'] : [Colors.primary, Colors.primaryDark]}
             style={styles.header}
@@ -220,93 +221,113 @@ export default function RideRequestModal({
             </View>
           </LinearGradient>
 
-          {/* Women-Only Ride Alert */}
-          {request.womenOnlyRide && (
-            <View style={styles.womenOnlyAlert}>
-              <Ionicons name="information-circle" size={18} color="#BE185D" />
-              <Text style={styles.womenOnlyAlertText}>
-                This is a women-only ride request. The rider expects a female driver. If a male presents themselves, you may cancel with zero penalty and receive 50% cancellation fee.
-              </Text>
-            </View>
-          )}
-
-          {/* Earnings Banner */}
-          <View style={styles.earningsBanner}>
-            <Text style={styles.earningsLabel}>Estimated Earnings</Text>
-            <Text style={styles.earningsAmount}>{formatEarnings(request.estimatedEarnings)}</Text>
-          </View>
-
-          {/* Trip Details */}
-          <View style={styles.content}>
-            {/* Pickup */}
-            <View style={styles.locationRow}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="location" size={20} color={Colors.success} />
-              </View>
-              <View style={styles.locationInfo}>
-                <Text style={styles.locationLabel}>Pickup</Text>
-                <Text style={styles.locationAddress}>{request.pickup.address}</Text>
-              </View>
-            </View>
-
-            {/* Destination */}
-            <View style={[styles.locationRow, { marginTop: Spacing.md }]}>
-              <View style={[styles.iconCircle, { backgroundColor: Colors.error + '20' }]}>
-                <Ionicons name="flag" size={20} color={Colors.error} />
-              </View>
-              <View style={styles.locationInfo}>
-                <Text style={styles.locationLabel}>Destination</Text>
-                <Text style={styles.locationAddress}>{request.destination.address}</Text>
-              </View>
-            </View>
-
-            {/* Trip Stats */}
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Ionicons name="navigate" size={24} color={Colors.primary} />
-                <Text style={styles.statValue}>{formatDistance(request.distance)}</Text>
-                <Text style={styles.statLabel}>Distance</Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statItem}>
-                <Ionicons name="time" size={24} color={Colors.primary} />
-                <Text style={styles.statValue}>{formatDuration(request.estimatedDuration)}</Text>
-                <Text style={styles.statLabel}>Duration</Text>
-              </View>
-
-              {request.passengers && (
-                <>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Ionicons name="people" size={24} color={Colors.primary} />
-                    <Text style={styles.statValue}>{request.passengers}</Text>
-                    <Text style={styles.statLabel}>Passengers</Text>
-                  </View>
-                </>
-              )}
-            </View>
-
-            {/* Notes */}
-            {request.notes && (
-              <View style={styles.notesContainer}>
-                <Ionicons name="chatbubble-outline" size={18} color={Colors.gray[600]} />
-                <Text style={styles.notesText}>{request.notes}</Text>
+          {/* Scrollable Content */}
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            bounces={false}
+          >
+            {/* Women-Only Ride Alert */}
+            {request.womenOnlyRide && (
+              <View style={styles.womenOnlyAlert}>
+                <Ionicons name="information-circle" size={18} color="#BE185D" />
+                <Text style={styles.womenOnlyAlertText}>
+                  This is a women-only ride request. The rider expects a female driver, if this doesn't match your profile, you may withdraw from this arrangement. Or If a male presents themselves at pickup location, you may cancel and receive 50% of the contribution for your gas & time.
+                </Text>
               </View>
             )}
 
-            {/* Age Restriction Warning */}
-            <View style={styles.ageWarningContainer}>
-              <Ionicons name="alert-circle" size={18} color={Colors.warning} />
-              <Text style={styles.ageWarningText}>
-                Children under 16 must be accompanied by an adult. You must refuse unaccompanied minors. Violations result in account suspension or  permanent ban.
-              </Text>
+            {/* Earnings Banner */}
+            <View style={[
+              styles.earningsBanner,
+              request.womenOnlyRide && styles.earningsBannerWomenOnly,
+            ]}>
+              <Text style={[
+                styles.earningsLabel,
+                request.womenOnlyRide && styles.earningsLabelWomenOnly,
+              ]}>Estimated Earnings</Text>
+              <Text style={[
+                styles.earningsAmount,
+                request.womenOnlyRide && styles.earningsAmountWomenOnly,
+              ]}>{formatEarnings(request.estimatedEarnings)}</Text>
             </View>
-          </View>
 
-          {/* Action Buttons */}
-          <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, Spacing.xl) + Spacing.md }]}>
+            {/* Trip Details */}
+            <View style={styles.content}>
+              {/* Pickup */}
+              <View style={styles.locationRow}>
+                <View style={styles.iconCircle}>
+                  <Ionicons name="location" size={20} color={Colors.success} />
+                </View>
+                <View style={styles.locationInfo}>
+                  <Text style={styles.locationLabel}>Pickup</Text>
+                  <Text style={styles.locationAddress}>{request.pickup.address}</Text>
+                </View>
+              </View>
+
+              {/* Destination */}
+              <View style={[styles.locationRow, { marginTop: Spacing.md }]}>
+                <View style={[styles.iconCircle, { backgroundColor: Colors.error + '20' }]}>
+                  <Ionicons name="flag" size={20} color={Colors.error} />
+                </View>
+                <View style={styles.locationInfo}>
+                  <Text style={styles.locationLabel}>Destination</Text>
+                  <Text style={styles.locationAddress}>{request.destination.address}</Text>
+                </View>
+              </View>
+
+              {/* Trip Stats */}
+              <View style={[
+                styles.statsContainer,
+                request.womenOnlyRide && styles.statsContainerWomenOnly,
+              ]}>
+                <View style={styles.statItem}>
+                  <Ionicons name="navigate" size={24} color={request.womenOnlyRide ? '#EC4899' : Colors.primary} />
+                  <Text style={styles.statValue}>{formatDistance(request.distance)}</Text>
+                  <Text style={styles.statLabel}>Distance</Text>
+                </View>
+
+                <View style={styles.statDivider} />
+
+                <View style={styles.statItem}>
+                  <Ionicons name="time" size={24} color={request.womenOnlyRide ? '#EC4899' : Colors.primary} />
+                  <Text style={styles.statValue}>{formatDuration(request.estimatedDuration)}</Text>
+                  <Text style={styles.statLabel}>Duration</Text>
+                </View>
+
+                {request.passengers && (
+                  <>
+                    <View style={styles.statDivider} />
+                    <View style={styles.statItem}>
+                      <Ionicons name="people" size={24} color={request.womenOnlyRide ? '#EC4899' : Colors.primary} />
+                      <Text style={styles.statValue}>{request.passengers}</Text>
+                      <Text style={styles.statLabel}>Passengers</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+
+              {/* Notes */}
+              {request.notes && (
+                <View style={styles.notesContainer}>
+                  <Ionicons name="chatbubble-outline" size={18} color={Colors.gray[600]} />
+                  <Text style={styles.notesText}>{request.notes}</Text>
+                </View>
+              )}
+
+              {/* Age Restriction Warning */}
+              <View style={styles.ageWarningContainer}>
+                <Ionicons name="alert-circle" size={18} color={Colors.warning} />
+                <Text style={styles.ageWarningText}>
+                  Children under 16 must be accompanied by an adult. You must refuse unaccompanied minors. Violations result in account suspension or  permanent ban.
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Action Buttons - Fixed at bottom with safe area */}
+          <View style={[styles.actions, { paddingBottom: Math.max(insets.bottom, Spacing.lg) + Spacing.md }]}>
             <TouchableOpacity
               style={[styles.declineButton, isProcessing && styles.buttonDisabled]}
               onPress={handleDecline}
@@ -343,8 +364,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderTopLeftRadius: BorderRadius['2xl'],
     borderTopRightRadius: BorderRadius['2xl'],
-    maxHeight: height * 0.85,
     ...(Shadows as any)['2xl'],
+    overflow: 'hidden',
+  },
+
+  scrollView: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+
+  scrollContent: {
+    flexGrow: 0,
   },
 
   // Header
@@ -612,7 +642,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: Spacing.sm,
     marginHorizontal: Spacing.xl,
-    marginTop: Spacing.md,
+    marginTop: Spacing.lg,
     padding: Spacing.md,
     backgroundColor: '#FDF2F8',
     borderRadius: BorderRadius.md,
@@ -626,5 +656,20 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.medium,
     color: '#9D174D',
     lineHeight: 18,
+  },
+
+  // Women-Only Enhanced Styles
+  earningsBannerWomenOnly: {
+    backgroundColor: '#FDF2F8',
+    borderBottomColor: '#FBCFE8',
+  },
+  earningsLabelWomenOnly: {
+    color: '#BE185D',
+  },
+  earningsAmountWomenOnly: {
+    color: '#BE185D',
+  },
+  statsContainerWomenOnly: {
+    backgroundColor: '#FDF2F8',
   },
 });

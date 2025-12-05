@@ -100,7 +100,23 @@ export default function NavigateToPickup() {
   const { currentTrip } = useTripStore();
 
   useEffect(() => {
-    if (!currentTrip) return;
+    if (!currentTrip) {
+      console.log('📍 NavigateToPickup: No currentTrip yet');
+      return;
+    }
+
+    console.log('📍 NavigateToPickup: Trip update received:', {
+      tripId: currentTrip.id,
+      activeRideId: activeRide?.id,
+      status: currentTrip.status,
+      cancelledBy: (currentTrip as any).cancelledBy,
+    });
+
+    // Only process if this trip matches our active ride
+    if (activeRide?.id && currentTrip.id !== activeRide.id) {
+      console.log('⚠️ Trip ID mismatch, ignoring update');
+      return;
+    }
 
     // If trip was cancelled by rider
     if (currentTrip.status === 'CANCELLED') {
@@ -112,7 +128,7 @@ export default function NavigateToPickup() {
       // Show alert and redirect
       Alert.alert(
         'Ride Cancelled',
-        currentTrip.cancelledBy === 'RIDER'
+        (currentTrip as any).cancelledBy === 'RIDER'
           ? 'The rider has cancelled this trip.'
           : 'This trip has been cancelled.',
         [
@@ -123,7 +139,7 @@ export default function NavigateToPickup() {
         ]
       );
     }
-  }, [currentTrip?.status]);
+  }, [currentTrip?.status, currentTrip?.id, activeRide?.id]);
 
   // Initialize messaging when driver accepts ride
   useEffect(() => {

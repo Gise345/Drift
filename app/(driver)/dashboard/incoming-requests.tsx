@@ -143,16 +143,17 @@ export default function IncomingRequests() {
                   style={[
                     styles.requestCard,
                     isExpiringSoon && styles.requestCardExpiring,
+                    (request as any).womenOnlyRide && styles.requestCardWomenOnly,
                   ]}
                 >
                   {/* Timer Bar */}
-                  <View style={styles.timerBar}>
+                  <View style={[styles.timerBar, (request as any).womenOnlyRide && styles.timerBarWomenOnly]}>
                     <View
                       style={[
                         styles.timerFill,
                         {
                           width: `${(timeRemaining / 15) * 100}%`,
-                          backgroundColor: isExpiringSoon ? Colors.error : Colors.primary,
+                          backgroundColor: isExpiringSoon ? Colors.error : (request as any).womenOnlyRide ? '#EC4899' : Colors.primary,
                         },
                       ]}
                     />
@@ -329,7 +330,10 @@ export default function IncomingRequests() {
                       <Text style={styles.declineText}>Decline</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.acceptButton}
+                      style={[
+                        styles.acceptButton,
+                        (request as any).womenOnlyRide && styles.acceptButtonWomenOnly,
+                      ]}
                       onPress={() => handleAccept(request.id)}
                     >
                       <Ionicons name="checkmark" size={20} color={Colors.white} />
@@ -705,5 +709,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  // Women-Only Card Styles
+  requestCardWomenOnly: {
+    backgroundColor: '#FDF2F8',
+    borderWidth: 2,
+    borderColor: '#FBCFE8',
+  },
+  timerBarWomenOnly: {
+    backgroundColor: '#FBCFE8',
+  },
+  acceptButtonWomenOnly: {
+    backgroundColor: '#EC4899',
   },
 });

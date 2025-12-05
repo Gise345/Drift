@@ -69,10 +69,10 @@ export default function ContactSupportScreen() {
     {
       id: 'email',
       title: 'Email Us',
-      subtitle: 'support@driftcayman.com',
+      subtitle: 'info@drift-global.com',
       icon: 'mail',
       action: () => {
-        Linking.openURL('mailto:support@driftcayman.com');
+        Linking.openURL('mailto:info@drift-global.com');
       },
       color: Colors.primary[500],
     },

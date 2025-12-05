@@ -3,7 +3,7 @@
  * Review and approve/reject driver registrations
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import firestore from '@react-native-firebase/firestore';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
@@ -42,32 +43,39 @@ export default function PendingDriverApplications() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadPendingDrivers();
-  }, []);
+  // Refresh when screen comes into focus (e.g., after reviewing a driver)
+  useFocusEffect(
+    useCallback(() => {
+      loadPendingDrivers();
+    }, [])
+  );
 
   const loadPendingDrivers = async () => {
     try {
+      // Query by registrationStatus field only
       const snapshot = await firestore()
         .collection('drivers')
         .where('registrationStatus', '==', 'pending')
-        .orderBy('submittedAt', 'desc')
         .get();
 
       const pendingDrivers: PendingDriver[] = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone,
-          vehicle: data.vehicle,
-          submittedAt: data.submittedAt?.toDate() || new Date(),
-          registrationStatus: data.registrationStatus,
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          vehicle: data.vehicle || { make: '', model: '', year: 0, color: '', licensePlate: '' },
+          submittedAt: data.submittedAt?.toDate() || data.createdAt?.toDate() || new Date(),
+          registrationStatus: data.registrationStatus || 'pending',
         };
       });
 
+      // Sort by submittedAt client-side to avoid needing a composite index
+      pendingDrivers.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+
+      console.log(`✅ Loaded ${pendingDrivers.length} pending drivers`);
       setDrivers(pendingDrivers);
     } catch (error) {
       console.error('❌ Error loading pending drivers:', error);

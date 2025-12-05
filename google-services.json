@@ -14,16 +14,20 @@
       },
       "oauth_client": [
         {
-          "client_id": "693488691443-k65ttf4pi1phnkcmhblt6rba87he568r.apps.googleusercontent.com",
+          "client_id": "693488691443-pmjrvmemkudlbma58u4bkivfppf55t66.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.drift.global",
+            "certificate_hash": "2041b02f1ef7c2a16c98e953278ffcd917953ede"
+          }
+        },
+        {
+          "client_id": "693488691443-r7b3hd0d2hpu13gum3un4iq6i9jnfvon.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.drift.global",
             "certificate_hash": "3a7abaf4631ed2c3b2d7316b502f14ce175229f1"
           }
-        },
-        {
-          "client_id": "693488691443-hfu36r5nfkd8p8cbmndo2qihneqiduah.apps.googleusercontent.com",
-          "client_type": 3
         }
       ],
       "api_key": [
@@ -35,14 +39,14 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "693488691443-hfu36r5nfkd8p8cbmndo2qihneqiduah.apps.googleusercontent.com",
+              "client_id": "693488691443-qhna03104b55i4ib58jv67rf0ugbk5mt.apps.googleusercontent.com",
               "client_type": 3
             },
             {
-              "client_id": "693488691443-shj0qjsljq12ptnmsabv8pvtv97t67p8.apps.googleusercontent.com",
+              "client_id": "693488691443-apptk3ch39tlek643asp72ihj9tadl9d.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.drift.app"
+                "bundle_id": "com.drift.global"
               }
             }
           ]

@@ -50,33 +50,52 @@ export default function ActiveDriversScreen() {
 
   const loadDrivers = async () => {
     try {
-      const snapshot = await firestore()
+      // Try querying by registrationStatus first (primary field)
+      let snapshot = await firestore()
         .collection('drivers')
         .where('registrationStatus', '==', 'approved')
-        .orderBy('createdAt', 'desc')
         .get();
+
+      // If no results, try querying by status field (fallback for older documents)
+      if (snapshot.empty) {
+        console.log('🔄 No drivers found with registrationStatus, trying status field...');
+        snapshot = await firestore()
+          .collection('drivers')
+          .where('status', '==', 'approved')
+          .get();
+      }
 
       const driversList: ActiveDriver[] = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone,
+          firstName: data.firstName || '',
+          lastName: data.lastName || '',
+          email: data.email || '',
+          phone: data.phone || '',
           rating: data.rating || 5.0,
           totalTrips: data.totalTrips || 0,
           vehicle: {
-            make: data.vehicle?.make,
-            model: data.vehicle?.model,
-            year: data.vehicle?.year,
-            licensePlate: data.vehicle?.licensePlate,
+            make: data.vehicle?.make || '',
+            model: data.vehicle?.model || '',
+            year: data.vehicle?.year || 0,
+            licensePlate: data.vehicle?.licensePlate || '',
           },
-          status: data.status || 'active',
+          status: data.registrationStatus || data.status || 'active',
           profilePhotoUrl: data.profilePhotoUrl,
         };
       });
 
+      // Sort by createdAt client-side to avoid needing a composite index
+      driversList.sort((a, b) => {
+        const docA = snapshot.docs.find(d => d.id === a.id);
+        const docB = snapshot.docs.find(d => d.id === b.id);
+        const dateA = docA?.data()?.createdAt?.toDate?.() || new Date(0);
+        const dateB = docB?.data()?.createdAt?.toDate?.() || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      console.log(`✅ Loaded ${driversList.length} active drivers`);
       setDrivers(driversList);
     } catch (error) {
       console.error('❌ Error loading active drivers:', error);
@@ -158,7 +177,7 @@ export default function ActiveDriversScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Active Drivers</Text>
         <View style={{ width: 40 }} />
@@ -206,7 +225,7 @@ export default function ActiveDriversScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -224,7 +243,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Typography.fontSize.xl,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
   },
   statsBar: {
     backgroundColor: Colors.white,
@@ -246,7 +265,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   driverHeader: {
     flexDirection: 'row',
@@ -279,7 +298,7 @@ const styles = StyleSheet.create({
   driverName: {
     fontSize: Typography.fontSize.base,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
     marginBottom: 4,
   },
   ratingRow: {
@@ -290,7 +309,7 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: Typography.fontSize.sm,
     fontFamily: Typography.fontFamily.medium,
-    color: Colors.text,
+    color: Colors.black,
   },
   tripsText: {
     fontSize: Typography.fontSize.sm,
@@ -367,7 +386,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: Typography.fontSize.xl,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
     marginTop: Spacing.lg,
     marginBottom: Spacing.xs,
   },

@@ -64,7 +64,7 @@ export default function NavigateToDestination() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
-  const { activeRide, updateLocation, setActiveRide } = useDriverStore();
+  const { activeRide, updateLocation, setActiveRide, addRouteHistoryPoint } = useDriverStore();
   const { updateDriverLocation, subscribeToTrip, currentTrip } = useTripStore();
   const { user } = useAuthStore();
 
@@ -117,7 +117,23 @@ export default function NavigateToDestination() {
 
   // Listen for trip status changes (e.g., rider cancellation)
   useEffect(() => {
-    if (!currentTrip) return;
+    if (!currentTrip) {
+      console.log('📍 NavigateToDestination: No currentTrip yet');
+      return;
+    }
+
+    console.log('📍 NavigateToDestination: Trip update received:', {
+      tripId: currentTrip.id,
+      activeRideId: activeRide?.id,
+      status: currentTrip.status,
+      cancelledBy: (currentTrip as any).cancelledBy,
+    });
+
+    // Only process if this trip matches our active ride
+    if (activeRide?.id && currentTrip.id !== activeRide.id) {
+      console.log('⚠️ Trip ID mismatch, ignoring update');
+      return;
+    }
 
     // If trip was cancelled by rider
     if (currentTrip.status === 'CANCELLED') {
@@ -129,7 +145,7 @@ export default function NavigateToDestination() {
       // Show alert and redirect
       Alert.alert(
         'Ride Cancelled',
-        currentTrip.cancelledBy === 'RIDER'
+        (currentTrip as any).cancelledBy === 'RIDER'
           ? 'The rider has cancelled this trip.'
           : 'This trip has been cancelled.',
         [
@@ -140,7 +156,7 @@ export default function NavigateToDestination() {
         ]
       );
     }
-  }, [currentTrip?.status]);
+  }, [currentTrip?.status, currentTrip?.id, activeRide?.id]);
 
   // Re-fetch route when stops are added/changed
   useEffect(() => {
@@ -402,6 +418,9 @@ export default function NavigateToDestination() {
           async (loc) => {
             const { latitude, longitude, heading, speed } = loc.coords;
             setCurrentLocation({ latitude, longitude });
+
+            // Record route history for safety/investigation purposes
+            addRouteHistoryPoint({ latitude, longitude });
 
             // Update current speed (in m/s from GPS)
             if (speed !== null && speed >= 0) {

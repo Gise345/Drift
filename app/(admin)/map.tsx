@@ -73,8 +73,13 @@ export default function LiveMapScreen() {
                 location: data.currentLocation,
               });
 
-              // Only include drivers with valid location data
-              if (data.currentLocation?.lat && data.currentLocation?.lng) {
+              // Only include drivers with valid location data AND recent updates
+              // Filter out stale locations (older than 10 minutes)
+              const locationUpdatedAt = data.currentLocation?.updatedAt?.toDate?.();
+              const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+              const isLocationFresh = !locationUpdatedAt || locationUpdatedAt > tenMinutesAgo;
+
+              if (data.currentLocation?.lat && data.currentLocation?.lng && isLocationFresh) {
                 let currentTrip = undefined;
 
                 // Check if driver is on a trip
@@ -212,6 +217,64 @@ export default function LiveMapScreen() {
     }
   };
 
+  /**
+   * Clear stale driver online status
+   * Sets isOnline to false for drivers whose location hasn't been updated in 10+ minutes
+   */
+  const handleClearStaleDrivers = async () => {
+    Alert.alert(
+      'Clear Stale Drivers',
+      'This will set all drivers with stale locations (10+ minutes old) to offline. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🧹 Clearing stale driver online status...');
+
+              const onlineDrivers = await firestore()
+                .collection('drivers')
+                .where('isOnline', '==', true)
+                .get();
+
+              const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+              const batch = firestore().batch();
+              let staleCount = 0;
+
+              for (const doc of onlineDrivers.docs) {
+                const data = doc.data();
+                const locationUpdatedAt = data.currentLocation?.updatedAt?.toDate?.();
+
+                // If no location timestamp or timestamp is older than 10 minutes
+                if (!locationUpdatedAt || locationUpdatedAt < tenMinutesAgo) {
+                  batch.update(doc.ref, {
+                    isOnline: false,
+                    currentLocation: firestore.FieldValue.delete(),
+                  });
+                  staleCount++;
+                  console.log(`🔴 Marking ${data.firstName} ${data.lastName} as offline (stale location)`);
+                }
+              }
+
+              if (staleCount > 0) {
+                await batch.commit();
+                console.log(`✅ Cleared ${staleCount} stale drivers`);
+                Alert.alert('Success', `Cleared ${staleCount} drivers with stale locations.`);
+              } else {
+                Alert.alert('Info', 'No stale drivers found. All online drivers have recent locations.');
+              }
+            } catch (error) {
+              console.error('❌ Error clearing stale drivers:', error);
+              Alert.alert('Error', 'Failed to clear stale drivers');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -239,6 +302,9 @@ export default function LiveMapScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Map</Text>
         <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleClearStaleDrivers} style={styles.debugButton}>
+            <Ionicons name="trash-outline" size={20} color={Colors.warning} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleDebugDrivers} style={styles.debugButton}>
             <Ionicons name="bug" size={20} color={Colors.primary} />
           </TouchableOpacity>

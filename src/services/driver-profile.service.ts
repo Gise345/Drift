@@ -10,6 +10,67 @@ import type { Driver, Vehicle, Document as DriverDocument } from '../stores/driv
 const db = firestore();
 
 /**
+ * Determine driver approval status from Firebase data
+ * Handles multiple possible field names and values for backwards compatibility
+ *
+ * NOTE: When admin approves a driver:
+ * - registrationStatus is set to 'approved'
+ * - status is set to 'active' (operational status)
+ *
+ * This function returns the REGISTRATION status (pending/approved/rejected/suspended)
+ * which is used for determining if driver can go online.
+ */
+function determineDriverStatus(data: any): 'pending' | 'approved' | 'rejected' | 'suspended' {
+  // Check various field names that might indicate approval status
+  const registrationStatus = data?.registrationStatus;
+  const status = data?.status; // Operational status: active, inactive, suspended
+  const isApproved = data?.isApproved;
+  const approved = data?.approved;
+
+  console.log('🔍 Checking driver status fields:', {
+    registrationStatus,
+    status,
+    isApproved,
+    approved,
+  });
+
+  // Check if any field indicates approved status
+  // NOTE: status === 'active' means driver was approved and is operational
+  if (
+    registrationStatus === 'approved' ||
+    status === 'approved' ||
+    status === 'active' || // 'active' operational status means they were approved
+    isApproved === true ||
+    approved === true
+  ) {
+    console.log('✅ Driver is APPROVED');
+    return 'approved';
+  }
+
+  // Check for rejected status
+  if (
+    registrationStatus === 'rejected' ||
+    status === 'rejected'
+  ) {
+    console.log('❌ Driver is REJECTED');
+    return 'rejected';
+  }
+
+  // Check for suspended status
+  if (
+    registrationStatus === 'suspended' ||
+    status === 'suspended'
+  ) {
+    console.log('⚠️ Driver is SUSPENDED');
+    return 'suspended';
+  }
+
+  // Default to 'pending' if registrationStatus is pending or not set
+  console.log('⏳ Driver is PENDING');
+  return 'pending';
+}
+
+/**
  * Load complete driver profile from Firebase
  */
 export async function loadDriverProfile(userId: string): Promise<{
@@ -19,8 +80,10 @@ export async function loadDriverProfile(userId: string): Promise<{
 }> {
   try {
     console.log('📥 Loading driver profile for:', userId);
+    console.log('📥 Firestore instance:', !!db);
 
     const driverDoc = await db.collection('drivers').doc(userId).get();
+    console.log('📥 Driver doc exists:', driverDoc.exists);
 
     if (!driverDoc.exists) {
       console.log('⚠️ No driver profile found for:', userId);
@@ -38,6 +101,7 @@ export async function loadDriverProfile(userId: string): Promise<{
       lastName: data?.lastName || '',
       photoUrl: data?.profilePhotoUrl,
       dateOfBirth: data?.dateOfBirth || '',
+      gender: data?.gender || 'male',
       address: {
         street: data?.address?.street || '',
         city: data?.address?.city || '',
@@ -46,7 +110,7 @@ export async function loadDriverProfile(userId: string): Promise<{
       },
       rating: data?.rating || 5.0,
       totalTrips: data?.totalTrips || 0,
-      status: data?.registrationStatus === 'approved' ? 'approved' : data?.registrationStatus || 'pending',
+      status: determineDriverStatus(data),
       createdAt: data?.createdAt?.toDate() || new Date(),
     };
 

@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is the owner
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check file size (in bytes)
+    function isValidSize(maxSize) {
+      return request.resource.size < maxSize;
+    }
+
+    // Check if file is an image
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    // Check if file is a PDF
+    function isPDF() {
+      return request.resource.contentType == 'application/pdf';
+    }
+
+    // ============================================================================
+    // User Profile Photos
+    // ============================================================================
+
+    match /users/{userId}/profile/{fileName} {
+      // Anyone can view profile photos
+      allow read: if true;
+
+      // Only owner can upload/update/delete
+      allow write: if isOwner(userId)
+        && isImage()
+        && isValidSize(5 * 1024 * 1024); // 5MB max
+    }
+
+    // ============================================================================
+    // Driver Documents
+    // ============================================================================
+
+    match /drivers/{driverId}/documents/{documentId} {
+      // Only driver and admins can read documents
+      allow read: if isOwner(driverId);
+
+      // Only driver can upload documents
+      allow write: if isOwner(driverId)
+        && (isImage() || isPDF())
+        && isValidSize(10 * 1024 * 1024); // 10MB max
+    }
+
+    // ============================================================================
+    // Driver Profile Photos
+    // ============================================================================
+
+    match /drivers/{driverId}/profile/{fileName} {
+      // Anyone can view driver profile photos
+      allow read: if true;
+
+      // Only driver can upload
+      allow write: if isOwner(driverId)
+        && isImage()
+        && isValidSize(5 * 1024 * 1024); // 5MB max
+    }
+
+    // ============================================================================
+    // Vehicle Photos
+    // ============================================================================
+
+    match /drivers/{driverId}/vehicle/{fileName} {
+      // Anyone can view vehicle photos
+      allow read: if true;
+
+      // Only driver can upload
+      allow write: if isOwner(driverId)
+        && isImage()
+        && isValidSize(5 * 1024 * 1024); // 5MB max
+    }
+
+    // ============================================================================
+    // Trip Documents (Receipts, PDFs)
+    // ============================================================================
+
+    match /trips/{tripId}/{fileName} {
+      // Authenticated users can read trip documents
+      allow read: if isAuthenticated();
+
+      // Authenticated users can create trip documents
+      allow create: if isAuthenticated()
+        && (isImage() || isPDF())
+        && isValidSize(10 * 1024 * 1024); // 10MB max
+
+      // No updates or deletes (immutable records)
+      allow update, delete: if false;
+    }
+
+    // ============================================================================
+    // Chat/Message Attachments
+    // ============================================================================
+
+    match /messages/{conversationId}/{fileName} {
+      // Authenticated users can read message attachments
+      allow read: if isAuthenticated();
+
+      // Authenticated users can upload attachments
+      allow create: if isAuthenticated()
+        && isImage()
+        && isValidSize(5 * 1024 * 1024); // 5MB max
+
+      // No updates or deletes
+      allow update, delete: if false;
+    }
+
+    // ============================================================================
+    // Default: Deny all other access
+    // ============================================================================
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

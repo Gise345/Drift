@@ -37,6 +37,14 @@ export default function DriverReviewScreen() {
 
   const loadDriverData = async () => {
     try {
+      if (!driverId) {
+        Alert.alert('Error', 'No driver ID provided');
+        router.back();
+        return;
+      }
+
+      console.log('📖 Loading driver data for:', driverId);
+
       // Load driver profile
       const driverDoc = await firestore()
         .collection('drivers')
@@ -44,12 +52,23 @@ export default function DriverReviewScreen() {
         .get();
 
       if (!driverDoc.exists) {
-        Alert.alert('Error', 'Driver not found');
+        Alert.alert('Error', 'Driver not found. They may have been removed or the ID is invalid.');
         router.back();
         return;
       }
 
       const driverData = driverDoc.data();
+
+      // Check if driver is no longer pending (already approved/rejected)
+      if (driverData?.registrationStatus !== 'pending') {
+        Alert.alert(
+          'Already Reviewed',
+          `This driver has already been ${driverData?.registrationStatus || 'processed'}. The list will refresh.`,
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        return;
+      }
+
       setDriver({
         ...driverData,
         id: driverDoc.id,
@@ -68,9 +87,14 @@ export default function DriverReviewScreen() {
       if (docsSnapshot.exists) {
         setDocuments(docsSnapshot.data());
       }
-    } catch (error) {
+
+      console.log('✅ Driver data loaded successfully');
+    } catch (error: any) {
       console.error('❌ Error loading driver data:', error);
-      Alert.alert('Error', 'Failed to load driver data');
+      Alert.alert(
+        'Error',
+        `Failed to load driver data: ${error?.message || 'Unknown error'}. Please try again.`
+      );
     } finally {
       setLoading(false);
     }

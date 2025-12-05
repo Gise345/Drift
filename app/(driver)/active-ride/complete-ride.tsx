@@ -148,12 +148,14 @@ export default function CompleteRide() {
 
       // Complete trip in Firebase - sets status to AWAITING_TIP
       // Pass the driver's final location for safety check on rider side
+      // Also pass route history for safety/investigation purposes
       await completeTrip(
         activeRide.id,
         baseFare,
         actualDistance,
         actualDuration,
-        driverFinalLocation
+        driverFinalLocation,
+        activeRide.routeHistory
       );
 
       // Show waiting for tip state

@@ -72,15 +72,23 @@ export interface GoogleSignInResult {
 export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
   try {
     console.log('🚀 Starting Google Sign-In...');
+    console.log('📋 Web Client ID:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
+    console.log('📋 iOS Client ID:', process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+    console.log('📋 Platform:', Platform.OS);
 
     // Check if device supports Google Play Services (Android only)
     if (Platform.OS === 'android') {
+      console.log('🔍 Checking Play Services...');
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log('✅ Play Services available');
     }
 
     // Sign in with Google
+    console.log('🔐 Calling GoogleSignin.signIn()...');
     const response = await GoogleSignin.signIn();
     console.log('✅ Google Sign-In response received');
+    console.log('📋 Response type:', response.type);
+    console.log('📋 Response data:', JSON.stringify(response.data, null, 2));
 
     // Check if sign-in was successful
     if (response.type === 'cancelled') {
@@ -192,6 +200,9 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
     };
   } catch (error: any) {
     console.error('❌ Google Sign-In Error:', error);
+    console.error('❌ Error code:', error.code);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
 
     // Handle specific error cases
     if (error.code === '12501') {

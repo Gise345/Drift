@@ -141,6 +141,11 @@ export default function SignUpScreen() {
       return;
     }
 
+    if (!selectedGender) {
+      Alert.alert('Error', 'Please select your gender to continue');
+      return;
+    }
+
     // Prevent double-tap
     if (googleLoading || loading) {
       return;
@@ -148,7 +153,7 @@ export default function SignUpScreen() {
 
     setGoogleLoading(true);
     try {
-      const user = await signInWithGoogle(selectedRole);
+      const user = await signInWithGoogle(selectedRole, selectedGender);
       setUser(user);
 
       Alert.alert('Welcome! 🎉', 'Successfully signed in with Google', [
@@ -260,7 +265,7 @@ export default function SignUpScreen() {
                         selectedRole === 'RIDER' && styles.roleButtonTextActive,
                       ]}
                     >
-                      Find Rides
+                      Rider
                     </Text>
                   </TouchableOpacity>
 
@@ -279,7 +284,7 @@ export default function SignUpScreen() {
                         selectedRole === 'DRIVER' && styles.roleButtonTextActive,
                       ]}
                     >
-                      Share Rides
+                      Driver
                     </Text>
                   </TouchableOpacity>
                 </View>

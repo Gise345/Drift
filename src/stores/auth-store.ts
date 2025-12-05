@@ -8,7 +8,7 @@
 
 import { create } from 'zustand';
 import auth, { onAuthStateChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
-import firestore, { doc, getDoc, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import firestore, { doc, getDoc, onSnapshot, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutUser } from '../services/firebase-auth-service';
 
@@ -147,24 +147,34 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
     set({ initialized: true });
 
+    // Track the Firestore listener so we can unsubscribe when auth state changes
+    let userDocUnsubscribe: (() => void) | null = null;
+
     // Listen to Firebase auth state with v22 modular API
     const unsubscribe = onAuthStateChanged(authInstance, async (firebaseUser: FirebaseAuthTypes.User | null) => {
       console.log('🔐 Auth state changed:', firebaseUser ? firebaseUser.uid : 'No user');
 
+      // Clean up previous Firestore listener if exists
+      if (userDocUnsubscribe) {
+        console.log('🧹 Cleaning up previous Firestore listener');
+        userDocUnsubscribe();
+        userDocUnsubscribe = null;
+      }
+
       if (firebaseUser) {
         try {
-          console.log('📖 Fetching user data from Firestore...');
-          
-          // Retry mechanism for race condition
-          // Sometimes auth state changes before Firestore document is created
+          console.log('📖 Setting up real-time listener for user data...');
+
+          // First, do a one-time check with retry for new registrations
+          // This handles the race condition where auth fires before Firestore doc is created
           let retries = 0;
           const maxRetries = 3;
           const retryDelay = 1000; // 1 second
-          
+
           let userDoc = null;
-          
+          const userRef = doc(db, 'users', firebaseUser.uid);
+
           while (retries < maxRetries) {
-            const userRef = doc(db, 'users', firebaseUser.uid);
             userDoc = await getDoc(userRef);
 
             // Use helper that handles both boolean and function versions
@@ -184,89 +194,128 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             // After all retries, document still doesn't exist
             console.warn('⚠️ User authenticated but no Firestore document found after retries');
             console.warn('⚠️ This usually means registration didn\'t complete properly');
-            
+
             // Sign out the user since they don't have a proper account
             await signOutUser();
-            
-            set({ 
-              user: null, 
+
+            set({
+              user: null,
               loading: false,
               currentMode: 'RIDER',
             });
             return;
           }
-          
-          // Document exists - fetch data
-          const userData = userDoc.data();
-          
-          // Check if userData exists (TypeScript safety)
-          if (!userData) {
-            console.error('❌ User document exists but has no data');
-            set({ user: null, loading: false, currentMode: 'RIDER' });
-            return;
-          }
-            
-            // Convert Firestore timestamps to Date objects
-            const user: User = {
-              id: userDoc.id,
-              ...userData,
-              // Map both photoURL and profilePhoto fields for consistency
-              photoURL: userData.photoURL || userData.profilePhoto || '',
-              createdAt: userData.createdAt?.toDate?.() || new Date(),
-              lastLoginAt: userData.lastLoginAt?.toDate?.() || new Date(),
-            } as User;
 
-            console.log('✅ User data loaded:', {
-              id: user.id,
-              email: user.email,
-              roles: user.roles,
-            });
+          // Load initial mode from AsyncStorage (only do this once on initial load)
+          let initialModeLoaded = false;
 
-            // Try to load the last saved mode from AsyncStorage
-            let initialMode: 'RIDER' | 'DRIVER' = 'RIDER';
-            try {
-              const savedMode = await AsyncStorage.getItem(LAST_MODE_KEY);
-              if (savedMode === 'DRIVER' || savedMode === 'RIDER') {
-                // Only use saved mode if user has that role
-                if (savedMode === 'DRIVER' && user.roles?.includes('DRIVER')) {
-                  initialMode = 'DRIVER';
-                  console.log('📂 Restored last mode from storage: DRIVER');
-                } else if (savedMode === 'RIDER' && user.roles?.includes('RIDER')) {
-                  initialMode = 'RIDER';
-                  console.log('📂 Restored last mode from storage: RIDER');
-                } else {
-                  // Saved mode doesn't match user's roles, default based on roles
-                  initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
-                  console.log('📂 Saved mode not available, defaulting to:', initialMode);
-                }
-              } else {
-                // No saved mode, default based on roles
-                initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
-                console.log('📂 No saved mode, defaulting to:', initialMode);
+          // Set up real-time listener for user document updates
+          userDocUnsubscribe = onSnapshot(
+            userRef,
+            async (snapshot) => {
+              if (!documentExists(snapshot)) {
+                console.warn('⚠️ User document was deleted');
+                set({ user: null, loading: false, currentMode: 'RIDER' });
+                return;
               }
-            } catch (error) {
-              console.error('❌ Failed to load mode from storage:', error);
-              initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
-            }
 
-            set({
-              user,
-              loading: false,
-              currentMode: initialMode,
-            });
+              const userData = snapshot.data();
+
+              if (!userData) {
+                console.error('❌ User document exists but has no data');
+                set({ user: null, loading: false, currentMode: 'RIDER' });
+                return;
+              }
+
+              // Convert Firestore timestamps to Date objects
+              const user: User = {
+                id: snapshot.id,
+                ...userData,
+                // Map both photoURL and profilePhoto fields for consistency
+                photoURL: userData.photoURL || userData.profilePhoto || '',
+                createdAt: userData.createdAt?.toDate?.() || new Date(),
+                lastLoginAt: userData.lastLoginAt?.toDate?.() || new Date(),
+              } as User;
+
+              console.log('✅ User data updated (real-time):', {
+                id: user.id,
+                email: user.email,
+                roles: user.roles,
+                gender: user.gender,
+              });
+
+              // Only load mode from AsyncStorage on initial load
+              if (!initialModeLoaded) {
+                initialModeLoaded = true;
+
+                let initialMode: 'RIDER' | 'DRIVER' = 'RIDER';
+                try {
+                  const savedMode = await AsyncStorage.getItem(LAST_MODE_KEY);
+                  if (savedMode === 'DRIVER' || savedMode === 'RIDER') {
+                    // Only use saved mode if user has that role
+                    if (savedMode === 'DRIVER' && user.roles?.includes('DRIVER')) {
+                      initialMode = 'DRIVER';
+                      console.log('📂 Restored last mode from storage: DRIVER');
+                    } else if (savedMode === 'RIDER' && user.roles?.includes('RIDER')) {
+                      initialMode = 'RIDER';
+                      console.log('📂 Restored last mode from storage: RIDER');
+                    } else {
+                      // Saved mode doesn't match user's roles, default based on roles
+                      initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+                      console.log('📂 Saved mode not available, defaulting to:', initialMode);
+                    }
+                  } else {
+                    // No saved mode, default based on roles
+                    initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+                    console.log('📂 No saved mode, defaulting to:', initialMode);
+                  }
+                } catch (error) {
+                  console.error('❌ Failed to load mode from storage:', error);
+                  initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
+                }
+
+                set({
+                  user,
+                  loading: false,
+                  currentMode: initialMode,
+                });
+              } else {
+                // For subsequent updates, only update user data (preserve current mode)
+                set({ user });
+              }
+            },
+            (error) => {
+              console.error('❌ Error in user document listener:', error);
+              console.error('Error code:', error?.code);
+              console.error('Error message:', error?.message);
+
+              // If permission denied, sign out
+              if (error?.code === 'firestore/permission-denied') {
+                console.error('🚫 Permission denied - signing out');
+                signOutUser();
+              }
+
+              set({
+                user: null,
+                loading: false,
+                currentMode: 'RIDER',
+              });
+            }
+          );
+
         } catch (error: any) {
-          console.error('❌ Error fetching user data:', error);
+          console.error('❌ Error setting up user listener:', error);
           console.error('Error code:', error?.code);
           console.error('Error message:', error?.message);
-          
+
           // If permission denied, sign out
           if (error?.code === 'firestore/permission-denied') {
             console.error('🚫 Permission denied - signing out');
             await signOutUser();
           }
-          
-          set({ 
-            user: null, 
+
+          set({
+            user: null,
             loading: false,
             currentMode: 'RIDER',
           });
@@ -274,18 +323,24 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       } else {
         // No user signed in
         console.log('👤 No user signed in');
-        set({ 
-          user: null, 
+        set({
+          user: null,
           loading: false,
           currentMode: 'RIDER',
         });
       }
     });
 
-    console.log('✅ Auth store initialized');
+    console.log('✅ Auth store initialized with real-time listener');
 
-    // Return unsubscribe function
-    return unsubscribe;
+    // Return combined unsubscribe function
+    return () => {
+      console.log('🧹 Cleaning up auth store listeners');
+      if (userDocUnsubscribe) {
+        userDocUnsubscribe();
+      }
+      unsubscribe();
+    };
   }
 }));
 

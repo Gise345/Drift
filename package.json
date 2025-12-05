@@ -9,7 +9,19 @@
     "web": "expo start --web",
     "prebuild": "expo prebuild",
     "build:android": "eas build --platform android --profile development",
-    "build:production": "eas build --platform android --profile production"
+    "build:production": "eas build --platform android --profile production",
+    "firebase:serve": "firebase emulators:start",
+    "firebase:serve:hosting": "firebase emulators:start --only hosting",
+    "firebase:deploy": "firebase deploy",
+    "firebase:deploy:hosting": "firebase deploy --only hosting",
+    "firebase:deploy:functions": "npm --prefix functions run build && firebase deploy --only functions",
+    "firebase:deploy:rules": "firebase deploy --only firestore:rules,storage:rules",
+    "firebase:deploy:indexes": "firebase deploy --only firestore:indexes",
+    "firebase:deploy:all": "npm --prefix functions run build && firebase deploy",
+    "firebase:logs": "firebase functions:log",
+    "firebase:logs:tracking": "firebase functions:log --only createTrackingSession,updateTrackingLocation,completeTrackingSession",
+    "functions:build": "npm --prefix functions run build",
+    "functions:watch": "npm --prefix functions run build:watch"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",

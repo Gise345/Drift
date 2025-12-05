@@ -93,7 +93,6 @@ export default function NotificationsScreen() {
           { key: 'driverMessages', title: 'Driver Messages', subtitle: 'Messages from your driver' },
           { key: 'paymentAlerts', title: 'Payment Alerts', subtitle: 'Transaction confirmations' },
           { key: 'tripReminders', title: 'Trip Reminders', subtitle: 'Upcoming ride notifications' },
-          { key: 'promotions', title: 'Promotions & Offers', subtitle: 'Deals and discounts' },
           { key: 'emailNotifications', title: 'Email Notifications', subtitle: 'Trip receipts and updates' },
         ].map((item) => (
             <View

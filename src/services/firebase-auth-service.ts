@@ -154,8 +154,9 @@ export async function registerWithEmail(
 
     // Step 4: Create Firestore user document using modular API
     const userRef = doc(firestoreInstance, 'users', firebaseUser.uid);
-    
-    await setDoc(userRef, {
+
+    // Prepare the document data
+    const userDocData = {
       userId: firebaseUser.uid,  // CRITICAL: Required by Firestore security rules
       email: data.email,
       name: data.fullName,
@@ -169,7 +170,14 @@ export async function registerWithEmail(
       totalTrips: 0,
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
-    });
+    };
+
+    console.log('📝 Creating user document with data:', JSON.stringify({
+      ...userDocData,
+      gender: data.gender, // Log the exact gender value being saved
+    }, null, 2));
+
+    await setDoc(userRef, userDocData);
 
     console.log('✅ Firestore user document created successfully');
 
@@ -180,6 +188,7 @@ export async function registerWithEmail(
       phone: data.phone || '',
       photoURL: firebaseUser.photoURL || '',
       roles: [data.role],
+      gender: data.gender || null, // Include gender in returned user data
       hasAcceptedTerms: true,
       emailVerified: false,
       rating: 5.0,
@@ -238,10 +247,10 @@ export async function signInWithEmail(email: string, password: string): Promise<
 /**
  * Sign in with Google
  */
-export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftUser> {
+export async function signInWithGoogle(role: UserRole = 'RIDER', gender?: 'male' | 'female'): Promise<DriftUser> {
   try {
     console.log('🚀 Starting Google sign in...');
-    
+
     // Configure Google Sign-In if not already configured
     configureGoogleSignIn();
 
@@ -281,23 +290,31 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
     // Use helper that handles both boolean and function versions
     if (documentExists(userDoc)) {
       console.log('✅ Existing user found, updating...');
-      
-      // Update last login
-      await updateDoc(userRef, {
-        lastLoginAt: serverTimestamp(),
-      });
 
+      // Update last login (and gender if provided and not already set)
       const data = userDoc.data();
+      const updates: any = {
+        lastLoginAt: serverTimestamp(),
+      };
+
+      // Only update gender if it's provided and user doesn't have one set
+      if (gender && !data?.gender) {
+        updates.gender = gender;
+      }
+
+      await updateDoc(userRef, updates);
+
       return {
         ...data,
         id: firebaseUser.uid,
+        gender: data?.gender || gender || null, // Use existing gender or new one
         emailVerified: firebaseUser.emailVerified,
         createdAt: data?.createdAt?.toDate() || new Date(),
         lastLoginAt: data?.lastLoginAt?.toDate() || new Date(),
       } as DriftUser;
     } else {
       console.log('✅ New user, creating document...');
-      
+
       // Create new user document
       await setDoc(userRef, {
         userId: firebaseUser.uid,  // CRITICAL: Required by Firestore rules
@@ -306,6 +323,7 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
         phone: '',
         photoURL: firebaseUser.photoURL || '',
         roles: [role],
+        gender: gender || null, // Gender for women-only ride feature
         hasAcceptedTerms: true,
         emailVerified: firebaseUser.emailVerified,
         rating: 5.0,
@@ -323,6 +341,7 @@ export async function signInWithGoogle(role: UserRole = 'RIDER'): Promise<DriftU
         phone: '',
         photoURL: firebaseUser.photoURL || '',
         roles: [role],
+        gender: gender || null,
         hasAcceptedTerms: true,
         emailVerified: firebaseUser.emailVerified,
         rating: 5.0,

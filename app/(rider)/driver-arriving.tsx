@@ -17,6 +17,7 @@ import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useUserStore } from '@/src/stores/user-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ChatModal } from '@/components/messaging/ChatModal';
+import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
@@ -27,6 +28,7 @@ export default function DriverArrivingScreen() {
   const [eta, setEta] = useState(5); // minutes
   const [showShareModal, setShowShareModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
   const hasNavigatedRef = React.useRef(false);
 
   // If no current trip, redirect back
@@ -309,6 +311,15 @@ export default function DriverArrivingScreen() {
         <TouchableOpacity style={styles.cancelButton} onPress={handleCancelRide}>
           <Text style={styles.cancelButtonText}>Cancel Ride</Text>
         </TouchableOpacity>
+
+        {/* Block Driver Option - Safety Feature */}
+        <TouchableOpacity
+          style={styles.blockButton}
+          onPress={() => setShowBlockModal(true)}
+        >
+          <Ionicons name="ban-outline" size={16} color="#EF4444" />
+          <Text style={styles.blockButtonText}>Block driver</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Safety Info */}
@@ -340,6 +351,29 @@ export default function DriverArrivingScreen() {
           otherUserName={driver.name}
           onClose={() => setShowChatModal(false)}
           isEnabled={true}
+        />
+      )}
+
+      {/* Block User Modal */}
+      {currentTrip && driver && user && (
+        <BlockUserModal
+          visible={showBlockModal}
+          onClose={() => setShowBlockModal(false)}
+          onBlocked={() => {
+            // Cancel the trip and navigate away
+            if (currentTrip?.id) {
+              cancelTrip(currentTrip.id, 'RIDER', 'Rider blocked driver');
+            }
+            clearBookingFlow();
+            router.replace('/(rider)');
+          }}
+          blockerId={user.id}
+          blockerName={user.name}
+          blockerType="rider"
+          blockedId={currentTrip.driverId || ''}
+          blockedName={driver.name}
+          blockedType="driver"
+          tripId={currentTrip.id}
         />
       )}
     </SafeAreaView>
@@ -537,6 +571,19 @@ const styles = StyleSheet.create({
     color: '#e74c3c',
     fontSize: 16,
     fontWeight: '600',
+  },
+  blockButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  blockButtonText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '500',
   },
   safetyInfo: {
     position: 'absolute',

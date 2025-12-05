@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/src/constants/theme';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { submitDriverRating } from '@/src/services/rating.service';
 import { canRateOrTipTrip } from '@/src/services/ride-request.service';
+import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import firestore from '@react-native-firebase/firestore';
 
 export default function RateDriverScreen() {
@@ -34,6 +36,7 @@ export default function RateDriverScreen() {
     canRate: boolean;
     remainingTime?: string;
   }>({ canRate: true });
+  const [showBlockModal, setShowBlockModal] = useState(false);
 
   const feedbackTags = [
     'Great conversation',
@@ -303,9 +306,50 @@ export default function RateDriverScreen() {
                 <Text style={styles.submitButtonText}>Submit Rating</Text>
               )}
             </TouchableOpacity>
+
+            {/* Block Driver Option */}
+            <TouchableOpacity
+              style={styles.blockButton}
+              onPress={() => setShowBlockModal(true)}
+            >
+              <Ionicons name="ban-outline" size={18} color={Colors.error} />
+              <Text style={styles.blockButtonText}>Block this driver</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Block Option when no rating selected */}
+        {rating === 0 && (
+          <View style={styles.bottomContainerNoRating}>
+            <TouchableOpacity
+              style={styles.blockButtonStandalone}
+              onPress={() => setShowBlockModal(true)}
+            >
+              <Ionicons name="ban-outline" size={18} color={Colors.error} />
+              <Text style={styles.blockButtonText}>Block this driver</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
+
+      {/* Block User Modal */}
+      {user && driver.id && (
+        <BlockUserModal
+          visible={showBlockModal}
+          onClose={() => setShowBlockModal(false)}
+          onBlocked={() => {
+            // Navigate away after blocking
+            router.push('/(tabs)');
+          }}
+          blockerId={user.id}
+          blockerName={user.name}
+          blockerType="rider"
+          blockedId={driver.id}
+          blockedName={driver.name}
+          blockedType="driver"
+          tripId={actualTripId}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -503,5 +547,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#D97706',
+  },
+  blockButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 12,
+    gap: 6,
+  },
+  blockButtonStandalone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.error,
+    borderRadius: 24,
+    gap: 6,
+  },
+  blockButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.error,
+  },
+  bottomContainerNoRating: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+    padding: 16,
   },
 });

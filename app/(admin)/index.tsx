@@ -34,17 +34,31 @@ export default function AdminDashboard() {
 
   const loadStats = async () => {
     try {
-      // Get pending driver applications
-      const pendingSnapshot = await firestore()
+      // Get pending driver applications (try both field names)
+      let pendingSnapshot = await firestore()
         .collection('drivers')
         .where('registrationStatus', '==', 'pending')
         .get();
 
-      // Get active drivers
-      const activeSnapshot = await firestore()
+      if (pendingSnapshot.empty) {
+        pendingSnapshot = await firestore()
+          .collection('drivers')
+          .where('status', '==', 'pending')
+          .get();
+      }
+
+      // Get active drivers (try both field names)
+      let activeSnapshot = await firestore()
         .collection('drivers')
         .where('registrationStatus', '==', 'approved')
         .get();
+
+      if (activeSnapshot.empty) {
+        activeSnapshot = await firestore()
+          .collection('drivers')
+          .where('status', '==', 'approved')
+          .get();
+      }
 
       // Get total riders
       const ridersSnapshot = await firestore()
@@ -53,16 +67,25 @@ export default function AdminDashboard() {
         .get();
 
       // Get pending trip issues
-      const issuesSnapshot = await firestore()
-        .collection('tripIssues')
-        .where('status', '==', 'pending')
-        .get();
+      let pendingIssuesCount = 0;
+      try {
+        const issuesSnapshot = await firestore()
+          .collection('tripIssues')
+          .where('status', '==', 'pending')
+          .get();
+        pendingIssuesCount = issuesSnapshot.size;
+      } catch (e) {
+        // Collection might not exist yet
+        console.log('⚠️ tripIssues collection not found or empty');
+      }
+
+      console.log(`✅ Admin stats: ${pendingSnapshot.size} pending, ${activeSnapshot.size} active drivers, ${ridersSnapshot.size} riders`);
 
       setStats({
         pendingApplications: pendingSnapshot.size,
         activeDrivers: activeSnapshot.size,
         totalRiders: ridersSnapshot.size,
-        pendingIssues: issuesSnapshot.size,
+        pendingIssues: pendingIssuesCount,
       });
     } catch (error) {
       console.error('❌ Error loading admin stats:', error);

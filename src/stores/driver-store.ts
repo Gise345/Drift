@@ -150,6 +150,12 @@ export interface ActiveRide extends RideRequest {
     distance: number;
     duration: number;
   };
+  // Route history - actual GPS coordinates recorded during trip for safety/investigation
+  routeHistory?: Array<{ latitude: number; longitude: number }>;
+  // Actual distance traveled in meters (calculated from GPS)
+  actualDistanceTraveled?: number;
+  // Actual duration in seconds (calculated from trip start to end)
+  actualDurationSeconds?: number;
 }
 
 export interface Earnings {
@@ -252,8 +258,9 @@ interface DriverStore {
   arrivedAtPickup: () => void;
   startRide: () => void;
   addStop: (stop: { lat: number; lng: number; address: string }) => void;
+  addRouteHistoryPoint: (point: { latitude: number; longitude: number }) => void;
   completeRide: (earnings: number, tip?: number) => Promise<void>;
-  
+
   // Actions - Location
   updateLocation: (location: { lat: number; lng: number; heading: number; speed: number }) => void;
   
@@ -570,6 +577,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
               riderId: req.riderId,
               riderName: riderInfo.name,
               riderRating: riderInfo.rating,
+              riderGender: (req as any).riderGender,
               pickup: {
                 lat: req.pickup.coordinates.latitude,
                 lng: req.pickup.coordinates.longitude,
@@ -586,6 +594,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
               requestedAt: req.requestedAt,
               expiresAt: new Date(req.requestedAt.getTime() + 5 * 60 * 1000), // 5 min expiry
               distanceFromDriver: (req as any).distanceFromDriver,
+              womenOnlyRide: (req as any).womenOnlyRide,
             };
           })
         );
@@ -683,6 +692,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         vehiclePlate: vehicle.licensePlate,
         vehicleColor: vehicle.color,
         rating: driver.rating,
+        photo: driver.photoUrl,
       });
 
       // Update local state - set status to 'navigating_to_pickup' to indicate driver is en route
@@ -774,7 +784,37 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       stops: [...(state.activeRide.stops || []), stop]
     } : null
   })),
-  
+
+  addRouteHistoryPoint: (point) => set((state) => {
+    if (!state.activeRide) return { activeRide: null };
+
+    // Only record points during active ride (started/in_progress status)
+    if (state.activeRide.status !== 'started' && state.activeRide.status !== 'in_progress') {
+      return { activeRide: state.activeRide };
+    }
+
+    const currentHistory = state.activeRide.routeHistory || [];
+
+    // Avoid adding duplicate points that are too close together
+    // (within ~10 meters to save storage)
+    if (currentHistory.length > 0) {
+      const lastPoint = currentHistory[currentHistory.length - 1];
+      const latDiff = Math.abs(lastPoint.latitude - point.latitude);
+      const lngDiff = Math.abs(lastPoint.longitude - point.longitude);
+      // Approximately 10 meters
+      if (latDiff < 0.0001 && lngDiff < 0.0001) {
+        return { activeRide: state.activeRide };
+      }
+    }
+
+    return {
+      activeRide: {
+        ...state.activeRide,
+        routeHistory: [...currentHistory, point],
+      }
+    };
+  }),
+
   completeRide: async (earnings, tip = 0) => {
     const ride = get().activeRide;
     const wasOnline = get().isOnline;

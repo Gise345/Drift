@@ -30,3 +30,12 @@ export {
   resolveDispute,
   getSafetyDashboard,
 } from './safety';
+
+// Export Live Tracking functions
+export {
+  createTrackingSession,
+  updateTrackingLocation,
+  completeTrackingSession,
+  getTrackingSession,
+  cleanupExpiredSessions,
+} from './tracking';

@@ -96,7 +96,7 @@ export default function ContactUsScreen() {
             <Ionicons name="mail" size={20} color="#5d1289ff" />
             <View style={styles.contactMethodText}>
               <Text style={styles.contactMethodLabel}>Email</Text>
-              <Text style={styles.contactMethodValue}>support@driftcayman.com</Text>
+              <Text style={styles.contactMethodValue}>info@drift-global.com</Text>
             </View>
           </View>
 
