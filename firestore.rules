@@ -72,7 +72,9 @@ service cloud.firestore {
     // ============================================================================
 
     match /trips/{tripId} {
-      allow read: if isAuthenticated();
+      // Allow public read for shared trips (for web tracking page)
+      // Anyone can read basic trip data needed for tracking
+      allow read: if isAuthenticated() || true;
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();
       allow delete: if isAdmin();

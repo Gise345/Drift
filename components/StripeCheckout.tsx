@@ -193,11 +193,17 @@ export function StripeCheckout({
       // Save client secret for platform pay
       setClientSecret(paymentData.clientSecret);
 
-      console.log('🔵 Initializing payment sheet with Apple Pay and Google Pay...');
-      console.log('🔵 Preferred method:', preferredMethod, '| Platform Pay available:', platformPayAvailable);
+      // Check if we're using test/sandbox Stripe keys
+      const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+      const isTestMode = stripePublishableKey.startsWith('pk_test_');
 
-      // Initialize payment sheet with Apple Pay and Google Pay enabled
-      const { error } = await initPaymentSheet({
+      console.log('🔵 Initializing payment sheet...');
+      console.log('🔵 Test mode:', isTestMode, '| Preferred method:', preferredMethod);
+
+      // Initialize payment sheet
+      // Note: Google Pay and Apple Pay are disabled in test mode as they require
+      // additional setup and may cause "Not Found" errors with sandbox credentials
+      const paymentSheetConfig: any = {
         merchantDisplayName: 'Drift Carpool',
         customerId: paymentData.customerId,
         customerEphemeralKeySecret: paymentData.ephemeralKey,
@@ -207,23 +213,31 @@ export function StripeCheckout({
           name: '',
         },
         returnURL: 'drift://stripe/callback',
-        // Enable Apple Pay (iOS only)
-        applePay: {
-          merchantCountryCode: 'US',
-        },
-        // Enable Google Pay (Android only)
-        googlePay: {
-          merchantCountryCode: 'US',
-          currencyCode: currency.toUpperCase(),
-          testEnv: __DEV__, // Use test environment in development
-        },
         // Style customization
         appearance: {
           colors: {
             primary: '#5d1289',
           },
         },
-      });
+      };
+
+      // Only enable Apple Pay and Google Pay in live mode
+      // They don't work properly with test keys in production builds
+      if (!isTestMode) {
+        paymentSheetConfig.applePay = {
+          merchantCountryCode: 'US',
+        };
+        paymentSheetConfig.googlePay = {
+          merchantCountryCode: 'US',
+          currencyCode: currency.toUpperCase(),
+          testEnv: false,
+        };
+        console.log('🔵 Apple Pay and Google Pay enabled (live mode)');
+      } else {
+        console.log('🔵 Apple Pay and Google Pay disabled (test mode)');
+      }
+
+      const { error } = await initPaymentSheet(paymentSheetConfig);
 
       console.log('🔵 Payment sheet init result:', { error: error?.message || 'none' });
 

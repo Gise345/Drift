@@ -14,7 +14,11 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import { v4 as uuidv4 } from 'uuid';
+
+// Using 'main' database (restored from backup)
+const db = getFirestore(admin.app(), 'main');
 
 // ============================================================================
 // Type Definitions
@@ -187,7 +191,7 @@ function buildTrackingUrl(token: string): string {
  *
  * @returns { sessionId, token, shareableUrl }
  */
-export const createTrackingSession = onCall(async (request) => {
+export const createTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -211,7 +215,7 @@ export const createTrackingSession = onCall(async (request) => {
     }
 
     // Check if session already exists for this trip
-    const existingSession = await admin.firestore()
+    const existingSession = await db
       .collection('trackingSessions')
       .where('tripId', '==', data.tripId)
       .where('status', '==', 'active')
@@ -230,7 +234,7 @@ export const createTrackingSession = onCall(async (request) => {
     }
 
     // Get trip details to verify ownership and get driver info
-    const tripDoc = await admin.firestore().collection('trips').doc(data.tripId).get();
+    const tripDoc = await db.collection('trips').doc(data.tripId).get();
 
     if (!tripDoc.exists) {
       throw new HttpsError('not-found', 'Trip not found');
@@ -301,7 +305,7 @@ export const createTrackingSession = onCall(async (request) => {
     };
 
     // Save to Firestore
-    await admin.firestore()
+    await db
       .collection('trackingSessions')
       .doc(sessionId)
       .set(session);
@@ -341,7 +345,7 @@ export const createTrackingSession = onCall(async (request) => {
  * @param request.tripPhase - Current phase of the trip
  * @param request.estimatedMinutes - Estimated minutes to arrival
  */
-export const updateTrackingLocation = onCall(async (request) => {
+export const updateTrackingLocation = onCall({ region: 'us-east1' }, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -360,7 +364,7 @@ export const updateTrackingLocation = onCall(async (request) => {
     }
 
     // Get the session
-    const sessionRef = admin.firestore().collection('trackingSessions').doc(data.sessionId);
+    const sessionRef = db.collection('trackingSessions').doc(data.sessionId);
     const sessionDoc = await sessionRef.get();
 
     if (!sessionDoc.exists) {
@@ -441,7 +445,7 @@ export const updateTrackingLocation = onCall(async (request) => {
  * @param request.sessionId - The tracking session ID (optional if tripId provided)
  * @param request.tripId - The trip ID (alternative to sessionId)
  */
-export const completeTrackingSession = onCall(async (request) => {
+export const completeTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -461,7 +465,7 @@ export const completeTrackingSession = onCall(async (request) => {
 
     if (data.sessionId) {
       // Find by session ID
-      sessionRef = admin.firestore().collection('trackingSessions').doc(data.sessionId);
+      sessionRef = db.collection('trackingSessions').doc(data.sessionId);
       const sessionDoc = await sessionRef.get();
 
       if (!sessionDoc.exists) {
@@ -471,7 +475,7 @@ export const completeTrackingSession = onCall(async (request) => {
       session = sessionDoc.data() as TrackingSession;
     } else {
       // Find by trip ID
-      const sessionsQuery = await admin.firestore()
+      const sessionsQuery = await db
         .collection('trackingSessions')
         .where('tripId', '==', data.tripId)
         .where('status', '==', 'active')
@@ -537,7 +541,7 @@ export const completeTrackingSession = onCall(async (request) => {
  *
  * @param request.token - The unique tracking token
  */
-export const getTrackingSession = onCall(async (request) => {
+export const getTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
   try {
     const { token } = request.data as { token: string };
 
@@ -548,7 +552,7 @@ export const getTrackingSession = onCall(async (request) => {
     console.log('🔍 Looking up tracking session by token');
 
     // Find session by token
-    const sessionsQuery = await admin.firestore()
+    const sessionsQuery = await db
       .collection('trackingSessions')
       .where('token', '==', token)
       .limit(1)
@@ -613,6 +617,7 @@ export const cleanupExpiredSessions = onSchedule({
   schedule: '0 3 * * *', // Daily at 3 AM UTC
   timeZone: 'UTC',
   retryCount: 3,
+  region: 'us-east1',
 }, async () => {
   console.log('🧹 Starting cleanup of expired tracking sessions');
 
@@ -622,14 +627,14 @@ export const cleanupExpiredSessions = onSchedule({
 
   try {
     // 1. Mark expired active sessions
-    const expiredActiveQuery = await admin.firestore()
+    const expiredActiveQuery = await db
       .collection('trackingSessions')
       .where('status', '==', 'active')
       .where('expiresAt', '<', now)
       .get();
 
     let expiredCount = 0;
-    const expireBatch = admin.firestore().batch();
+    const expireBatch = db.batch();
 
     expiredActiveQuery.docs.forEach((doc) => {
       expireBatch.update(doc.ref, {
@@ -645,13 +650,13 @@ export const cleanupExpiredSessions = onSchedule({
     }
 
     // 2. Delete very old sessions (7+ days old)
-    const oldSessionsQuery = await admin.firestore()
+    const oldSessionsQuery = await db
       .collection('trackingSessions')
       .where('createdAt', '<', admin.firestore.Timestamp.fromDate(sevenDaysAgo))
       .get();
 
     let deletedCount = 0;
-    const deleteBatch = admin.firestore().batch();
+    const deleteBatch = db.batch();
 
     oldSessionsQuery.docs.forEach((doc) => {
       deleteBatch.delete(doc.ref);

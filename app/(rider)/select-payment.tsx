@@ -31,6 +31,10 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/consta
 // KYD to USD conversion rate (fixed rate for Cayman Islands)
 const KYD_TO_USD_RATE = 1.20; // 1 KYD = 1.20 USD approximately
 
+// Check if we're using Stripe test keys (Google Pay/Apple Pay don't work properly with test keys)
+const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+const isStripeTestMode = stripePublishableKey.startsWith('pk_test_');
+
 interface PaymentMethod {
   id: string;
   type: 'stripe' | 'credit_card' | 'apple_pay' | 'google_pay';
@@ -51,6 +55,7 @@ export default function SelectPaymentScreen() {
     vehicleType,
     pricing,
     womenOnlyRide,
+    route,
   } = useCarpoolStore();
   const { createTrip, setCurrentTrip } = useTripStore();
   const { user } = useAuthStore();
@@ -106,7 +111,7 @@ export default function SelectPaymentScreen() {
     }
   };
 
-  // Production payment methods
+  // Payment methods - Apple Pay and Google Pay disabled in test mode
   const paymentMethods: PaymentMethod[] = [
     {
       id: 'stripe-new',
@@ -120,17 +125,17 @@ export default function SelectPaymentScreen() {
       id: 'apple-pay',
       type: 'apple_pay',
       name: 'Apple Pay',
-      details: 'Quick and secure via Stripe',
+      details: isStripeTestMode ? 'Not available in test mode' : 'Quick and secure via Stripe',
       icon: 'logo-apple',
-      connected: true,
+      connected: !isStripeTestMode, // Disabled in test mode
     },
     {
       id: 'google-pay',
       type: 'google_pay',
       name: 'Google Pay',
-      details: 'Fast checkout via Stripe',
+      details: isStripeTestMode ? 'Not available in test mode' : 'Fast checkout via Stripe',
       icon: 'logo-google',
-      connected: true,
+      connected: !isStripeTestMode, // Disabled in test mode
     },
   ];
 
@@ -212,8 +217,9 @@ export default function SelectPaymentScreen() {
           placeName: (destination as any)?.placeName || destination.address || '',
         },
         vehicleType: vehicleType || 'standard',
-        distance: (pickupLocation as any).distance || 0,
-        duration: (pickupLocation as any).duration || 0,
+        // Route distance in meters, duration in minutes (converted from seconds)
+        distance: route?.distance || 0,
+        duration: route?.duration ? Math.ceil(route.duration / 60) : 0,
         // Use locked contribution - this is the exact amount
         estimatedCost: lockedContribution,
         estimatedCostKYD: lockedContribution,

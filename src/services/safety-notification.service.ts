@@ -5,6 +5,9 @@
  * - Actionable notification responses (Slow Down, I'm OK, End Ride)
  * - Automatic linking to in-app popups
  * - Real-time sync between notifications and app state
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import * as Notifications from 'expo-notifications';

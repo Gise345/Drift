@@ -6,8 +6,10 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 
-const db = admin.firestore();
+// Using 'main' database (restored from backup)
+const db = getFirestore(admin.app(), 'main');
 const messaging = admin.messaging();
 
 interface SendMessageNotificationData {
@@ -23,7 +25,7 @@ interface SendMessageNotificationData {
  * Send push notification when a new message is sent
  * Called from the mobile app after sending a message
  */
-export const sendMessageNotification = onCall(async (request) => {
+export const sendMessageNotification = onCall({ region: 'us-east1' }, async (request) => {
   // Verify authentication
   if (!request.auth) {
     throw new HttpsError(
@@ -119,7 +121,7 @@ export const sendMessageNotification = onCall(async (request) => {
  * This is an alternative to calling sendMessageNotification from the app
  */
 export const onNewMessage = onDocumentCreated(
-  'trips/{tripId}/messages/{messageId}',
+  { document: 'trips/{tripId}/messages/{messageId}', region: 'us-east1', database: 'main' },
   async (event) => {
     const snapshot = event.data;
     if (!snapshot) {

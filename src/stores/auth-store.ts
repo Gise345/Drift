@@ -1,14 +1,15 @@
 /**
- * Drift Auth Store - React Native Firebase v22 Modular API
- * 
- * ✅ CORRECT v22 MODULAR API USAGE
- * ✅ No deprecation warnings
+ * Drift Auth Store - React Native Firebase v22+ Modular API
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  * ✅ Proper auth state management
  */
 
 import { create } from 'zustand';
-import auth, { onAuthStateChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
-import firestore, { doc, getDoc, onSnapshot, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getAuth, onAuthStateChanged, FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { getFirestore, doc, getDoc, onSnapshot, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutUser } from '../services/firebase-auth-service';
 
@@ -27,11 +28,12 @@ function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): b
 const LAST_MODE_KEY = '@drift_last_mode';
 
 // ============================================================================
-// Get Firebase instances - v22 modular way
+// Get Firebase instances - v22+ modular API with 'main' database
 // ============================================================================
 
-const authInstance = auth();
-const db = firestore();
+const app = getApp();
+const authInstance = getAuth(app);
+const db = getFirestore(app, 'main');
 
 // ============================================================================
 // Types

@@ -2,10 +2,34 @@
  * NOTIFICATION SERVICE
  * Firebase integration for driver notifications and preferences
  *
- * EXPO SDK 52 Compatible
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  writeBatch,
+  serverTimestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export type NotificationType = 'ride' | 'earnings' | 'system' | 'document' | 'promo';
 
@@ -36,23 +60,35 @@ export interface NotificationPreferences {
   updatedAt: Date;
 }
 
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
+
 export const NotificationService = {
   /**
    * Get notifications for a driver
    */
-  async getNotifications(driverId: string, limit = 50): Promise<Notification[]> {
+  async getNotifications(driverId: string, maxResults = 50): Promise<Notification[]> {
     try {
-      const snapshot = await firestore()
-        .collection('notifications')
-        .where('driverId', '==', driverId)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef,
+        where('driverId', '==', driverId),
+        orderBy('createdAt', 'desc'),
+        limit(maxResults)
+      );
+      const snapshot = await getDocs(q);
 
-      return snapshot.docs.map(doc => {
-        const data = doc.data();
+      return snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
         return {
-          id: doc.id,
+          id: docSnap.id,
           driverId: data.driverId,
           type: data.type,
           title: data.title,
@@ -74,12 +110,13 @@ export const NotificationService = {
    */
   async getUnreadCount(driverId: string): Promise<number> {
     try {
-      const snapshot = await firestore()
-        .collection('notifications')
-        .where('driverId', '==', driverId)
-        .where('read', '==', false)
-        .get();
-
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef,
+        where('driverId', '==', driverId),
+        where('read', '==', false)
+      );
+      const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
       console.error('Error getting unread count:', error);
@@ -92,13 +129,11 @@ export const NotificationService = {
    */
   async markAsRead(notificationId: string): Promise<void> {
     try {
-      await firestore()
-        .collection('notifications')
-        .doc(notificationId)
-        .update({
-          read: true,
-          readAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await updateDoc(notificationRef, {
+        read: true,
+        readAt: serverTimestamp(),
+      });
     } catch (error) {
       console.error('Error marking notification as read:', error);
       throw error;
@@ -110,17 +145,19 @@ export const NotificationService = {
    */
   async markAllAsRead(driverId: string): Promise<void> {
     try {
-      const batch = firestore().batch();
-      const snapshot = await firestore()
-        .collection('notifications')
-        .where('driverId', '==', driverId)
-        .where('read', '==', false)
-        .get();
+      const batch = writeBatch(db);
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef,
+        where('driverId', '==', driverId),
+        where('read', '==', false)
+      );
+      const snapshot = await getDocs(q);
 
-      snapshot.docs.forEach(doc => {
-        batch.update(doc.ref, {
+      snapshot.docs.forEach(docSnap => {
+        batch.update(docSnap.ref, {
           read: true,
-          readAt: firestore.FieldValue.serverTimestamp(),
+          readAt: serverTimestamp(),
         });
       });
 
@@ -136,10 +173,8 @@ export const NotificationService = {
    */
   async deleteNotification(notificationId: string): Promise<void> {
     try {
-      await firestore()
-        .collection('notifications')
-        .doc(notificationId)
-        .delete();
+      const notificationRef = doc(db, 'notifications', notificationId);
+      await deleteDoc(notificationRef);
     } catch (error) {
       console.error('Error deleting notification:', error);
       throw error;
@@ -151,14 +186,13 @@ export const NotificationService = {
    */
   async deleteAllNotifications(driverId: string): Promise<void> {
     try {
-      const batch = firestore().batch();
-      const snapshot = await firestore()
-        .collection('notifications')
-        .where('driverId', '==', driverId)
-        .get();
+      const batch = writeBatch(db);
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(notificationsRef, where('driverId', '==', driverId));
+      const snapshot = await getDocs(q);
 
-      snapshot.docs.forEach(doc => {
-        batch.delete(doc.ref);
+      snapshot.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
       });
 
       await batch.commit();
@@ -175,33 +209,37 @@ export const NotificationService = {
     driverId: string,
     callback: (notifications: Notification[]) => void
   ): () => void {
-    const unsubscribe = firestore()
-      .collection('notifications')
-      .where('driverId', '==', driverId)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .onSnapshot(
-        snapshot => {
-          const notifications: Notification[] = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              driverId: data.driverId,
-              type: data.type,
-              title: data.title,
-              message: data.message,
-              read: data.read || false,
-              action: data.action,
-              createdAt: data.createdAt?.toDate() || new Date(),
-              data: data.data,
-            };
-          });
-          callback(notifications);
-        },
-        error => {
-          console.error('Error subscribing to notifications:', error);
-        }
-      );
+    const notificationsRef = collection(db, 'notifications');
+    const q = query(
+      notificationsRef,
+      where('driverId', '==', driverId),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const notifications: Notification[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            driverId: data.driverId,
+            type: data.type,
+            title: data.title,
+            message: data.message,
+            read: data.read || false,
+            action: data.action,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            data: data.data,
+          };
+        });
+        callback(notifications);
+      },
+      error => {
+        console.error('Error subscribing to notifications:', error);
+      }
+    );
 
     return unsubscribe;
   },
@@ -211,14 +249,10 @@ export const NotificationService = {
    */
   async getPreferences(driverId: string): Promise<NotificationPreferences | null> {
     try {
-      const doc = await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .collection('settings')
-        .doc('notifications')
-        .get();
+      const prefsRef = doc(db, 'drivers', driverId, 'settings', 'notifications');
+      const prefsDoc = await getDoc(prefsRef);
 
-      if (!doc.exists) {
+      if (!documentExists(prefsDoc)) {
         // Return defaults
         return {
           driverId,
@@ -236,7 +270,7 @@ export const NotificationService = {
         };
       }
 
-      const data = doc.data()!;
+      const data = prefsDoc.data()!;
       return {
         driverId,
         pushEnabled: data.pushEnabled ?? true,
@@ -262,24 +296,20 @@ export const NotificationService = {
    */
   async savePreferences(preferences: NotificationPreferences): Promise<void> {
     try {
-      await firestore()
-        .collection('drivers')
-        .doc(preferences.driverId)
-        .collection('settings')
-        .doc('notifications')
-        .set({
-          pushEnabled: preferences.pushEnabled,
-          rideRequests: preferences.rideRequests,
-          rideUpdates: preferences.rideUpdates,
-          earnings: preferences.earnings,
-          tips: preferences.tips,
-          system: preferences.system,
-          reminders: preferences.reminders,
-          sound: preferences.sound,
-          vibration: preferences.vibration,
-          inApp: preferences.inApp,
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+      const prefsRef = doc(db, 'drivers', preferences.driverId, 'settings', 'notifications');
+      await setDoc(prefsRef, {
+        pushEnabled: preferences.pushEnabled,
+        rideRequests: preferences.rideRequests,
+        rideUpdates: preferences.rideUpdates,
+        earnings: preferences.earnings,
+        tips: preferences.tips,
+        system: preferences.system,
+        reminders: preferences.reminders,
+        sound: preferences.sound,
+        vibration: preferences.vibration,
+        inApp: preferences.inApp,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     } catch (error) {
       console.error('Error saving notification preferences:', error);
       throw error;
@@ -291,12 +321,11 @@ export const NotificationService = {
    */
   async createNotification(notification: Omit<Notification, 'id' | 'createdAt'>): Promise<string> {
     try {
-      const docRef = await firestore()
-        .collection('notifications')
-        .add({
-          ...notification,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const notificationsRef = collection(db, 'notifications');
+      const docRef = await addDoc(notificationsRef, {
+        ...notification,
+        createdAt: serverTimestamp(),
+      });
 
       return docRef.id;
     } catch (error) {

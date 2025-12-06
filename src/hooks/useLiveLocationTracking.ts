@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  onSnapshot,
+  serverTimestamp
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface LocationData {
   latitude: number;
@@ -117,12 +128,12 @@ export const useLiveLocationTracking = ({
 
             // Update Firestore with current location using React Native Firebase
             try {
-              const tripRef = firestore().collection('trips').doc(tripId);
+              const tripRef = doc(db, 'trips', tripId);
               const updateField = userType === 'driver' ? 'driverLocation' : 'riderLocation';
-              
-              await tripRef.update({
+
+              await updateDoc(tripRef, {
                 [updateField]: locationData,
-                [`${updateField}UpdatedAt`]: firestore.FieldValue.serverTimestamp(),
+                [`${updateField}UpdatedAt`]: serverTimestamp(),
               });
 
               console.log(`📍 Updated ${userType} location:`, {
@@ -139,10 +150,10 @@ export const useLiveLocationTracking = ({
         locationSubscriptionRef.current = subscription;
 
         // Subscribe to other user's location from Firestore
-        const tripRef = firestore().collection('trips').doc(tripId);
+        const tripRef = doc(db, 'trips', tripId);
         const otherUserField = userType === 'driver' ? 'riderLocation' : 'driverLocation';
-        
-        const unsubscribe = tripRef.onSnapshot((snapshot) => {
+
+        const unsubscribe = onSnapshot(tripRef, (snapshot) => {
           if (!isMounted) return;
 
           const data = snapshot.data();

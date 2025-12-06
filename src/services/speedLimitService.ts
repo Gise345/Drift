@@ -17,7 +17,19 @@ import {
   SpeedLimitResponse,
   SafetyServiceResponse,
 } from '@/src/types/safety.types';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  doc,
+  updateDoc,
+  arrayUnion,
+  increment,
+  serverTimestamp
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const GOOGLE_ROADS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -296,12 +308,12 @@ export async function logSpeedViolation(
   violation: SpeedViolation
 ): Promise<SafetyServiceResponse> {
   try {
-    const tripRef = firestore().collection('trips').doc(tripId);
+    const tripRef = doc(db, 'trips', tripId);
 
     // Add to trip's safety data
-    await tripRef.update({
-      'safetyData.speedViolations': firestore.FieldValue.arrayUnion(violation),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+    await updateDoc(tripRef, {
+      'safetyData.speedViolations': arrayUnion(violation),
+      updatedAt: serverTimestamp(),
     });
 
     // Also record in driver's profile
@@ -325,13 +337,13 @@ export async function recordViolationInDriverProfile(
   violation: SpeedViolation
 ): Promise<void> {
   try {
-    const driverRef = firestore().collection('drivers').doc(violation.driverId);
+    const driverRef = doc(db, 'drivers', violation.driverId);
 
     // Create violation record for driver profile
     const violationRecord = {
       id: violation.id,
       tripId: violation.tripId,
-      timestamp: firestore.FieldValue.serverTimestamp(),
+      timestamp: serverTimestamp(),
       maxSpeed: violation.maxSpeed,
       speedLimit: violation.speedLimit,
       maxExcessSpeed: violation.maxExcessSpeed,
@@ -341,11 +353,11 @@ export async function recordViolationInDriverProfile(
     };
 
     // Update driver's speedViolations array and total count
-    await driverRef.update({
-      'safetyData.speedViolations': firestore.FieldValue.arrayUnion(violationRecord),
-      'safetyData.totalSpeedViolations': firestore.FieldValue.increment(1),
-      'safetyData.lastViolationAt': firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+    await updateDoc(driverRef, {
+      'safetyData.speedViolations': arrayUnion(violationRecord),
+      'safetyData.totalSpeedViolations': increment(1),
+      'safetyData.lastViolationAt': serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     console.log('📊 Violation recorded in driver profile:', violation.driverId);
@@ -362,10 +374,10 @@ export async function logSpeedReading(
   reading: SpeedReading
 ): Promise<void> {
   try {
-    const tripRef = firestore().collection('trips').doc(tripId);
+    const tripRef = doc(db, 'trips', tripId);
 
-    await tripRef.update({
-      'safetyData.speeds': firestore.FieldValue.arrayUnion(reading),
+    await updateDoc(tripRef, {
+      'safetyData.speeds': arrayUnion(reading),
     });
   } catch (error) {
     console.error('Failed to log speed reading:', error);

@@ -2,6 +2,9 @@
  * DRIFT ROUTE DEVIATION SERVICE
  * Detects and monitors route deviations, early completions,
  * and manages safety alerts
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import {
@@ -11,7 +14,20 @@ import {
   EmergencyAlertType,
   SafetyServiceResponse,
 } from '@/src/types/safety.types';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  updateDoc,
+  arrayUnion,
+  serverTimestamp,
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 // Configuration
 const ROUTE_DEVIATION_THRESHOLD = 804.672; // 0.5 miles in meters
@@ -359,11 +375,11 @@ export class RouteDeviationMonitor {
     response: 'okay' | 'sos'
   ): Promise<SafetyServiceResponse> {
     try {
-      const tripRef = firestore().collection('trips').doc(this.tripId);
+      const tripRef = doc(db, 'trips', this.tripId);
 
-      await tripRef.update({
+      await updateDoc(tripRef, {
         'safetyData.earlyCompletion.riderResponse': response,
-        'safetyData.earlyCompletion.responseTimestamp': firestore.FieldValue.serverTimestamp(),
+        'safetyData.earlyCompletion.responseTimestamp': serverTimestamp(),
         'safetyData.earlyCompletion.resolved': true,
         'safetyData.earlyCompletion.paymentHeld': response === 'sos',
       });
@@ -403,10 +419,10 @@ export class RouteDeviationMonitor {
    */
   private async logDeviation(deviation: RouteDeviation): Promise<void> {
     try {
-      const tripRef = firestore().collection('trips').doc(this.tripId);
-      await tripRef.update({
-        'safetyData.routeDeviations': firestore.FieldValue.arrayUnion(deviation),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+      const tripRef = doc(db, 'trips', this.tripId);
+      await updateDoc(tripRef, {
+        'safetyData.routeDeviations': arrayUnion(deviation),
+        updatedAt: serverTimestamp(),
       });
       console.log('📍 Route deviation logged:', deviation.id);
     } catch (error) {
@@ -419,15 +435,15 @@ export class RouteDeviationMonitor {
    */
   private async updateDeviationResponse(deviation: RouteDeviation): Promise<void> {
     try {
-      const tripRef = firestore().collection('trips').doc(this.tripId);
-      const tripDoc = await tripRef.get();
+      const tripRef = doc(db, 'trips', this.tripId);
+      const tripDoc = await getDoc(tripRef);
       const tripData = tripDoc.data();
 
       if (tripData?.safetyData?.routeDeviations) {
         const deviations = tripData.safetyData.routeDeviations.map((d: RouteDeviation) =>
           d.id === deviation.id ? deviation : d
         );
-        await tripRef.update({
+        await updateDoc(tripRef, {
           'safetyData.routeDeviations': deviations,
         });
       }
@@ -441,10 +457,10 @@ export class RouteDeviationMonitor {
    */
   private async logEarlyCompletion(completion: EarlyCompletion): Promise<void> {
     try {
-      const tripRef = firestore().collection('trips').doc(this.tripId);
-      await tripRef.update({
+      const tripRef = doc(db, 'trips', this.tripId);
+      await updateDoc(tripRef, {
         'safetyData.earlyCompletion': completion,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
       console.log('⚠️ Early completion logged:', completion.id);
     } catch (error) {
@@ -476,9 +492,9 @@ export class RouteDeviationMonitor {
         resolved: false,
       };
 
-      const tripRef = firestore().collection('trips').doc(this.tripId);
-      await tripRef.update({
-        'safetyData.emergencyAlerts': firestore.FieldValue.arrayUnion(alert),
+      const tripRef = doc(db, 'trips', this.tripId);
+      await updateDoc(tripRef, {
+        'safetyData.emergencyAlerts': arrayUnion(alert),
       });
 
       console.log('🚨 Emergency alert triggered:', type);

@@ -2,15 +2,42 @@
  * Driver Registration Service
  * Handles complete driver registration flow with Firebase
  * Production-ready implementation
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import firestore, { arrayUnion } from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  arrayUnion,
+  serverTimestamp,
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import { getCurrentUser } from './firebase-auth-service';
 import type { DriverRegistration, Document as DriverDocument } from '../stores/driver-store';
 
-const db = firestore();
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 const storageRef = storage();
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export interface DriverProfile {
   // Personal Info
@@ -299,10 +326,12 @@ export async function submitDriverRegistration(
     };
 
     // Save to Firestore
-    await db.collection('drivers').doc(userId).set(driverProfile);
+    const driverRef = doc(db, 'drivers', userId);
+    await setDoc(driverRef, driverProfile);
 
     // Also save document URLs to a separate collection for admin review
-    await db.collection('drivers').doc(userId).collection('documents').doc('urls').set({
+    const documentsRef = doc(db, 'drivers', userId, 'documents', 'urls');
+    await setDoc(documentsRef, {
       license: {
         front: documentUrls.licenseFront,
         back: documentUrls.licenseBack,
@@ -315,13 +344,15 @@ export async function submitDriverRegistration(
 
     // NOW add the DRIVER role to the user's roles array
     // This only happens after they successfully submit their complete application
-    await db.collection('users').doc(userId).update({
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
       roles: arrayUnion('DRIVER'),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     // Clear the registration progress since registration is complete
-    await db.collection('driverRegistrationProgress').doc(userId).delete();
+    const progressRef = doc(db, 'driverRegistrationProgress', userId);
+    await deleteDoc(progressRef);
 
     console.log('✅ Driver registration submitted successfully');
     console.log('✅ DRIVER role added to user');
@@ -370,12 +401,14 @@ export async function saveRegistrationProgress(
     // Clean the registration data to remove any undefined values
     const cleanedData = removeUndefinedValues(registrationData);
 
-    await db.collection('driverRegistrationProgress').doc(userId).set(
+    const progressRef = doc(db, 'driverRegistrationProgress', userId);
+    await setDoc(
+      progressRef,
       {
         userId,
         currentStep,
         registrationData: cleanedData || {},
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       { merge: true }
     );
@@ -396,9 +429,10 @@ export async function loadRegistrationProgress(
   try {
     console.log('📖 Loading registration progress for:', userId);
 
-    const progressDoc = await db.collection('driverRegistrationProgress').doc(userId).get();
+    const progressRef = doc(db, 'driverRegistrationProgress', userId);
+    const progressDoc = await getDoc(progressRef);
 
-    if (!progressDoc.exists) {
+    if (!documentExists(progressDoc)) {
       console.log('📝 No registration progress found');
       return null;
     }
@@ -421,7 +455,8 @@ export async function loadRegistrationProgress(
  */
 export async function clearRegistrationProgress(userId: string): Promise<void> {
   try {
-    await db.collection('driverRegistrationProgress').doc(userId).delete();
+    const progressRef = doc(db, 'driverRegistrationProgress', userId);
+    await deleteDoc(progressRef);
     console.log('🗑️ Registration progress cleared');
   } catch (error) {
     console.error('❌ Error clearing registration progress:', error);
@@ -435,9 +470,10 @@ export async function getDriverRegistrationStatus(
   userId: string
 ): Promise<DriverProfile | null> {
   try {
-    const driverDoc = await db.collection('drivers').doc(userId).get();
+    const driverRef = doc(db, 'drivers', userId);
+    const driverDoc = await getDoc(driverRef);
 
-    if (!driverDoc.exists) {
+    if (!documentExists(driverDoc)) {
       return null;
     }
 
@@ -479,7 +515,8 @@ export async function updateDriverRegistrationStatus(
       updates.rejectionReason = rejectionReason;
     }
 
-    await db.collection('drivers').doc(userId).update(updates);
+    const driverRef = doc(db, 'drivers', userId);
+    await updateDoc(driverRef, updates);
 
     console.log(`✅ Driver registration ${status} for user:`, userId);
   } catch (error) {
@@ -508,7 +545,8 @@ export async function updateDocumentStatus(
       updates[`documents.${documentType}.rejectionReason`] = rejectionReason;
     }
 
-    await db.collection('drivers').doc(userId).update(updates);
+    const driverRef = doc(db, 'drivers', userId);
+    await updateDoc(driverRef, updates);
 
     console.log(`✅ Document ${documentType} ${status} for user:`, userId);
   } catch (error) {

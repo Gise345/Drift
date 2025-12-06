@@ -1,12 +1,18 @@
 /**
- * Ride Request Notification Cloud Functions
- * Handles push notifications for ride requests to nearby drivers
+ * Ride Notification Cloud Functions
+ * Handles push notifications for:
+ * - Ride requests to nearby drivers
+ * - Trip completion notifications
+ * - Safety alerts
+ * - Stop requests
  */
 
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 
-const db = admin.firestore();
+// Using 'main' database (restored from backup)
+const db = getFirestore(admin.app(), 'main');
 const messaging = admin.messaging();
 
 // Distance threshold for notifying drivers (10 km)
@@ -39,7 +45,7 @@ function calculateDistance(
  * Firestore trigger: Send notifications to nearby drivers when a new ride is requested
  */
 export const onRideRequested = onDocumentCreated(
-  'trips/{tripId}',
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
   async (event) => {
     const snapshot = event.data;
     if (!snapshot) {
@@ -210,7 +216,7 @@ export const onRideRequested = onDocumentCreated(
  * (when declinedBy array is cleared and requestedAt is updated)
  */
 export const onRideResent = onDocumentUpdated(
-  'trips/{tripId}',
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -342,7 +348,7 @@ export const onRideResent = onDocumentUpdated(
  * Driver needs to approve the stop
  */
 export const onStopRequested = onDocumentUpdated(
-  'trips/{tripId}',
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -431,7 +437,7 @@ export const onStopRequested = onDocumentUpdated(
  * Notify the rider of the decision
  */
 export const onStopDecision = onDocumentUpdated(
-  'trips/{tripId}',
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -503,6 +509,263 @@ export const onStopDecision = onDocumentUpdated(
       return { success: true };
     } catch (error) {
       console.error('Error sending stop decision notification:', error);
+      return { success: false, error };
+    }
+  }
+);
+
+/**
+ * Send notification to rider when trip is completed or awaiting tip
+ * This is crucial because rider may be on another app
+ */
+export const onTripCompleted = onDocumentUpdated(
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+
+    if (!before || !after) return null;
+
+    const { tripId } = event.params;
+
+    // Check if trip just changed to COMPLETED or AWAITING_TIP
+    const wasNotComplete = before.status !== 'COMPLETED' && before.status !== 'AWAITING_TIP';
+    const isNowComplete = after.status === 'COMPLETED' || after.status === 'AWAITING_TIP';
+
+    if (!wasNotComplete || !isNowComplete) return null;
+
+    console.log(`🏁 Trip ${tripId} completed - notifying rider`);
+
+    try {
+      // Get rider's FCM token
+      const riderId = after.riderId;
+      if (!riderId) return null;
+
+      const userDoc = await db.collection('users').doc(riderId).get();
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken || userData?.pushToken;
+
+      if (!fcmToken) {
+        console.log(`No FCM token for rider ${riderId}`);
+        return null;
+      }
+
+      const finalCost = after.finalCost || after.estimatedCost || 0;
+      const driverName = after.driverInfo?.name || 'Your driver';
+
+      const title = '🏁 Trip Completed!';
+      const body = after.status === 'AWAITING_TIP'
+        ? `${driverName} is waiting. Total: CI$${finalCost.toFixed(2)}. Tap to add a tip and rate.`
+        : `Your trip with ${driverName} is complete. Total: CI$${finalCost.toFixed(2)}`;
+
+      const message: admin.messaging.Message = {
+        token: fcmToken,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: 'TRIP_COMPLETED',
+          tripId,
+          finalCost: finalCost.toString(),
+          status: after.status,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'trip_updates',
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: { title, body },
+              sound: 'default',
+              badge: 1,
+              'content-available': 1,
+            },
+          },
+          headers: {
+            'apns-priority': '10',
+          },
+        },
+      };
+
+      const response = await messaging.send(message);
+      console.log(`📱 Trip completion notification sent to rider: ${response}`);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending trip completion notification:', error);
+      return { success: false, error };
+    }
+  }
+);
+
+/**
+ * Send notification for safety alerts (speed violations, route deviations)
+ * Critical for rider safety when they may not be actively watching the app
+ */
+export const onSafetyAlert = onDocumentCreated(
+  { document: 'speedViolations/{violationId}', region: 'us-east1', database: 'main' },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return null;
+
+    const violationData = snapshot.data();
+    const { violationId } = event.params;
+
+    console.log(`⚠️ Speed violation ${violationId} created - notifying rider`);
+
+    try {
+      // Get rider's FCM token
+      const riderId = violationData.riderId;
+      if (!riderId) {
+        console.log('No riderId in violation');
+        return null;
+      }
+
+      const userDoc = await db.collection('users').doc(riderId).get();
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken || userData?.pushToken;
+
+      if (!fcmToken) {
+        console.log(`No FCM token for rider ${riderId}`);
+        return null;
+      }
+
+      const speed = violationData.speed || 0;
+      const speedLimit = violationData.speedLimit || 0;
+
+      const title = '⚠️ Speed Alert';
+      const body = `Your driver is traveling at ${Math.round(speed)} km/h in a ${speedLimit} km/h zone. Are you okay?`;
+
+      const message: admin.messaging.Message = {
+        token: fcmToken,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: 'SAFETY_ALERT',
+          alertType: 'SPEED_VIOLATION',
+          violationId,
+          tripId: violationData.tripId || '',
+          speed: speed.toString(),
+          speedLimit: speedLimit.toString(),
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'safety_alerts',
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            icon: 'ic_warning',
+            color: '#EF4444',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: { title, body },
+              sound: 'default',
+              badge: 1,
+              'content-available': 1,
+            },
+          },
+          headers: {
+            'apns-priority': '10',
+          },
+        },
+      };
+
+      const response = await messaging.send(message);
+      console.log(`📱 Safety alert notification sent to rider: ${response}`);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending safety alert notification:', error);
+      return { success: false, error };
+    }
+  }
+);
+
+/**
+ * Send notification for route deviation alerts
+ */
+export const onRouteDeviation = onDocumentCreated(
+  { document: 'routeDeviations/{deviationId}', region: 'us-east1', database: 'main' },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return null;
+
+    const deviationData = snapshot.data();
+    const { deviationId } = event.params;
+
+    console.log(`🔀 Route deviation ${deviationId} created - notifying rider`);
+
+    try {
+      // Get rider's FCM token
+      const riderId = deviationData.riderId;
+      if (!riderId) {
+        console.log('No riderId in deviation');
+        return null;
+      }
+
+      const userDoc = await db.collection('users').doc(riderId).get();
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken || userData?.pushToken;
+
+      if (!fcmToken) {
+        console.log(`No FCM token for rider ${riderId}`);
+        return null;
+      }
+
+      const title = '🔀 Route Change Detected';
+      const body = 'Your driver appears to be taking a different route. Is everything okay?';
+
+      const message: admin.messaging.Message = {
+        token: fcmToken,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: 'SAFETY_ALERT',
+          alertType: 'ROUTE_DEVIATION',
+          deviationId,
+          tripId: deviationData.tripId || '',
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'safety_alerts',
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: { title, body },
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+      };
+
+      const response = await messaging.send(message);
+      console.log(`📱 Route deviation notification sent to rider: ${response}`);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending route deviation notification:', error);
       return { success: false, error };
     }
   }

@@ -1,6 +1,9 @@
 /**
  * DRIFT EMERGENCY SOS SERVICE
  * Handles emergency alerts, 911 calls, contact notifications, and emergency response
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import {
@@ -8,9 +11,39 @@ import {
   EmergencyAlertType,
   SafetyServiceResponse,
 } from '@/src/types/safety.types';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  arrayUnion,
+  serverTimestamp,
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import { Linking, Platform, Vibration } from 'react-native';
 import * as Haptics from 'expo-haptics';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 // Emergency Configuration
 const EMERGENCY_NUMBER = '911'; // US default
@@ -83,23 +116,19 @@ export async function triggerSOS(
     await triggerEmergencyHaptics();
 
     // 2. Save alert to Firestore immediately
-    await firestore()
-      .collection('emergency_alerts')
-      .doc(alert.id)
-      .set({
-        ...alert,
-        timestamp: firestore.FieldValue.serverTimestamp(),
-      });
+    const alertRef = doc(db, 'emergency_alerts', alert.id);
+    await setDoc(alertRef, {
+      ...alert,
+      timestamp: serverTimestamp(),
+    });
 
     // 3. Update trip with emergency alert
-    await firestore()
-      .collection('trips')
-      .doc(tripContext.tripId)
-      .update({
-        'safetyData.emergencyAlerts': firestore.FieldValue.arrayUnion(alert),
-        emergencyActive: true,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const tripRef = doc(db, 'trips', tripContext.tripId);
+    await updateDoc(tripRef, {
+      'safetyData.emergencyAlerts': arrayUnion(alert),
+      emergencyActive: true,
+      updatedAt: serverTimestamp(),
+    });
 
     // 4. Get user's emergency contacts
     const contacts = await getEmergencyContacts(userId);
@@ -124,12 +153,9 @@ export async function triggerSOS(
     await createAdminAlert(alert, tripContext);
 
     // Update alert with notified contacts
-    await firestore()
-      .collection('emergency_alerts')
-      .doc(alert.id)
-      .update({
-        contactsNotified: notifiedContacts,
-      });
+    await updateDoc(alertRef, {
+      contactsNotified: notifiedContacts,
+    });
 
     console.log('SOS alert created:', alert.id);
     return { success: true, data: alert };
@@ -196,12 +222,10 @@ export async function getEmergencyContacts(
   userId: string
 ): Promise<EmergencyContact[]> {
   try {
-    const userDoc = await firestore()
-      .collection('users')
-      .doc(userId)
-      .get();
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
 
-    if (!userDoc.exists) return [];
+    if (!documentExists(userDoc)) return [];
 
     const userData = userDoc.data();
     return userData?.emergencyContacts || [];
@@ -224,13 +248,11 @@ export async function saveEmergencyContacts(
       id: `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     }));
 
-    await firestore()
-      .collection('users')
-      .doc(userId)
-      .update({
-        emergencyContacts: contactsWithIds,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      emergencyContacts: contactsWithIds,
+      updatedAt: serverTimestamp(),
+    });
 
     return { success: true };
   } catch (error) {
@@ -252,7 +274,8 @@ async function notifyEmergencyContacts(
   for (const contact of contacts) {
     try {
       // Create notification record
-      await firestore().collection('emergency_notifications').add({
+      const notificationsRef = collection(db, 'emergency_notifications');
+      await addDoc(notificationsRef, {
         alertId: alert.id,
         contactId: contact.id,
         contactName: contact.name,
@@ -268,7 +291,7 @@ async function notifyEmergencyContacts(
         },
         message: buildEmergencyMessage(contact, alert, tripContext),
         status: 'pending',
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       notified.push(contact.id);
@@ -321,21 +344,20 @@ async function holdTripPayment(
   reason: string
 ): Promise<void> {
   try {
-    await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .update({
-        paymentStatus: 'HELD',
-        paymentHoldReason: reason,
-        paymentHeldAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, {
+      paymentStatus: 'HELD',
+      paymentHoldReason: reason,
+      paymentHeldAt: serverTimestamp(),
+    });
 
     // Create payment hold record
-    await firestore().collection('payment_holds').add({
+    const holdsRef = collection(db, 'payment_holds');
+    await addDoc(holdsRef, {
       tripId,
       reason,
       status: 'active',
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
 
     console.log('Payment held for trip:', tripId);
@@ -353,25 +375,22 @@ async function flagDriverAccount(
   alertType: EmergencyAlertType
 ): Promise<void> {
   try {
-    await firestore()
-      .collection('driver_flags')
-      .add({
-        driverId,
-        tripId,
-        reason: alertType,
-        status: 'pending_review',
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const flagsRef = collection(db, 'driver_flags');
+    await addDoc(flagsRef, {
+      driverId,
+      tripId,
+      reason: alertType,
+      status: 'pending_review',
+      createdAt: serverTimestamp(),
+    });
 
     // Update driver document
-    await firestore()
-      .collection('drivers')
-      .doc(driverId)
-      .update({
-        flagged: true,
-        flagReason: alertType,
-        flaggedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const driverRef = doc(db, 'drivers', driverId);
+    await updateDoc(driverRef, {
+      flagged: true,
+      flagReason: alertType,
+      flaggedAt: serverTimestamp(),
+    });
 
     console.log('Driver flagged:', driverId);
   } catch (error) {
@@ -387,7 +406,8 @@ async function createAdminAlert(
   tripContext: TripContext
 ): Promise<void> {
   try {
-    await firestore().collection('admin_alerts').add({
+    const adminAlertsRef = collection(db, 'admin_alerts');
+    await addDoc(adminAlertsRef, {
       type: 'emergency_sos',
       priority: 'critical',
       alertId: alert.id,
@@ -397,7 +417,7 @@ async function createAdminAlert(
       driverId: tripContext.driverId,
       location: tripContext.currentLocation,
       status: 'unread',
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
 
     console.log('Admin alert created for SOS:', alert.id);
@@ -417,12 +437,10 @@ export async function handleNoResponseAlert(
 ): Promise<SafetyServiceResponse> {
   try {
     // Get trip context
-    const tripDoc = await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .get();
+    const tripRef = doc(db, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
 
-    if (!tripDoc.exists) {
+    if (!documentExists(tripDoc)) {
       return { success: false, error: 'Trip not found' };
     }
 
@@ -461,23 +479,18 @@ export async function handleNoResponseAlert(
     };
 
     // Save alert
-    await firestore()
-      .collection('emergency_alerts')
-      .doc(alert.id)
-      .set({
-        ...alert,
-        timestamp: firestore.FieldValue.serverTimestamp(),
-      });
+    const alertRef = doc(db, 'emergency_alerts', alert.id);
+    await setDoc(alertRef, {
+      ...alert,
+      timestamp: serverTimestamp(),
+    });
 
     // Notify emergency contacts
     const contacts = await getEmergencyContacts(userId);
     const notified = await notifyEmergencyContacts(contacts, alert, tripContext);
 
     // Update alert
-    await firestore()
-      .collection('emergency_alerts')
-      .doc(alert.id)
-      .update({ contactsNotified: notified });
+    await updateDoc(alertRef, { contactsNotified: notified });
 
     // Hold payment
     await holdTripPayment(tripId, 'no_response_to_safety_alert');
@@ -504,30 +517,23 @@ export async function resolveEmergencyAlert(
   resolvedBy: string
 ): Promise<SafetyServiceResponse> {
   try {
-    await firestore()
-      .collection('emergency_alerts')
-      .doc(alertId)
-      .update({
-        resolved: true,
-        resolvedAt: firestore.FieldValue.serverTimestamp(),
-        resolution,
-        resolvedBy,
-      });
+    const alertRef = doc(db, 'emergency_alerts', alertId);
+    await updateDoc(alertRef, {
+      resolved: true,
+      resolvedAt: serverTimestamp(),
+      resolution,
+      resolvedBy,
+    });
 
     // Get alert to update trip
-    const alertDoc = await firestore()
-      .collection('emergency_alerts')
-      .doc(alertId)
-      .get();
+    const alertDoc = await getDoc(alertRef);
 
-    if (alertDoc.exists) {
+    if (documentExists(alertDoc)) {
       const alertData = alertDoc.data();
-      await firestore()
-        .collection('trips')
-        .doc(alertData?.tripId)
-        .update({
-          emergencyActive: false,
-        });
+      const tripRef = doc(db, 'trips', alertData?.tripId);
+      await updateDoc(tripRef, {
+        emergencyActive: false,
+      });
     }
 
     console.log('Emergency alert resolved:', alertId);
@@ -543,18 +549,20 @@ export async function resolveEmergencyAlert(
  */
 export async function getActiveEmergencyAlerts(): Promise<EmergencyAlert[]> {
   try {
-    const snapshot = await firestore()
-      .collection('emergency_alerts')
-      .where('resolved', '==', false)
-      .orderBy('timestamp', 'desc')
-      .get();
+    const alertsRef = collection(db, 'emergency_alerts');
+    const q = query(
+      alertsRef,
+      where('resolved', '==', false),
+      orderBy('timestamp', 'desc')
+    );
+    const snapshot = await getDocs(q);
 
     const alerts: EmergencyAlert[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       alerts.push({
         ...data,
-        id: doc.id,
+        id: docSnap.id,
         timestamp: data.timestamp?.toDate?.() || data.timestamp,
         resolvedAt: data.resolvedAt?.toDate?.() || data.resolvedAt,
       } as EmergencyAlert);
@@ -586,14 +594,15 @@ export async function shareTripWithEmergencyContacts(
     for (const contact of contacts) {
       const shareToken = `share_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      await firestore().collection('trip_shares').add({
+      const sharesRef = collection(db, 'trip_shares');
+      await addDoc(sharesRef, {
         tripId,
         userId,
         contactId: contact.id,
         contactName: contact.name,
         contactPhone: contact.phone,
         shareToken,
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       });
 

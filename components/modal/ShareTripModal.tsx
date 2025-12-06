@@ -52,12 +52,12 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
   const [trackingLink, setTrackingLink] = useState<string>('');
 
   // Generate tracking link
+  // Uses HTTPS link that redirects to the app (clickable in all messaging apps)
   const generateTrackingLink = async (): Promise<string> => {
-    // In production, this would be your actual domain
-    // For now, we'll use a deep link format
-    const baseUrl = 'https://drift-global.com/track';
-    const link = `${baseUrl}/${tripId}`;
-    
+    // HTTPS link that opens a redirect page -> tries to open drift:// app
+    // If app not installed, shows download options
+    const link = `https://drift-global.web.app/open?tripId=${tripId}`;
+
     setTrackingLink(link);
     return link;
   };
@@ -109,10 +109,9 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
     try {
       setLoading(true);
       const link = await generateTrackingLink();
-      
+
       const result = await Share.share({
-        message: `Follow my trip on Drift: ${link}\n\nYou can track my location in real-time until I arrive safely.`,
-        url: link, // iOS only
+        message: `Track my Drift ride in real-time!\n\n${link}`,
         title: 'Track My Trip',
       });
 
@@ -266,7 +265,7 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color="#6b7280" />
             <Text style={styles.infoText}>
-              The tracking link will expire when your trip is complete
+              Recipients need the Drift app to track your trip
             </Text>
           </View>
 

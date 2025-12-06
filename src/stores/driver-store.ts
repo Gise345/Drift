@@ -906,7 +906,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   // Load driver profile from Firebase
   loadDriverProfile: async (userId: string) => {
     try {
-      const { loadDriverProfile, loadDriverEarnings, loadDriverStats } = require(
+      const { loadDriverProfile, loadDriverEarnings, loadDriverStats, getDriverOnlineStatus } = require(
         '../services/driver-profile.service'
       );
 
@@ -923,6 +923,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       // Load earnings and stats
       const earningsData = await loadDriverEarnings(userId);
       const statsData = await loadDriverStats(userId);
+
+      // Check if driver was online before app closed (restore online status)
+      const wasOnline = await getDriverOnlineStatus(userId);
+      console.log('📡 Restoring driver online status:', wasOnline);
 
       // Update store with proper typing
       set({
@@ -950,7 +954,15 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         registrationStatus: driver.status as any,
         todayEarnings: earningsData?.today || 0,
         todayTrips: statsData?.totalTrips || 0,
+        isOnline: wasOnline, // Restore online status from Firebase
       });
+
+      // If driver was online, restart listening for requests once location is available
+      if (wasOnline) {
+        console.log('🔄 Driver was online - will start listening once location is available');
+        // The startListeningForRequests will be called from the driver home screen
+        // once the location is updated
+      }
 
       console.log('✅ Driver profile loaded successfully');
       return true;

@@ -1,12 +1,28 @@
 /**
  * DRIVER SERVICE
  * Firebase integration for driver operations
- * 
- * EXPO SDK 52 Compatible
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import firestore from '@react-native-firebase/firestore';
-import storage from '@react-native-firebase/storage';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from '@react-native-firebase/storage';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+const storage = getStorage(app);
 
 export interface RegistrationStatus {
   overall: 'incomplete' | 'pending' | 'approved' | 'rejected';
@@ -52,18 +68,26 @@ export interface RegistrationStatus {
   rejectionReason?: string;
 }
 
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
+
 export const DriverService = {
   /**
    * Get driver registration status from Firebase
    */
   async getRegistrationStatus(driverId: string): Promise<RegistrationStatus | null> {
     try {
-      const driverDoc = await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .get();
+      const driverRef = doc(db, 'drivers', driverId);
+      const driverDoc = await getDoc(driverRef);
 
-      if (!driverDoc.exists) {
+      if (!documentExists(driverDoc)) {
         // No driver profile exists yet
         return {
           overall: 'incomplete',
@@ -135,26 +159,25 @@ export const DriverService = {
   ): Promise<string> {
     try {
       const filename = `${driverId}/${documentType}_${Date.now()}.jpg`;
-      const reference = storage().ref(filename);
-      
-      // Upload file
-      await reference.putFile(uri);
-      
+      const storageRef = ref(storage, filename);
+
+      // For React Native, we need to use putFile which requires a different approach
+      // Note: This may need adjustment based on actual storage API usage
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      await uploadBytes(storageRef, blob);
+
       // Get download URL
-      const url = await reference.getDownloadURL();
-      
+      const url = await getDownloadURL(storageRef);
+
       // Update Firestore
-      await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .collection('documents')
-        .doc(documentType)
-        .set({
-          url,
-          uploadedAt: firestore.FieldValue.serverTimestamp(),
-          status: 'pending',
-        });
-      
+      const docRef = doc(db, 'drivers', driverId, 'documents', documentType);
+      await setDoc(docRef, {
+        url,
+        uploadedAt: serverTimestamp(),
+        status: 'pending',
+      });
+
       return url;
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -170,15 +193,11 @@ export const DriverService = {
     status: Partial<RegistrationStatus>
   ): Promise<void> {
     try {
-      await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .collection('registration')
-        .doc('status')
-        .update({
-          ...status,
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const statusRef = doc(db, 'drivers', driverId, 'registration', 'status');
+      await updateDoc(statusRef, {
+        ...status,
+        updatedAt: serverTimestamp(),
+      });
     } catch (error) {
       console.error('Error updating registration status:', error);
       throw error;

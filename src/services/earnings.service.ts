@@ -1,11 +1,37 @@
 /**
  * EARNINGS SERVICE
  * Firebase integration for driver earnings data
- * 
- * EXPO SDK 52 Compatible
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  onSnapshot,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export interface EarningsData {
   amount: number;
@@ -22,12 +48,14 @@ export const EarningsService = {
     startOfDay.setHours(0, 0, 0, 0);
 
     try {
-      const snapshot = await firestore()
-        .collection('trips')
-        .where('driverId', '==', driverId)
-        .where('completedAt', '>=', startOfDay)
-        .where('status', '==', 'COMPLETED')
-        .get();
+      const tripsRef = collection(db, 'trips');
+      const q = query(
+        tripsRef,
+        where('driverId', '==', driverId),
+        where('completedAt', '>=', startOfDay),
+        where('status', '==', 'COMPLETED')
+      );
+      const snapshot = await getDocs(q);
 
       // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
@@ -65,12 +93,14 @@ export const EarningsService = {
     startOfWeek.setHours(0, 0, 0, 0);
 
     try {
-      const snapshot = await firestore()
-        .collection('trips')
-        .where('driverId', '==', driverId)
-        .where('completedAt', '>=', startOfWeek)
-        .where('status', '==', 'COMPLETED')
-        .get();
+      const tripsRef = collection(db, 'trips');
+      const q = query(
+        tripsRef,
+        where('driverId', '==', driverId),
+        where('completedAt', '>=', startOfWeek),
+        where('status', '==', 'COMPLETED')
+      );
+      const snapshot = await getDocs(q);
 
       // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
@@ -106,12 +136,14 @@ export const EarningsService = {
     startOfMonth.setHours(0, 0, 0, 0);
 
     try {
-      const snapshot = await firestore()
-        .collection('trips')
-        .where('driverId', '==', driverId)
-        .where('completedAt', '>=', startOfMonth)
-        .where('status', '==', 'COMPLETED')
-        .get();
+      const tripsRef = collection(db, 'trips');
+      const q = query(
+        tripsRef,
+        where('driverId', '==', driverId),
+        where('completedAt', '>=', startOfMonth),
+        where('status', '==', 'COMPLETED')
+      );
+      const snapshot = await getDocs(q);
 
       // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
       const earnings = snapshot.docs.reduce((total, doc) => {
@@ -145,26 +177,24 @@ export const EarningsService = {
     driverId: string,
     callback: (earnings: EarningsData) => void
   ): () => void {
-    const unsubscribe = firestore()
-      .collection('drivers')
-      .doc(driverId)
-      .collection('earnings')
-      .doc('current')
-      .onSnapshot(
-        (doc) => {
-          if (doc.exists) {
-            const data = doc.data();
-            callback({
-              amount: data?.todayEarnings || 0,
-              trips: data?.todayTrips || 0,
-              hours: data?.todayHours || 0,
-            });
-          }
-        },
-        (error) => {
-          console.error('Error subscribing to earnings:', error);
+    const earningsRef = doc(db, 'drivers', driverId, 'earnings', 'current');
+
+    const unsubscribe = onSnapshot(
+      earningsRef,
+      (docSnap) => {
+        if (documentExists(docSnap)) {
+          const data = docSnap.data();
+          callback({
+            amount: data?.todayEarnings || 0,
+            trips: data?.todayTrips || 0,
+            hours: data?.todayHours || 0,
+          });
         }
-      );
+      },
+      (error) => {
+        console.error('Error subscribing to earnings:', error);
+      }
+    );
 
     return unsubscribe;
   },

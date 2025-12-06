@@ -8,8 +8,8 @@
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png">
     
-    <!-- Google Maps API -->
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk&libraries=geometry"></script>
+    <!-- Google Maps API (loaded asynchronously for better performance) -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk&libraries=geometry,places&loading=async&callback=onMapsApiLoaded"></script>
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -428,6 +428,9 @@
 
     <script>
         // Firebase Configuration
+        // NOTE: This API key is a client-side Firebase Web API key, not a secret.
+        // Firebase security is enforced via Firestore Security Rules, not API key restrictions.
+        // See: https://firebase.google.com/docs/projects/api-keys
         const firebaseConfig = {
             apiKey: "AIzaSyBZ_o4ZcHPvuNnTsqSaJ1CYl2l2PkJoOno",
             authDomain: "drift-global.firebaseapp.com",
@@ -445,14 +448,61 @@
         let map;
         let driverMarker;
         let destinationMarker;
+        let pickupMarker;
         let routeLine;
         let sessionId;
         let unsubscribe;
+        let mapsApiLoaded = false;
+        let pendingMapInit = null;
+        let directionsService;
+        let directionsRenderer;
+        let currentRoute = null;
+        let lastRouteRequest = null;
+        let tripData = null; // Store trip data globally for route updates
 
-        // Get session ID from URL
+        // Callback when Google Maps API is loaded
+        function onMapsApiLoaded() {
+            mapsApiLoaded = true;
+            console.log('Google Maps API loaded');
+            // If we have pending data to display, initialize the map now
+            if (pendingMapInit) {
+                initMap(pendingMapInit.lat, pendingMapInit.lng);
+                if (pendingMapInit.callback) {
+                    pendingMapInit.callback();
+                }
+                pendingMapInit = null;
+            }
+        }
+
+        // Get session/trip ID from URL
+        // Supports multiple formats:
+        // - /track?tripId=ABC123 (preferred - new format)
+        // - /track?session=ABC123 (legacy)
+        // - /track?id=ABC123 (legacy)
+        // - /track/ABC123 (path-based legacy)
         function getSessionId() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            // First check for 'tripId' query param (new preferred format)
+            const tripIdParam = urlParams.get('tripId');
+            if (tripIdParam) return tripIdParam;
+
+            // Then check for 'session' query param (legacy format)
+            const sessionParam = urlParams.get('session');
+            if (sessionParam) return sessionParam;
+
+            // Then check for 'id' query param (legacy format)
+            const idParam = urlParams.get('id');
+            if (idParam) return idParam;
+
+            // Finally check URL path (legacy format)
             const pathParts = window.location.pathname.split('/');
-            return pathParts[pathParts.length - 1] || new URLSearchParams(window.location.search).get('id');
+            const lastPart = pathParts[pathParts.length - 1];
+            if (lastPart && lastPart !== 'track' && lastPart !== 'track.html') {
+                return lastPart;
+            }
+
+            return null;
         }
 
         // Initialize map
@@ -474,87 +524,264 @@
                 ]
             });
 
-            // Create driver marker (car icon)
+            // Initialize Directions Service and Renderer
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map,
+                suppressMarkers: true, // We'll use custom markers
+                polylineOptions: {
+                    strokeColor: '#5d1289',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 5,
+                }
+            });
+
+            // Create driver marker (car icon) - custom SVG car
+            const carIconSvg = `
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="20" cy="20" r="18" fill="#5d1289" stroke="white" stroke-width="3"/>
+                    <path d="M12 22V26C12 26.5523 12.4477 27 13 27H15C15.5523 27 16 26.5523 16 26V25H24V26C24 26.5523 24.4477 27 25 27H27C27.5523 27 28 26.5523 28 26V22M12 22L14 15C14.1667 14.3333 14.8 13 16 13H24C25.2 13 25.8333 14.3333 26 15L28 22M12 22H28M15 23.5C15 24.3284 14.3284 25 13.5 25C12.6716 25 12 24.3284 12 23.5C12 22.6716 12.6716 22 13.5 22C14.3284 22 15 22.6716 15 23.5ZM28 23.5C28 24.3284 27.3284 25 26.5 25C25.6716 25 25 24.3284 25 23.5C25 22.6716 25.6716 22 26.5 22C27.3284 22 28 22.6716 28 23.5Z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            `;
+
             driverMarker = new google.maps.Marker({
                 map: map,
                 icon: {
-                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 5,
-                    fillColor: '#2563eb',
-                    fillOpacity: 1,
-                    strokeColor: '#ffffff',
-                    strokeWeight: 2,
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(carIconSvg),
+                    scaledSize: new google.maps.Size(40, 40),
+                    anchor: new google.maps.Point(20, 20),
                 },
-                title: 'Driver Location'
+                title: 'Driver Location',
+                zIndex: 1000 // Keep car on top
             });
 
-            // Create destination marker
+            // Create pickup marker (green)
+            const pickupIconSvg = `
+                <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M16 0C7.16344 0 0 7.16344 0 16C0 24.8366 16 40 16 40C16 40 32 24.8366 32 16C32 7.16344 24.8366 0 16 0Z" fill="#10b981"/>
+                    <circle cx="16" cy="16" r="6" fill="white"/>
+                </svg>
+            `;
+
+            pickupMarker = new google.maps.Marker({
+                map: map,
+                icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(pickupIconSvg),
+                    scaledSize: new google.maps.Size(32, 40),
+                    anchor: new google.maps.Point(16, 40),
+                },
+                title: 'Pickup Location',
+                visible: false
+            });
+
+            // Create destination marker (red)
+            const destIconSvg = `
+                <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M16 0C7.16344 0 0 7.16344 0 16C0 24.8366 16 40 16 40C16 40 32 24.8366 32 16C32 7.16344 24.8366 0 16 0Z" fill="#ef4444"/>
+                    <circle cx="16" cy="16" r="6" fill="white"/>
+                </svg>
+            `;
+
             destinationMarker = new google.maps.Marker({
                 map: map,
                 icon: {
-                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-                        <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M16 0C7.16344 0 0 7.16344 0 16C0 24.8366 16 40 16 40C16 40 32 24.8366 32 16C32 7.16344 24.8366 0 16 0Z" fill="#ef4444"/>
-                            <circle cx="16" cy="16" r="6" fill="white"/>
-                        </svg>
-                    `),
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(destIconSvg),
                     scaledSize: new google.maps.Size(32, 40),
                     anchor: new google.maps.Point(16, 40),
                 },
                 title: 'Destination'
             });
 
-            // Create route line
+            // Create fallback route line (used only if Directions API fails)
             routeLine = new google.maps.Polyline({
                 map: map,
-                strokeColor: '#2563eb',
+                strokeColor: '#5d1289',
                 strokeOpacity: 0.7,
                 strokeWeight: 4,
+                visible: false
             });
         }
 
-        // Update map with new data
-        function updateMap(data) {
-            if (!data.currentLocation || !data.destination) return;
+        // Fetch and display route using Directions API
+        function fetchRoute(origin, destination, waypoints = []) {
+            if (!directionsService || !directionsRenderer) {
+                console.log('⚠️ Directions service not ready');
+                return;
+            }
 
-            const driverPos = {
-                lat: data.currentLocation.latitude,
-                lng: data.currentLocation.longitude
+            // Create request key to avoid duplicate requests
+            const requestKey = `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}-${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}`;
+            if (lastRouteRequest === requestKey && currentRoute) {
+                console.log('📍 Using cached route');
+                return;
+            }
+
+            console.log('📍 Fetching route from Directions API...');
+
+            const request = {
+                origin: origin,
+                destination: destination,
+                waypoints: waypoints.map(wp => ({
+                    location: new google.maps.LatLng(wp.lat, wp.lng),
+                    stopover: true
+                })),
+                travelMode: google.maps.TravelMode.DRIVING,
+                optimizeWaypoints: false
             };
+
+            directionsService.route(request, (result, status) => {
+                if (status === 'OK') {
+                    console.log('✅ Route fetched successfully');
+                    directionsRenderer.setDirections(result);
+                    currentRoute = result;
+                    lastRouteRequest = requestKey;
+                    routeLine.setVisible(false); // Hide fallback line
+
+                    // Update ETA from Directions API
+                    if (result.routes[0] && result.routes[0].legs[0]) {
+                        const leg = result.routes[0].legs[0];
+                        document.getElementById('distance').textContent = leg.distance.text;
+                        document.getElementById('eta').textContent = leg.duration.text;
+                    }
+                } else {
+                    console.log('⚠️ Directions API failed:', status);
+                    // Fall back to straight line
+                    routeLine.setPath([origin, destination]);
+                    routeLine.setVisible(true);
+                }
+            });
+        }
+
+        // Smoothly animate marker to new position
+        function animateMarker(marker, newPosition, duration = 1000) {
+            const startPosition = marker.getPosition();
+            if (!startPosition) {
+                marker.setPosition(newPosition);
+                return;
+            }
+
+            const startLat = startPosition.lat();
+            const startLng = startPosition.lng();
+            const endLat = newPosition.lat;
+            const endLng = newPosition.lng;
+
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Ease out cubic for smooth deceleration
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+                const currentLat = startLat + (endLat - startLat) * easeProgress;
+                const currentLng = startLng + (endLng - startLng) * easeProgress;
+
+                marker.setPosition({ lat: currentLat, lng: currentLng });
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+
+            animate();
+        }
+
+        // Update map with new data
+        let initialBoundsFit = false;
+        let lastDriverPos = null;
+
+        function updateMap(data) {
+            if (!data.destination || !data.destination.latitude) {
+                console.log('⚠️ No destination data available');
+                return;
+            }
+
+            // Store trip data for later use
+            tripData = data;
 
             const destPos = {
                 lat: data.destination.latitude,
                 lng: data.destination.longitude
             };
 
-            // Update driver marker
-            driverMarker.setPosition(driverPos);
-            if (data.currentLocation.heading) {
-                driverMarker.setIcon({
-                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                    scale: 5,
-                    fillColor: '#2563eb',
-                    fillOpacity: 1,
-                    strokeColor: '#ffffff',
-                    strokeWeight: 2,
-                    rotation: data.currentLocation.heading
-                });
-            }
-
             // Update destination marker
             destinationMarker.setPosition(destPos);
+            destinationMarker.setVisible(true);
 
-            // Update route line
-            routeLine.setPath([driverPos, destPos]);
+            // Show pickup marker if trip hasn't started yet
+            if (data.pickup && data.pickup.latitude) {
+                const pickupPos = {
+                    lat: data.pickup.latitude,
+                    lng: data.pickup.longitude
+                };
+                pickupMarker.setPosition(pickupPos);
 
-            // Fit bounds to show both markers
+                // Show pickup marker only if driver is going to pickup (not yet at destination)
+                const isGoingToPickup = data.tripStatus === 'ACCEPTED' || data.tripStatus === 'DRIVER_ARRIVING';
+                pickupMarker.setVisible(isGoingToPickup);
+            }
+
             const bounds = new google.maps.LatLngBounds();
-            bounds.extend(driverPos);
             bounds.extend(destPos);
-            map.fitBounds(bounds);
 
-            // Calculate distance and ETA
-            updateTripMetrics(driverPos, destPos);
+            // Update driver marker if we have location
+            if (data.currentLocation && data.currentLocation.latitude) {
+                const driverPos = {
+                    lat: data.currentLocation.latitude,
+                    lng: data.currentLocation.longitude
+                };
+
+                // Smoothly animate to new position (if not first position)
+                if (lastDriverPos) {
+                    animateMarker(driverMarker, driverPos, 2000);
+                } else {
+                    driverMarker.setPosition(driverPos);
+                }
+                lastDriverPos = driverPos;
+
+                driverMarker.setVisible(true);
+
+                bounds.extend(driverPos);
+
+                // Fetch route if we don't have one yet
+                if (!currentRoute) {
+                    // Determine origin and destination based on trip status
+                    if (data.tripStatus === 'IN_PROGRESS') {
+                        // Trip in progress: route from driver to destination
+                        fetchRoute(driverPos, destPos);
+                    } else if (data.pickup && data.pickup.latitude) {
+                        // Driver going to pickup: route from driver to pickup
+                        const pickupPos = { lat: data.pickup.latitude, lng: data.pickup.longitude };
+                        fetchRoute(driverPos, pickupPos);
+                        bounds.extend(pickupPos);
+                    }
+                }
+
+                // Fallback metrics if Directions API hasn't responded
+                if (!currentRoute) {
+                    updateTripMetrics(driverPos, destPos);
+                }
+            } else {
+                // Hide driver marker if no location
+                driverMarker.setVisible(false);
+
+                // Show "Waiting for driver location" in metrics
+                document.getElementById('distance').textContent = 'Waiting...';
+                document.getElementById('eta').textContent = 'Waiting for driver';
+            }
+
+            // Fit bounds only once initially
+            if (!initialBoundsFit) {
+                map.fitBounds(bounds);
+                initialBoundsFit = true;
+
+                // Don't zoom in too much
+                const listener = google.maps.event.addListener(map, 'idle', function() {
+                    if (map.getZoom() > 16) map.setZoom(16);
+                    google.maps.event.removeListener(listener);
+                });
+            }
         }
 
         // Update trip metrics
@@ -587,20 +814,69 @@
         // Update UI with session data
         function updateUI(data) {
             // Driver name
-            const firstName = data.driverName;
+            const firstName = data.driverName || 'Driver';
             document.getElementById('driverName').textContent = firstName;
             document.getElementById('driverAvatar').textContent = firstName.charAt(0).toUpperCase();
 
             // Vehicle info
             const vehicle = data.vehicleInfo;
-            document.getElementById('vehicleInfo').textContent = 
-                `${vehicle.color} ${vehicle.make} ${vehicle.model} • •${vehicle.licensePlate}`;
+            if (vehicle && (vehicle.make || vehicle.model)) {
+                const plateDisplay = vehicle.licensePlate ? ` • ${vehicle.licensePlate.slice(-4)}` : '';
+                document.getElementById('vehicleInfo').textContent =
+                    `${vehicle.color} ${vehicle.make} ${vehicle.model}${plateDisplay}`.trim();
+            } else {
+                document.getElementById('vehicleInfo').textContent = 'Vehicle info loading...';
+            }
 
             // Destination
-            document.getElementById('destination').textContent = data.destination.address;
+            document.getElementById('destination').textContent = data.destination?.address || 'Loading...';
 
             // Last updated
-            updateLastUpdated(data.currentLocation.timestamp);
+            if (data.currentLocation?.timestamp) {
+                updateLastUpdated(data.currentLocation.timestamp);
+            } else {
+                document.getElementById('lastUpdated').textContent = 'Waiting for updates';
+            }
+
+            // Update status badge based on trip status
+            if (data.tripStatus) {
+                const statusBadge = document.getElementById('statusBadge');
+                const statusText = getTripStatusText(data.tripStatus);
+                const statusColor = getTripStatusColor(data.tripStatus);
+
+                statusBadge.innerHTML = `<div class="status-dot"></div><span>${statusText}</span>`;
+                statusBadge.style.background = statusColor;
+            }
+        }
+
+        // Get human-readable trip status
+        function getTripStatusText(status) {
+            switch (status) {
+                case 'REQUESTED': return 'Finding driver';
+                case 'ACCEPTED': return 'Driver assigned';
+                case 'DRIVER_ARRIVING': return 'Driver en route';
+                case 'DRIVER_ARRIVED': return 'Driver arrived';
+                case 'IN_PROGRESS': return 'Trip in progress';
+                case 'AWAITING_TIP': return 'Trip completed';
+                case 'COMPLETED': return 'Trip completed';
+                case 'CANCELLED': return 'Cancelled';
+                default: return 'Live Tracking';
+            }
+        }
+
+        // Get status badge color
+        function getTripStatusColor(status) {
+            switch (status) {
+                case 'REQUESTED': return '#f59e0b'; // amber
+                case 'ACCEPTED': return '#3b82f6'; // blue
+                case 'DRIVER_ARRIVING': return '#8b5cf6'; // purple
+                case 'DRIVER_ARRIVED': return '#10b981'; // green
+                case 'IN_PROGRESS': return '#10b981'; // green
+                case 'AWAITING_TIP':
+                case 'COMPLETED': return '#6b7280'; // gray
+                case 'CANCELLED': return '#ef4444'; // red
+                default: return '#10b981';
+            }
         }
 
         // Update last updated timestamp
@@ -639,6 +915,151 @@
             document.getElementById('statusBadge').style.background = '#6b7280';
         }
 
+        // Handle tracking session data (from trackingSessions collection)
+        function handleTrackingSessionData(data) {
+            // Check if expired or not active
+            if (data.status === 'expired' ||
+                (data.expiresAt && data.expiresAt.toMillis() < Date.now())) {
+                showError();
+                return;
+            }
+
+            // Check if completed
+            if (data.status === 'completed') {
+                showCompleted();
+            }
+
+            // Hide loading, show main content
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+
+            // Initialize map if needed
+            if (!map && data.currentLocation) {
+                if (mapsApiLoaded) {
+                    initMap(
+                        data.currentLocation.latitude,
+                        data.currentLocation.longitude
+                    );
+                    updateUI(data);
+                    updateMap(data);
+                } else {
+                    // Maps API not loaded yet, queue the initialization
+                    pendingMapInit = {
+                        lat: data.currentLocation.latitude,
+                        lng: data.currentLocation.longitude,
+                        callback: () => {
+                            updateUI(data);
+                            updateMap(data);
+                        }
+                    };
+                    updateUI(data);
+                }
+                return;
+            }
+
+            // Update UI and map
+            updateUI(data);
+            if (mapsApiLoaded && map) {
+                updateMap(data);
+            }
+        }
+
+        // Handle trip data (from trips collection) - convert to tracking format
+        function handleTripData(data, tripId) {
+            console.log('📍 Processing trip data:', {
+                status: data.status,
+                hasDriverInfo: !!data.driverInfo,
+                hasDriverLocation: !!data.driverLocation,
+                hasDestination: !!data.destination
+            });
+
+            // Check if trip is cancelled
+            if (data.status === 'CANCELLED') {
+                showError();
+                return;
+            }
+
+            // Check if completed
+            if (data.status === 'COMPLETED' || data.status === 'AWAITING_TIP') {
+                showCompleted();
+            }
+
+            // Hide loading, show main content
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+
+            // Get driver location (prefer driverLocation, fall back to driverFinalLocation)
+            const driverLoc = data.driverLocation || data.driverFinalLocation;
+
+            // Get destination coordinates - handle nested structure
+            const destCoords = data.destination?.coordinates;
+            const pickupCoords = data.pickup?.coordinates;
+
+            // Convert trip data to tracking format for UI
+            const trackingData = {
+                driverName: data.driverInfo?.name?.split(' ')[0] || 'Driver', // First name only
+                vehicleInfo: data.driverInfo?.vehicle ? {
+                    color: data.driverInfo.vehicle.color || '',
+                    make: data.driverInfo.vehicle.make || '',
+                    model: data.driverInfo.vehicle.model || '',
+                    licensePlate: data.driverInfo.vehicle.plate || '' // Note: field is 'plate' not 'licensePlate'
+                } : { color: '', make: '', model: '', licensePlate: '' },
+                destination: {
+                    address: data.destination?.address || data.destination?.placeName || 'Destination',
+                    latitude: destCoords?.latitude,
+                    longitude: destCoords?.longitude
+                },
+                pickup: {
+                    address: data.pickup?.address || data.pickup?.placeName || 'Pickup',
+                    latitude: pickupCoords?.latitude,
+                    longitude: pickupCoords?.longitude
+                },
+                currentLocation: driverLoc ? {
+                    latitude: driverLoc.latitude,
+                    longitude: driverLoc.longitude,
+                    heading: driverLoc.heading,
+                    timestamp: driverLoc.timestamp
+                } : null,
+                tripStatus: data.status
+            };
+
+            console.log('📍 Converted tracking data:', trackingData);
+
+            // Initialize map if we have location data
+            if (!map) {
+                // Priority: driver location > pickup > destination > default (Cayman)
+                const initLat = driverLoc?.latitude || pickupCoords?.latitude || destCoords?.latitude || 19.2866;
+                const initLng = driverLoc?.longitude || pickupCoords?.longitude || destCoords?.longitude || -81.3744;
+
+                if (mapsApiLoaded) {
+                    initMap(initLat, initLng);
+                    updateUI(trackingData);
+                    if (trackingData.destination.latitude) {
+                        updateMap(trackingData);
+                    }
+                } else {
+                    // Maps API not loaded yet, queue the initialization
+                    pendingMapInit = {
+                        lat: initLat,
+                        lng: initLng,
+                        callback: () => {
+                            updateUI(trackingData);
+                            if (trackingData.destination.latitude) {
+                                updateMap(trackingData);
+                            }
+                        }
+                    };
+                    updateUI(trackingData);
+                }
+                return;
+            }
+
+            updateUI(trackingData);
+            if (mapsApiLoaded && map && trackingData.destination.latitude) {
+                updateMap(trackingData);
+            }
+        }
+
         // Initialize tracking
         async function initTracking() {
             sessionId = getSessionId();
@@ -649,48 +1070,49 @@
             }
 
             try {
-                // Subscribe to real-time updates
-                unsubscribe = db.collection('trackingSessions')
-                    .doc(sessionId)
-                    .onSnapshot((doc) => {
-                        if (!doc.exists) {
+                // First, try the trackingSessions collection
+                const trackingDoc = await db.collection('trackingSessions').doc(sessionId).get();
+
+                if (trackingDoc.exists) {
+                    console.log('Found tracking session');
+                    // Subscribe to real-time updates from trackingSessions
+                    unsubscribe = db.collection('trackingSessions')
+                        .doc(sessionId)
+                        .onSnapshot((doc) => {
+                            if (!doc.exists) {
+                                showError();
+                                return;
+                            }
+                            handleTrackingSessionData(doc.data());
+                        }, (error) => {
+                            console.error('Error fetching tracking session:', error);
                             showError();
-                            return;
-                        }
+                        });
+                } else {
+                    // Fall back to trips collection (direct trip sharing)
+                    console.log('Tracking session not found, checking trips collection');
+                    const tripDoc = await db.collection('trips').doc(sessionId).get();
 
-                        const data = doc.data();
-
-                        // Check if expired or not active
-                        if (data.status === 'expired' || 
-                            (data.expiresAt && data.expiresAt.toMillis() < Date.now())) {
-                            showError();
-                            return;
-                        }
-
-                        // Check if completed
-                        if (data.status === 'completed') {
-                            showCompleted();
-                        }
-
-                        // Hide loading, show main content
-                        document.getElementById('loading').classList.add('hidden');
-                        document.getElementById('mainContent').classList.remove('hidden');
-
-                        // Initialize map if needed
-                        if (!map) {
-                            initMap(
-                                data.currentLocation.latitude,
-                                data.currentLocation.longitude
-                            );
-                        }
-
-                        // Update UI and map
-                        updateUI(data);
-                        updateMap(data);
-                    }, (error) => {
-                        console.error('Error fetching tracking session:', error);
+                    if (tripDoc.exists) {
+                        console.log('Found trip');
+                        // Subscribe to real-time updates from trips
+                        unsubscribe = db.collection('trips')
+                            .doc(sessionId)
+                            .onSnapshot((doc) => {
+                                if (!doc.exists) {
+                                    showError();
+                                    return;
+                                }
+                                handleTripData(doc.data(), sessionId);
+                            }, (error) => {
+                                console.error('Error fetching trip:', error);
+                                showError();
+                            });
+                    } else {
+                        console.log('Neither tracking session nor trip found');
                         showError();
-                    });
+                    }
+                }
 
                 // Update "last updated" every 10 seconds
                 setInterval(() => {

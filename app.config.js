@@ -48,10 +48,9 @@ module.exports = {
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
       },
-      // Deep linking for Stripe callbacks (iOS Universal Links - optional)
+      // Deep linking for Universal Links (iOS)
       associatedDomains: [
-        // Uncomment if you want to use Universal Links:
-        // "applinks:drift-global.com"
+        "applinks:drift-global.web.app"
       ],
       // Apple Pay entitlement
       entitlements: {
@@ -60,7 +59,7 @@ module.exports = {
     },
     android: {
       package: "com.drift.global",
-      versionCode: 6,
+      versionCode: 8,
       adaptiveIcon: {
         foregroundImage: "./assets/images/app-icon.png",
         backgroundColor: "#000000"
@@ -78,7 +77,7 @@ module.exports = {
           apiKey: "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk"
         }
       },
-      // Deep linking for Stripe callbacks
+      // Deep linking for app features
       intentFilters: [
         {
           action: "VIEW",
@@ -87,6 +86,31 @@ module.exports = {
             {
               scheme: "drift",
               host: "stripe"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        },
+        // Trip tracking deep link
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "drift",
+              host: "track"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        },
+        // Web URL deep links (Universal Links fallback)
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "drift-global.web.app",
+              pathPrefix: "/track"
             }
           ],
           category: ["BROWSABLE", "DEFAULT"]

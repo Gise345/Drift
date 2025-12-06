@@ -14,7 +14,8 @@ export {
   removeStripePaymentMethod,
   setDefaultStripePaymentMethod,
   createStripeSetupIntent,
-  confirmStripeSetupIntent
+  confirmStripeSetupIntent,
+  updateDriverEarnings,
 } from './stripe';
 
 // Export Safety functions
@@ -52,4 +53,7 @@ export {
   onRideResent,
   onStopRequested,
   onStopDecision,
+  onTripCompleted,
+  onSafetyAlert,
+  onRouteDeviation,
 } from './rideNotifications';

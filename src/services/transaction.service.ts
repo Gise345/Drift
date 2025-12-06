@@ -2,10 +2,42 @@
  * TRANSACTION SERVICE
  * Firebase integration for driver wallet transactions
  *
- * EXPO SDK 52 Compatible
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  increment,
+  serverTimestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export type TransactionType = 'ride' | 'tip' | 'bonus' | 'cashout' | 'fee' | 'adjustment';
 export type TransactionStatus = 'completed' | 'pending' | 'failed' | 'cancelled';
@@ -42,14 +74,10 @@ export const TransactionService = {
    */
   async getWalletBalance(driverId: string): Promise<WalletBalance> {
     try {
-      const doc = await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .collection('wallet')
-        .doc('balance')
-        .get();
+      const balanceRef = doc(db, 'drivers', driverId, 'wallet', 'balance');
+      const balanceDoc = await getDoc(balanceRef);
 
-      if (!doc.exists) {
+      if (!documentExists(balanceDoc)) {
         // Return empty balance
         return {
           driverId,
@@ -88,26 +116,28 @@ export const TransactionService = {
    */
   async getTransactions(
     driverId: string,
-    limit = 50,
+    maxResults = 50,
     type?: TransactionType
   ): Promise<Transaction[]> {
     try {
-      let query = firestore()
-        .collection('transactions')
-        .where('driverId', '==', driverId)
-        .orderBy('createdAt', 'desc')
-        .limit(limit);
+      const transactionsRef = collection(db, 'transactions');
+      const constraints: any[] = [
+        where('driverId', '==', driverId),
+        orderBy('createdAt', 'desc'),
+        limit(maxResults)
+      ];
 
       if (type) {
-        query = query.where('type', '==', type);
+        constraints.push(where('type', '==', type));
       }
 
-      const snapshot = await query.get();
+      const q = query(transactionsRef, ...constraints);
+      const snapshot = await getDocs(q);
 
-      return snapshot.docs.map(doc => {
-        const data = doc.data();
+      return snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
         return {
-          id: doc.id,
+          id: docSnap.id,
           driverId: data.driverId,
           type: data.type,
           amount: data.amount,
@@ -137,35 +167,39 @@ export const TransactionService = {
   subscribeToTransactions(
     driverId: string,
     callback: (transactions: Transaction[]) => void,
-    limit = 50
+    maxResults = 50
   ): () => void {
-    const unsubscribe = firestore()
-      .collection('transactions')
-      .where('driverId', '==', driverId)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
-      .onSnapshot(
-        snapshot => {
-          const transactions: Transaction[] = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              driverId: data.driverId,
-              type: data.type,
-              amount: data.amount,
-              description: data.description,
-              status: data.status,
-              createdAt: data.createdAt?.toDate() || new Date(),
-              completedAt: data.completedAt?.toDate(),
-              metadata: data.metadata,
-            };
-          });
-          callback(transactions);
-        },
-        error => {
-          console.error('Error subscribing to transactions:', error);
-        }
-      );
+    const transactionsRef = collection(db, 'transactions');
+    const q = query(
+      transactionsRef,
+      where('driverId', '==', driverId),
+      orderBy('createdAt', 'desc'),
+      limit(maxResults)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const transactions: Transaction[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            driverId: data.driverId,
+            type: data.type,
+            amount: data.amount,
+            description: data.description,
+            status: data.status,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            completedAt: data.completedAt?.toDate(),
+            metadata: data.metadata,
+          };
+        });
+        callback(transactions);
+      },
+      error => {
+        console.error('Error subscribing to transactions:', error);
+      }
+    );
 
     return unsubscribe;
   },
@@ -177,15 +211,13 @@ export const TransactionService = {
     driverId: string,
     callback: (balance: WalletBalance) => void
   ): () => void {
-    const unsubscribe = firestore()
-      .collection('drivers')
-      .doc(driverId)
-      .collection('wallet')
-      .doc('balance')
-      .onSnapshot(
-        doc => {
-          if (doc.exists) {
-            const data = doc.data()!;
+    const balanceRef = doc(db, 'drivers', driverId, 'wallet', 'balance');
+
+    const unsubscribe = onSnapshot(
+      balanceRef,
+      docSnap => {
+        if (documentExists(docSnap)) {
+          const data = docSnap.data()!;
             callback({
               driverId,
               available: data.available || 0,
@@ -234,32 +266,27 @@ export const TransactionService = {
       }
 
       // Create cashout transaction
-      const docRef = await firestore()
-        .collection('transactions')
-        .add({
-          driverId,
-          type: 'cashout',
-          amount: -amount,
-          description: 'Cash out to bank account',
-          status: 'pending',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          metadata: {
-            payoutMethod,
-            requestedAmount: amount,
-          },
-        });
+      const transactionsRef = collection(db, 'transactions');
+      const docRef = await addDoc(transactionsRef, {
+        driverId,
+        type: 'cashout',
+        amount: -amount,
+        description: 'Cash out to bank account',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        metadata: {
+          payoutMethod,
+          requestedAmount: amount,
+        },
+      });
 
       // Update wallet balance (deduct from available, add to pending)
-      await firestore()
-        .collection('drivers')
-        .doc(driverId)
-        .collection('wallet')
-        .doc('balance')
-        .update({
-          available: firestore.FieldValue.increment(-amount),
-          pending: firestore.FieldValue.increment(amount),
-          lastUpdated: firestore.FieldValue.serverTimestamp(),
-        });
+      const balanceRef = doc(db, 'drivers', driverId, 'wallet', 'balance');
+      await updateDoc(balanceRef, {
+        available: increment(-amount),
+        pending: increment(amount),
+        lastUpdated: serverTimestamp(),
+      });
 
       console.log('Cashout requested:', docRef.id);
       return docRef.id;
@@ -276,31 +303,26 @@ export const TransactionService = {
     transaction: Omit<Transaction, 'id' | 'createdAt'>
   ): Promise<string> {
     try {
-      const docRef = await firestore()
-        .collection('transactions')
-        .add({
-          ...transaction,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          completedAt: transaction.status === 'completed'
-            ? firestore.FieldValue.serverTimestamp()
-            : null,
-        });
+      const transactionsRef = collection(db, 'transactions');
+      const docRef = await addDoc(transactionsRef, {
+        ...transaction,
+        createdAt: serverTimestamp(),
+        completedAt: transaction.status === 'completed'
+          ? serverTimestamp()
+          : null,
+      });
 
       // Update wallet balance if transaction is completed
       if (transaction.status === 'completed' && transaction.amount !== 0) {
         const field = transaction.amount > 0 ? 'available' : 'available';
-        await firestore()
-          .collection('drivers')
-          .doc(transaction.driverId)
-          .collection('wallet')
-          .doc('balance')
-          .update({
-            [field]: firestore.FieldValue.increment(transaction.amount),
-            totalEarnings: transaction.amount > 0
-              ? firestore.FieldValue.increment(transaction.amount)
-              : firestore.FieldValue.increment(0),
-            lastUpdated: firestore.FieldValue.serverTimestamp(),
-          });
+        const balanceRef = doc(db, 'drivers', transaction.driverId, 'wallet', 'balance');
+        await updateDoc(balanceRef, {
+          [field]: increment(transaction.amount),
+          totalEarnings: transaction.amount > 0
+            ? increment(transaction.amount)
+            : increment(0),
+          lastUpdated: serverTimestamp(),
+        });
       }
 
       return docRef.id;
@@ -326,13 +348,15 @@ export const TransactionService = {
     netEarnings: number;
   }> {
     try {
-      const snapshot = await firestore()
-        .collection('transactions')
-        .where('driverId', '==', driverId)
-        .where('createdAt', '>=', startDate)
-        .where('createdAt', '<=', endDate)
-        .where('status', '==', 'completed')
-        .get();
+      const transactionsRef = collection(db, 'transactions');
+      const q = query(
+        transactionsRef,
+        where('driverId', '==', driverId),
+        where('createdAt', '>=', startDate),
+        where('createdAt', '<=', endDate),
+        where('status', '==', 'completed')
+      );
+      const snapshot = await getDocs(q);
 
       let totalEarnings = 0;
       let totalTips = 0;
@@ -340,8 +364,8 @@ export const TransactionService = {
       let totalFees = 0;
       let totalCashouts = 0;
 
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
         const amount = data.amount || 0;
 
         switch (data.type) {

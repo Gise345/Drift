@@ -1,6 +1,9 @@
 /**
  * Activity Logger Service for Drift App
  *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
+ *
  * Logs important app events to Firestore for monitoring and debugging
  * in development, preview, and production environments.
  *
@@ -12,10 +15,28 @@
  *   await ActivityLogger.log('RIDE_REQUESTED', { tripId: '123', pickupAddress: '...' });
  */
 
-import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  Timestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { Logger } from './logger.service';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 // Activity event types
 export type ActivityEventType =
@@ -160,7 +181,8 @@ class ActivityLoggerService {
       Logger.info('Activity', `${eventType}`, { tripId, ...metadata });
 
       // Save to Firestore
-      const docRef = await firestore().collection(this.collectionName).add(entry);
+      const collectionRef = collection(db, this.collectionName);
+      const docRef = await addDoc(collectionRef, entry);
 
       return docRef.id;
     } catch (error) {
@@ -172,42 +194,44 @@ class ActivityLoggerService {
   /**
    * Fetch activity logs with optional filters
    */
-  async getLogs(query: ActivityLogQuery = {}): Promise<ActivityLogEntry[]> {
+  async getLogs(queryParams: ActivityLogQuery = {}): Promise<ActivityLogEntry[]> {
     try {
-      let ref: FirebaseFirestoreTypes.Query = firestore().collection(this.collectionName);
+      const collectionRef = collection(db, this.collectionName);
+      const constraints: any[] = [];
 
       // Apply filters
-      if (query.userId) {
-        ref = ref.where('userId', '==', query.userId);
+      if (queryParams.userId) {
+        constraints.push(where('userId', '==', queryParams.userId));
       }
 
-      if (query.eventType) {
-        ref = ref.where('eventType', '==', query.eventType);
+      if (queryParams.eventType) {
+        constraints.push(where('eventType', '==', queryParams.eventType));
       }
 
-      if (query.environment) {
-        ref = ref.where('environment', '==', query.environment);
+      if (queryParams.environment) {
+        constraints.push(where('environment', '==', queryParams.environment));
       }
 
-      if (query.startDate) {
-        ref = ref.where('timestamp', '>=', query.startDate);
+      if (queryParams.startDate) {
+        constraints.push(where('timestamp', '>=', queryParams.startDate));
       }
 
-      if (query.endDate) {
-        ref = ref.where('timestamp', '<=', query.endDate);
+      if (queryParams.endDate) {
+        constraints.push(where('timestamp', '<=', queryParams.endDate));
       }
 
       // Order by timestamp descending (most recent first)
-      ref = ref.orderBy('timestamp', 'desc');
+      constraints.push(orderBy('timestamp', 'desc'));
 
       // Apply limit
-      ref = ref.limit(query.limit || 100);
+      constraints.push(limit(queryParams.limit || 100));
 
-      const snapshot = await ref.get();
+      const q = query(collectionRef, ...constraints);
+      const snapshot = await getDocs(q);
 
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
+      return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data(),
       } as ActivityLogEntry));
     } catch (error) {
       Logger.error('ActivityLogger', 'Failed to fetch logs', error);
@@ -220,15 +244,17 @@ class ActivityLoggerService {
    */
   async getTripLogs(tripId: string): Promise<ActivityLogEntry[]> {
     try {
-      const snapshot = await firestore()
-        .collection(this.collectionName)
-        .where('tripId', '==', tripId)
-        .orderBy('timestamp', 'asc')
-        .get();
+      const collectionRef = collection(db, this.collectionName);
+      const q = query(
+        collectionRef,
+        where('tripId', '==', tripId),
+        orderBy('timestamp', 'asc')
+      );
+      const snapshot = await getDocs(q);
 
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
+      return snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data(),
       } as ActivityLogEntry));
     } catch (error) {
       Logger.error('ActivityLogger', 'Failed to fetch trip logs', error);
@@ -253,21 +279,26 @@ class ActivityLoggerService {
    */
   subscribeToLogs(
     callback: (logs: ActivityLogEntry[]) => void,
-    query: ActivityLogQuery = {}
+    queryParams: ActivityLogQuery = {}
   ): () => void {
-    let ref: FirebaseFirestoreTypes.Query = firestore().collection(this.collectionName);
+    const collectionRef = collection(db, this.collectionName);
+    const constraints: any[] = [];
 
-    if (query.environment) {
-      ref = ref.where('environment', '==', query.environment);
+    if (queryParams.environment) {
+      constraints.push(where('environment', '==', queryParams.environment));
     }
 
-    ref = ref.orderBy('timestamp', 'desc').limit(query.limit || 50);
+    constraints.push(orderBy('timestamp', 'desc'));
+    constraints.push(limit(queryParams.limit || 50));
 
-    const unsubscribe = ref.onSnapshot(
+    const q = query(collectionRef, ...constraints);
+
+    const unsubscribe = onSnapshot(
+      q,
       snapshot => {
-        const logs = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
+        const logs = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data(),
         } as ActivityLogEntry));
         callback(logs);
       },

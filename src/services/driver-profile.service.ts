@@ -1,13 +1,42 @@
 /**
  * Driver Profile Service
  * Loads and manages driver profile data from Firebase
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  * PRODUCTION READY - No mock data
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
 import type { Driver, Vehicle, Document as DriverDocument } from '../stores/driver-store';
 
-const db = firestore();
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 /**
  * Determine driver approval status from Firebase data
@@ -82,10 +111,11 @@ export async function loadDriverProfile(userId: string): Promise<{
     console.log('📥 Loading driver profile for:', userId);
     console.log('📥 Firestore instance:', !!db);
 
-    const driverDoc = await db.collection('drivers').doc(userId).get();
-    console.log('📥 Driver doc exists:', driverDoc.exists);
+    const driverRef = doc(db, 'drivers', userId);
+    const driverDoc = await getDoc(driverRef);
+    console.log('📥 Driver doc exists:', documentExists(driverDoc));
 
-    if (!driverDoc.exists) {
+    if (!documentExists(driverDoc)) {
       console.log('⚠️ No driver profile found for:', userId);
       return { driver: null, vehicle: null, documents: [] };
     }
@@ -136,13 +166,8 @@ export async function loadDriverProfile(userId: string): Promise<{
     const documents: DriverDocument[] = [];
 
     if (data?.documents?.driversLicense) {
-      const docsSnapshot = await db
-        .collection('drivers')
-        .doc(userId)
-        .collection('documents')
-        .doc('urls')
-        .get();
-
+      const docsRef = doc(db, 'drivers', userId, 'documents', 'urls');
+      const docsSnapshot = await getDoc(docsRef);
       const docUrls = docsSnapshot.data();
 
       // Driver's License
@@ -213,14 +238,10 @@ export async function loadDriverProfile(userId: string): Promise<{
 export async function loadDriverEarnings(userId: string) {
   try {
     // First, try to get the summary document
-    const earningsDoc = await db
-      .collection('drivers')
-      .doc(userId)
-      .collection('earnings')
-      .doc('summary')
-      .get();
+    const earningsRef = doc(db, 'drivers', userId, 'earnings', 'summary');
+    const earningsDoc = await getDoc(earningsRef);
 
-    if (earningsDoc.exists) {
+    if (documentExists(earningsDoc)) {
       const data = earningsDoc.data();
       console.log('📊 Loaded earnings from summary:', data);
       return data;
@@ -240,11 +261,13 @@ export async function loadDriverEarnings(userId: string) {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     // Query all completed trips for this driver
-    const tripsSnapshot = await db
-      .collection('trips')
-      .where('driverId', '==', userId)
-      .where('status', '==', 'COMPLETED')
-      .get();
+    const tripsRef = collection(db, 'trips');
+    const tripsQ = query(
+      tripsRef,
+      where('driverId', '==', userId),
+      where('status', '==', 'COMPLETED')
+    );
+    const tripsSnapshot = await getDocs(tripsQ);
 
     let today = 0;
     let yesterday = 0;
@@ -310,14 +333,10 @@ export async function loadDriverEarnings(userId: string) {
 export async function loadDriverStats(userId: string) {
   try {
     // First, try to get the summary document
-    const statsDoc = await db
-      .collection('drivers')
-      .doc(userId)
-      .collection('stats')
-      .doc('summary')
-      .get();
+    const statsRef = doc(db, 'drivers', userId, 'stats', 'summary');
+    const statsDoc = await getDoc(statsRef);
 
-    if (statsDoc.exists) {
+    if (documentExists(statsDoc)) {
       const data = statsDoc.data();
       console.log('📈 Loaded stats from summary:', data);
       return data;
@@ -327,21 +346,25 @@ export async function loadDriverStats(userId: string) {
     console.log('📈 No stats summary, calculating from driver doc and trips...');
 
     // Get driver document for rating and totalTrips
-    const driverDoc = await db.collection('drivers').doc(userId).get();
-    const driverData = driverDoc.data();
+    const driverDocRef = doc(db, 'drivers', userId);
+    const driverDocSnap = await getDoc(driverDocRef);
+    const driverData = driverDocSnap.data();
 
     // Count completed and cancelled trips
-    const completedTripsSnapshot = await db
-      .collection('trips')
-      .where('driverId', '==', userId)
-      .where('status', '==', 'COMPLETED')
-      .get();
+    const tripsCollRef = collection(db, 'trips');
+    const completedQ = query(
+      tripsCollRef,
+      where('driverId', '==', userId),
+      where('status', '==', 'COMPLETED')
+    );
+    const completedTripsSnapshot = await getDocs(completedQ);
 
-    const cancelledTripsSnapshot = await db
-      .collection('trips')
-      .where('driverId', '==', userId)
-      .where('status', '==', 'CANCELLED')
-      .get();
+    const cancelledQ = query(
+      tripsCollRef,
+      where('driverId', '==', userId),
+      where('status', '==', 'CANCELLED')
+    );
+    const cancelledTripsSnapshot = await getDocs(cancelledQ);
 
     const totalTrips = completedTripsSnapshot.size;
     const cancelledTrips = cancelledTripsSnapshot.size;
@@ -386,13 +409,15 @@ export async function loadDriverStats(userId: string) {
  */
 export async function loadDriverTripHistory(userId: string, limitCount: number = 50) {
   try {
-    const tripsSnapshot = await db
-      .collection('trips')
-      .where('driverId', '==', userId)
-      .where('status', 'in', ['COMPLETED', 'CANCELLED'])
-      .orderBy('completedAt', 'desc')
-      .limit(limitCount)
-      .get();
+    const tripsRef = collection(db, 'trips');
+    const tripsQ = query(
+      tripsRef,
+      where('driverId', '==', userId),
+      where('status', 'in', ['COMPLETED', 'CANCELLED']),
+      orderBy('completedAt', 'desc'),
+      limit(limitCount)
+    );
+    const tripsSnapshot = await getDocs(tripsQ);
 
     // Collect unique rider IDs that need name lookup
     const riderIdsToFetch = new Set<string>();
@@ -415,12 +440,11 @@ export async function loadDriverTripHistory(userId: string, limitCount: number =
 
       // Fetch in batches of 10 (Firestore in-query limit)
       const riderIds = Array.from(riderIdsToFetch);
+      const usersRef = collection(db, 'users');
       for (let i = 0; i < riderIds.length; i += 10) {
-        const batch = riderIds.slice(i, i + 10);
-        const usersSnapshot = await db
-          .collection('users')
-          .where('__name__', 'in', batch)
-          .get();
+        const batchIds = riderIds.slice(i, i + 10);
+        const usersQ = query(usersRef, where('__name__', 'in', batchIds));
+        const usersSnapshot = await getDocs(usersQ);
 
         usersSnapshot.docs.forEach((userDoc) => {
           const userData = userDoc.data();
@@ -487,12 +511,13 @@ export async function updateDriverLocation(
   }
 ) {
   try {
-    await db.collection('drivers').doc(userId).update({
+    const driverRef = doc(db, 'drivers', userId);
+    await updateDoc(driverRef, {
       'currentLocation.lat': location.lat,
       'currentLocation.lng': location.lng,
       'currentLocation.heading': location.heading || 0,
       'currentLocation.speed': location.speed || 0,
-      'currentLocation.updatedAt': firestore.FieldValue.serverTimestamp(),
+      'currentLocation.updatedAt': serverTimestamp(),
     });
   } catch (error) {
     console.error('❌ Error updating driver location:', error);
@@ -504,15 +529,37 @@ export async function updateDriverLocation(
  */
 export async function updateDriverOnlineStatus(userId: string, isOnline: boolean) {
   try {
-    await db.collection('drivers').doc(userId).update({
+    const driverRef = doc(db, 'drivers', userId);
+    await updateDoc(driverRef, {
       isOnline,
-      lastOnlineAt: isOnline ? firestore.FieldValue.serverTimestamp() : firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      lastOnlineAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     console.log(`🟢 Driver is now ${isOnline ? 'online' : 'offline'}`);
   } catch (error) {
     console.error('❌ Error updating online status:', error);
+  }
+}
+
+/**
+ * Get driver online status from Firebase
+ * Used to restore online status when app restarts
+ */
+export async function getDriverOnlineStatus(userId: string): Promise<boolean> {
+  try {
+    const driverRef = doc(db, 'drivers', userId);
+    const driverDoc = await getDoc(driverRef);
+    if (documentExists(driverDoc)) {
+      const data = driverDoc.data();
+      const isOnline = data?.isOnline === true;
+      console.log(`📡 Driver online status from Firebase: ${isOnline}`);
+      return isOnline;
+    }
+    return false;
+  } catch (error) {
+    console.error('❌ Error getting driver online status:', error);
+    return false;
   }
 }
 
@@ -523,4 +570,5 @@ export default {
   loadDriverTripHistory,
   updateDriverLocation,
   updateDriverOnlineStatus,
+  getDriverOnlineStatus,
 };

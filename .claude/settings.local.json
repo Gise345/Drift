@@ -41,7 +41,21 @@
       "Bash(cmd /c \"gradlew.bat signingReport\")",
       "Bash(adb devices:*)",
       "Bash(npx firebase deploy:*)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(firebase deploy:*)",
+      "WebSearch",
+      "Bash(npm ls:*)",
+      "Bash(firebase functions:list:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(firebase functions:delete:*)",
+      "Bash(firebase functions:log:*)",
+      "Bash(timeout /t 30)",
+      "Bash(gcloud --version:*)",
+      "WebFetch(domain:status.cloud.google.com)",
+      "Bash(npx eas:*)",
+      "Bash(firebase functions:secrets:access:*)",
+      "Bash(npm audit:*)",
+      "Bash(firebase projects:list:*)"
     ],
     "deny": [],
     "ask": []

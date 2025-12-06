@@ -1,23 +1,41 @@
 /**
  * Drift Role Management Service
- * 
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
+ *
  * Handles adding/removing driver/rider roles to existing accounts
  * Allows users to have multiple roles and switch between them
- * 
+ *
  * Location: src/services/role-service.ts
  */
 
-import firestore, { 
-  doc, 
-  updateDoc, 
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  doc,
+  updateDoc,
   getDoc,
   arrayUnion,
   arrayRemove,
-  serverTimestamp 
+  serverTimestamp,
+  FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
 import { getCurrentUser } from './firebase-auth-service';
 
-const db = firestore();
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export type UserRole = 'RIDER' | 'DRIVER' | 'ADMIN';
 
@@ -41,7 +59,7 @@ export async function addRoleToUser(role: UserRole): Promise<void> {
     const userRef = doc(db, 'users', currentUser.uid);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       throw new Error('User document not found');
     }
 
@@ -77,7 +95,7 @@ export async function hasRole(userId: string, role: UserRole): Promise<boolean> 
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       return false;
     }
 
@@ -100,7 +118,7 @@ export async function getUserRoles(userId: string): Promise<UserRole[]> {
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       return [];
     }
 
@@ -129,7 +147,7 @@ export async function removeRoleFromUser(role: UserRole): Promise<void> {
     const userRef = doc(db, 'users', currentUser.uid);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       throw new Error('User document not found');
     }
 
@@ -169,7 +187,7 @@ export async function canBecomeDriver(userId: string): Promise<boolean> {
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       return false;
     }
 
@@ -234,7 +252,7 @@ export async function getDriverInfo(userId: string): Promise<any | null> {
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
     
-    if (!userDoc.exists) {
+    if (!documentExists(userDoc)) {
       return null;
     }
 

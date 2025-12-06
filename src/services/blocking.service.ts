@@ -1,6 +1,9 @@
 /**
  * User Blocking Service
  *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
+ *
  * Provides comprehensive user blocking functionality for safety.
  *
  * Features:
@@ -19,18 +22,25 @@
  *   - Fields: blockedAt, reason, tripId
  */
 
-import firestore, {
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
   doc,
   getDoc,
   setDoc,
-  deleteDoc,
   collection,
-  query,
-  where,
   getDocs,
   serverTimestamp,
   writeBatch,
+  FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
+
+// ============================================================================
+// Get Firebase instances - v22+ modular API with 'main' database
+// ============================================================================
+
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 // ============================================================================
 // Types
@@ -73,18 +83,12 @@ export interface BlockUserParams {
 }
 
 // ============================================================================
-// Firebase Instance
-// ============================================================================
-
-const db = firestore();
-
-// ============================================================================
 // Helper to check if document exists
 // ============================================================================
 
-function documentExists(docSnapshot: any): boolean {
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
   if (typeof docSnapshot.exists === 'function') {
-    return docSnapshot.exists();
+    return (docSnapshot.exists as () => boolean)();
   }
   return docSnapshot.exists as unknown as boolean;
 }
@@ -123,7 +127,7 @@ export async function blockUser(params: BlockUserParams): Promise<boolean> {
   try {
     console.log(`🚫 Blocking user: ${blockedId} by ${blockerId}`);
 
-    const batch = db.batch();
+    const batch = writeBatch(db);
     const timestamp = serverTimestamp();
 
     // Create primary block record ID (blocker -> blocked)
@@ -188,7 +192,7 @@ export async function unblockUser(blockerId: string, blockedId: string): Promise
   try {
     console.log(`🔓 Unblocking user: ${blockedId} by ${blockerId}`);
 
-    const batch = db.batch();
+    const batch = writeBatch(db);
 
     // Delete main block record
     const blockRecordId = `${blockerId}_${blockedId}`;

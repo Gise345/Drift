@@ -37,10 +37,20 @@ export default function ProfileScreen() {
       if (!user?.id) return;
 
       try {
+        // Get user document for rating and createdAt
         const userDoc = await firestore()
           .collection('users')
           .doc(user.id)
           .get();
+
+        // Count completed trips from trips collection
+        const tripsSnapshot = await firestore()
+          .collection('trips')
+          .where('riderId', '==', user.id)
+          .where('status', 'in', ['COMPLETED', 'AWAITING_TIP'])
+          .get();
+
+        const tripCount = tripsSnapshot.size;
 
         if (userDoc.exists) {
           const userData = userDoc.data();
@@ -48,14 +58,14 @@ export default function ProfileScreen() {
 
           setStats({
             rating: userData?.rating || user.rating || 0,
-            totalTrips: userData?.totalTrips || user.totalTrips || 0,
+            totalTrips: tripCount,
             memberSince: createdAt,
           });
         } else {
           const createdAt = user.createdAt || new Date();
           setStats({
             rating: user.rating || 0,
-            totalTrips: user.totalTrips || 0,
+            totalTrips: tripCount,
             memberSince: createdAt,
           });
         }
@@ -72,11 +82,6 @@ export default function ProfileScreen() {
 
     loadUserStats();
   }, [user?.id]);
-
-  const yearsSinceJoining = Math.max(
-    1,
-    new Date().getFullYear() - stats.memberSince.getFullYear()
-  );
 
   const handleSwitchToDriver = async () => {
     if (!user) return;
@@ -143,6 +148,12 @@ export default function ProfileScreen() {
       title: 'Edit Profile',
       subtitle: 'Update your information',
       route: '/(rider)/edit-profile',
+    },
+    {
+      icon: 'star-outline',
+      title: 'My Reviews',
+      subtitle: 'See reviews from drivers',
+      route: '/(rider)/my-reviews',
     },
     {
       icon: 'card-outline',
@@ -220,11 +231,6 @@ export default function ProfileScreen() {
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.totalTrips}</Text>
               <Text style={styles.statLabel}>Trips</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{yearsSinceJoining}</Text>
-              <Text style={styles.statLabel}>{yearsSinceJoining === 1 ? 'Year' : 'Years'}</Text>
             </View>
           </View>
         </View>

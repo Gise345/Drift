@@ -6,11 +6,17 @@
  *
  * Environment variables needed (use .env file or Firebase secrets):
  * STRIPE_SECRET_KEY="YOUR_SECRET_KEY"
+ *
+ * Updated: 2025-12-05 - Fixed ephemeral key API version for stripe-react-native compatibility
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
+
+// Using 'main' database (restored from backup)
+const db = getFirestore(admin.app(), 'main');
 
 // Initialize Stripe with secret key from environment (.env file)
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
@@ -56,7 +62,7 @@ interface PaymentMethodRequest {
  * GET OR CREATE STRIPE CUSTOMER
  * Creates a Stripe customer for the authenticated user or returns existing one
  */
-export const getOrCreateStripeCustomer = onCall(async (request) => {
+export const getOrCreateStripeCustomer = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -70,7 +76,7 @@ export const getOrCreateStripeCustomer = onCall(async (request) => {
       console.log('Getting or creating Stripe customer for user:', userId);
 
       // Check if user already has a Stripe customer ID
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      const userDoc = await db.collection('users').doc(userId).get();
       const userData = userDoc.data();
 
       if (userData?.stripeCustomerId) {
@@ -87,7 +93,7 @@ export const getOrCreateStripeCustomer = onCall(async (request) => {
       });
 
       // Save customer ID to Firestore
-      await admin.firestore().collection('users').doc(userId).set(
+      await db.collection('users').doc(userId).set(
         { stripeCustomerId: customer.id },
         { merge: true }
       );
@@ -112,7 +118,7 @@ export const getOrCreateStripeCustomer = onCall(async (request) => {
  * CREATE STRIPE PAYMENT INTENT
  * Creates a payment intent for the mobile Payment Sheet
  */
-export const createStripePaymentIntent = onCall(async (request) => {
+export const createStripePaymentIntent = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -132,7 +138,7 @@ export const createStripePaymentIntent = onCall(async (request) => {
       console.log('Creating Stripe payment intent:', { amount, currency, description });
 
       // Get or create customer
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      const userDoc = await db.collection('users').doc(userId).get();
       let customerId = userDoc.data()?.stripeCustomerId;
 
       if (!customerId) {
@@ -146,7 +152,7 @@ export const createStripePaymentIntent = onCall(async (request) => {
         customerId = customer.id;
 
         // Save customer ID
-        await admin.firestore().collection('users').doc(userId).set(
+        await db.collection('users').doc(userId).set(
           { stripeCustomerId: customerId },
           { merge: true }
         );
@@ -155,7 +161,7 @@ export const createStripePaymentIntent = onCall(async (request) => {
       // Create ephemeral key for the customer
       const ephemeralKey = await stripe.ephemeralKeys.create(
         { customer: customerId },
-        { apiVersion: '2025-11-17.clover' }
+        { apiVersion: '2024-06-20' }
       );
 
       // Create payment intent
@@ -178,7 +184,7 @@ export const createStripePaymentIntent = onCall(async (request) => {
       });
 
       // Save payment intent to Firestore
-      await admin.firestore().collection('stripe_payments').doc(paymentIntent.id).set({
+      await db.collection('stripe_payments').doc(paymentIntent.id).set({
         userId,
         paymentIntentId: paymentIntent.id,
         amount,
@@ -217,7 +223,7 @@ export const createStripePaymentIntent = onCall(async (request) => {
  * CONFIRM STRIPE PAYMENT
  * Confirms payment was successful and updates records
  */
-export const confirmStripePayment = onCall(async (request) => {
+export const confirmStripePayment = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -238,7 +244,7 @@ export const confirmStripePayment = onCall(async (request) => {
       const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
       // Update Firestore record
-      await admin.firestore().collection('stripe_payments').doc(paymentIntentId).update({
+      await db.collection('stripe_payments').doc(paymentIntentId).update({
         status: paymentIntent.status,
         confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -272,7 +278,7 @@ export const confirmStripePayment = onCall(async (request) => {
  * GET STRIPE PAYMENT STATUS
  * Check payment status without modifying
  */
-export const getStripePaymentStatus = onCall(async (request) => {
+export const getStripePaymentStatus = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -320,7 +326,7 @@ export const getStripePaymentStatus = onCall(async (request) => {
  * REFUND STRIPE PAYMENT
  * Process refund for cancelled carpool
  */
-export const refundStripePayment = onCall(async (request) => {
+export const refundStripePayment = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -350,7 +356,7 @@ export const refundStripePayment = onCall(async (request) => {
       const refund = await stripe.refunds.create(refundParams);
 
       // Update Firestore record
-      await admin.firestore().collection('stripe_payments').doc(paymentIntentId).update({
+      await db.collection('stripe_payments').doc(paymentIntentId).update({
         refundId: refund.id,
         refundStatus: refund.status,
         refundAmount: refund.amount / 100,
@@ -385,7 +391,7 @@ export const refundStripePayment = onCall(async (request) => {
  * GET STRIPE PAYMENT METHODS
  * Get saved payment methods for the customer
  */
-export const getStripePaymentMethods = onCall(async (request) => {
+export const getStripePaymentMethods = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -396,7 +402,7 @@ export const getStripePaymentMethods = onCall(async (request) => {
       const userId = request.auth.uid;
 
       // Get customer ID
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      const userDoc = await db.collection('users').doc(userId).get();
       const customerId = userDoc.data()?.stripeCustomerId;
 
       if (!customerId) {
@@ -437,7 +443,7 @@ export const getStripePaymentMethods = onCall(async (request) => {
  * REMOVE STRIPE PAYMENT METHOD
  * Detach a payment method from the customer
  */
-export const removeStripePaymentMethod = onCall(async (request) => {
+export const removeStripePaymentMethod = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -477,7 +483,7 @@ export const removeStripePaymentMethod = onCall(async (request) => {
  * Creates a SetupIntent for saving a card without charging
  * Used for in-app card form (CardField component)
  */
-export const createStripeSetupIntent = onCall(async (request) => {
+export const createStripeSetupIntent = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -490,7 +496,7 @@ export const createStripeSetupIntent = onCall(async (request) => {
       console.log('Creating Stripe setup intent for user:', userId);
 
       // Get or create customer
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      const userDoc = await db.collection('users').doc(userId).get();
       let customerId = userDoc.data()?.stripeCustomerId;
 
       if (!customerId) {
@@ -504,7 +510,7 @@ export const createStripeSetupIntent = onCall(async (request) => {
         customerId = customer.id;
 
         // Save customer ID
-        await admin.firestore().collection('users').doc(userId).set(
+        await db.collection('users').doc(userId).set(
           { stripeCustomerId: customerId },
           { merge: true }
         );
@@ -513,7 +519,7 @@ export const createStripeSetupIntent = onCall(async (request) => {
       // Create ephemeral key for the customer
       const ephemeralKey = await stripe.ephemeralKeys.create(
         { customer: customerId },
-        { apiVersion: '2025-11-17.clover' }
+        { apiVersion: '2024-06-20' }
       );
 
       // Create setup intent (for saving card without payment)
@@ -552,7 +558,7 @@ export const createStripeSetupIntent = onCall(async (request) => {
  * CONFIRM STRIPE SETUP INTENT
  * Confirms that a card was successfully saved
  */
-export const confirmStripeSetupIntent = onCall(async (request) => {
+export const confirmStripeSetupIntent = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -579,7 +585,7 @@ export const confirmStripeSetupIntent = onCall(async (request) => {
 
       // If setAsDefault, update customer's default payment method
       if (setAsDefault && setupIntent.payment_method) {
-        const userDoc = await admin.firestore().collection('users').doc(userId).get();
+        const userDoc = await db.collection('users').doc(userId).get();
         const customerId = userDoc.data()?.stripeCustomerId;
 
         if (customerId) {
@@ -619,7 +625,7 @@ export const confirmStripeSetupIntent = onCall(async (request) => {
  * SET DEFAULT STRIPE PAYMENT METHOD
  * Set a payment method as the customer's default
  */
-export const setDefaultStripePaymentMethod = onCall(async (request) => {
+export const setDefaultStripePaymentMethod = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -636,7 +642,7 @@ export const setDefaultStripePaymentMethod = onCall(async (request) => {
       }
 
       // Get customer ID
-      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      const userDoc = await db.collection('users').doc(userId).get();
       const customerId = userDoc.data()?.stripeCustomerId;
 
       if (!customerId) {
@@ -679,7 +685,7 @@ interface UpdateDriverEarningsRequest {
   tipAmount: number;
 }
 
-export const updateDriverEarnings = onCall(async (request) => {
+export const updateDriverEarnings = onCall({ region: 'us-east1' }, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -700,7 +706,7 @@ export const updateDriverEarnings = onCall(async (request) => {
       console.log('Updating driver earnings:', { driverId, tripId, tripEarnings, tipAmount });
 
       // Verify the trip exists and belongs to this driver
-      const tripDoc = await admin.firestore().collection('trips').doc(tripId).get();
+      const tripDoc = await db.collection('trips').doc(tripId).get();
       if (!tripDoc.exists) {
         throw new HttpsError('not-found', 'Trip not found');
       }
@@ -717,7 +723,7 @@ export const updateDriverEarnings = onCall(async (request) => {
       }
 
       // Get current driver data
-      const driverRef = admin.firestore().collection('drivers').doc(driverId);
+      const driverRef = db.collection('drivers').doc(driverId);
       const driverDoc = await driverRef.get();
 
       // If driver document doesn't exist, create it with initial earnings
@@ -741,7 +747,7 @@ export const updateDriverEarnings = onCall(async (request) => {
       const currentTotalTips = driverData?.totalTips || 0;
 
       // Update driver earnings using transaction
-      await admin.firestore().runTransaction(async (transaction) => {
+      await db.runTransaction(async (transaction) => {
         transaction.update(driverRef, {
           todayEarnings: currentTodayEarnings + tripEarnings + tipAmount,
           totalEarnings: currentTotalEarnings + tripEarnings + tipAmount,
@@ -752,7 +758,7 @@ export const updateDriverEarnings = onCall(async (request) => {
         });
 
         // Mark trip as having earnings updated
-        transaction.update(admin.firestore().collection('trips').doc(tripId), {
+        transaction.update(db.collection('trips').doc(tripId), {
           earningsUpdated: true,
           earningsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });

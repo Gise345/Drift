@@ -2,6 +2,9 @@
  * Messaging Service
  * Handles in-app messaging between riders and drivers during active trips
  * Messages are only available after driver accepts ride and before trip starts
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import { firebaseDb } from '../config/firebase';

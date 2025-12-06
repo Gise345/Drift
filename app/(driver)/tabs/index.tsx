@@ -267,6 +267,16 @@ export default function DriverHomeScreen() {
     getCurrentLocation();
   }, []);
 
+  // Start listening for ride requests when online and location is available
+  // This handles restoration of online status after app restart
+  useEffect(() => {
+    const state = useDriverStore.getState();
+    if (isOnline && state.currentLocation && !state.rideRequestListener && !activeRide) {
+      console.log('🔄 Online status restored - starting ride request listener');
+      startListeningForRequests();
+    }
+  }, [isOnline, region]);
+
   // Reset accept flags when screen mounts or driver goes back online
   // This ensures the driver can receive new requests after completing/cancelling a ride
   useEffect(() => {

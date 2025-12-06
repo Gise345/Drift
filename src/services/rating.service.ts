@@ -1,12 +1,43 @@
 /**
  * Rating and Review Service
  * Manages ratings, reviews, and performance statistics
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  * PRODUCTION READY - No mock data
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  Timestamp,
+  FirebaseFirestoreTypes
+} from '@react-native-firebase/firestore';
 
-const db = firestore();
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 export interface Review {
   id: string;
@@ -72,8 +103,9 @@ export async function submitDriverRating(
     console.log('📝 Submitting driver rating:', { tripId, driverId, rating });
 
     // Create the review document
-    const reviewRef = db.collection('reviews').doc();
-    await reviewRef.set({
+    const reviewsRef = collection(db, 'reviews');
+    const reviewDocRef = doc(reviewsRef);
+    await setDoc(reviewDocRef, {
       tripId,
       driverId,
       riderId,
@@ -81,14 +113,15 @@ export async function submitDriverRating(
       rating,
       comment: comment || null,
       tags: tags || [],
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
 
     // Update the trip with the rating
-    await db.collection('trips').doc(tripId).update({
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, {
       driverRating: rating,
-      driverReviewId: reviewRef.id,
-      ratedAt: firestore.FieldValue.serverTimestamp(),
+      driverReviewId: reviewDocRef.id,
+      ratedAt: serverTimestamp(),
     });
 
     // Update driver stats
@@ -107,10 +140,9 @@ export async function submitDriverRating(
 async function updateDriverRatingStats(driverId: string): Promise<void> {
   try {
     // Get all reviews for this driver
-    const reviewsSnapshot = await db
-      .collection('reviews')
-      .where('driverId', '==', driverId)
-      .get();
+    const reviewsRef = collection(db, 'reviews');
+    const q = query(reviewsRef, where('driverId', '==', driverId));
+    const reviewsSnapshot = await getDocs(q);
 
     const reviews = reviewsSnapshot.docs;
     const totalReviews = reviews.length;
@@ -121,8 +153,8 @@ async function updateDriverRatingStats(driverId: string): Promise<void> {
     const distribution: RatingDistribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
     let totalRating = 0;
 
-    reviews.forEach((doc) => {
-      const rating = doc.data().rating;
+    reviews.forEach((docSnap) => {
+      const rating = docSnap.data().rating;
       if (rating >= 1 && rating <= 5) {
         distribution[rating as keyof RatingDistribution]++;
         totalRating += rating;
@@ -132,11 +164,12 @@ async function updateDriverRatingStats(driverId: string): Promise<void> {
     const averageRating = totalRating / totalReviews;
 
     // Update driver document
-    await db.collection('drivers').doc(driverId).update({
+    const driverRef = doc(db, 'drivers', driverId);
+    await updateDoc(driverRef, {
       rating: Number(averageRating.toFixed(2)),
       totalRatings: totalReviews,
       ratingDistribution: distribution,
-      lastRatedAt: firestore.FieldValue.serverTimestamp(),
+      lastRatedAt: serverTimestamp(),
     });
 
     console.log('✅ Driver rating stats updated:', { averageRating, totalReviews });
@@ -150,7 +183,8 @@ async function updateDriverRatingStats(driverId: string): Promise<void> {
  */
 export async function getDriverRatingStats(driverId: string): Promise<DriverRatingStats> {
   try {
-    const driverDoc = await db.collection('drivers').doc(driverId).get();
+    const driverRef = doc(db, 'drivers', driverId);
+    const driverDoc = await getDoc(driverRef);
     const data = driverDoc.data();
 
     return {
@@ -174,25 +208,27 @@ export async function getDriverRatingStats(driverId: string): Promise<DriverRati
 export async function getDriverReviews(
   driverId: string,
   filterRating?: number,
-  limit: number = 50
+  maxResults: number = 50
 ): Promise<Review[]> {
   try {
-    let query = db
-      .collection('reviews')
-      .where('driverId', '==', driverId)
-      .orderBy('createdAt', 'desc')
-      .limit(limit);
+    const reviewsRef = collection(db, 'reviews');
+    const constraints: any[] = [
+      where('driverId', '==', driverId),
+      orderBy('createdAt', 'desc'),
+      limit(maxResults)
+    ];
 
     if (filterRating) {
-      query = query.where('rating', '==', filterRating) as any;
+      constraints.push(where('rating', '==', filterRating));
     }
 
-    const snapshot = await query.get();
+    const q = query(reviewsRef, ...constraints);
+    const snapshot = await getDocs(q);
 
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
+    return snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
       return {
-        id: doc.id,
+        id: docSnap.id,
         tripId: data.tripId,
         driverId: data.driverId,
         riderId: data.riderId,
@@ -215,9 +251,10 @@ export async function getDriverReviews(
  */
 export async function getReviewById(reviewId: string): Promise<Review | null> {
   try {
-    const reviewDoc = await db.collection('reviews').doc(reviewId).get();
+    const reviewRef = doc(db, 'reviews', reviewId);
+    const reviewDoc = await getDoc(reviewRef);
 
-    if (!reviewDoc.exists) {
+    if (!documentExists(reviewDoc)) {
       return null;
     }
 
@@ -269,11 +306,13 @@ export async function getDriverPerformanceStats(
     }
 
     // Get all trips in the period
-    const tripsSnapshot = await db
-      .collection('trips')
-      .where('driverId', '==', driverId)
-      .where('createdAt', '>=', firestore.Timestamp.fromDate(startDate))
-      .get();
+    const tripsRef = collection(db, 'trips');
+    const tripsQ = query(
+      tripsRef,
+      where('driverId', '==', driverId),
+      where('createdAt', '>=', Timestamp.fromDate(startDate))
+    );
+    const tripsSnapshot = await getDocs(tripsQ);
 
     const trips = tripsSnapshot.docs.map(doc => doc.data());
 
@@ -283,7 +322,8 @@ export async function getDriverPerformanceStats(
     const canceledTrips = trips.filter(t => t.status === 'cancelled').length;
 
     // Get driver stats from driver document
-    const driverDoc = await db.collection('drivers').doc(driverId).get();
+    const driverDocRef = doc(db, 'drivers', driverId);
+    const driverDoc = await getDoc(driverDocRef);
     const driverData = driverDoc.data();
 
     const acceptedTrips = completedTrips + canceledTrips;
@@ -297,11 +337,13 @@ export async function getDriverPerformanceStats(
     // Calculate online hours (from driver sessions)
     let onlineHours = 0;
     try {
-      const sessionsSnapshot = await db
-        .collection('driverSessions')
-        .where('driverId', '==', driverId)
-        .where('startTime', '>=', firestore.Timestamp.fromDate(startDate))
-        .get();
+      const sessionsRef = collection(db, 'driverSessions');
+      const sessionsQ = query(
+        sessionsRef,
+        where('driverId', '==', driverId),
+        where('startTime', '>=', Timestamp.fromDate(startDate))
+      );
+      const sessionsSnapshot = await getDocs(sessionsQ);
 
       onlineHours = sessionsSnapshot.docs.reduce((total, doc) => {
         const session = doc.data();

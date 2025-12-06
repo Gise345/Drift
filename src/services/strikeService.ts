@@ -1,6 +1,9 @@
 /**
  * DRIFT STRIKE & SUSPENSION SERVICE
  * Manages the three-strike system, suspensions, and appeals
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import {
@@ -14,7 +17,39 @@ import {
   DriverSafetyProfile,
   SuspensionStatus,
 } from '@/src/types/safety.types';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  writeBatch,
+  serverTimestamp,
+  Timestamp,
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 // Configuration
 const STRIKE_EXPIRATION_DAYS = 30; // 1 month of good driving to remove a strike
@@ -52,14 +87,12 @@ export async function issueStrike(
     };
 
     // Add strike to Firestore
-    await firestore()
-      .collection('strikes')
-      .doc(strike.id)
-      .set({
-        ...strike,
-        issuedAt: firestore.FieldValue.serverTimestamp(),
-        expiresAt: firestore.Timestamp.fromDate(expiresAt),
-      });
+    const strikeRef = doc(db, 'strikes', strike.id);
+    await setDoc(strikeRef, {
+      ...strike,
+      issuedAt: serverTimestamp(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+    });
 
     // Update driver's safety profile
     await updateDriverSafetyProfile(driverId);
@@ -94,16 +127,18 @@ export async function issueStrike(
 export async function getActiveStrikesCount(driverId: string): Promise<number> {
   try {
     const now = new Date();
-    const strikesSnapshot = await firestore()
-      .collection('strikes')
-      .where('driverId', '==', driverId)
-      .where('status', '==', 'active')
-      .get();
+    const strikesRef = collection(db, 'strikes');
+    const q = query(
+      strikesRef,
+      where('driverId', '==', driverId),
+      where('status', '==', 'active')
+    );
+    const strikesSnapshot = await getDocs(q);
 
     // Filter out expired strikes
     let activeCount = 0;
-    strikesSnapshot.forEach((doc) => {
-      const data = doc.data();
+    strikesSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       const expiresAt = data.expiresAt?.toDate?.() || data.expiresAt;
       if (expiresAt && new Date(expiresAt) > now) {
         activeCount++;
@@ -125,23 +160,32 @@ export async function getDriverStrikes(
   includeExpired: boolean = false
 ): Promise<Strike[]> {
   try {
-    let query = firestore()
-      .collection('strikes')
-      .where('driverId', '==', driverId)
-      .orderBy('issuedAt', 'desc');
+    const strikesRef = collection(db, 'strikes');
+    let q;
 
     if (!includeExpired) {
-      query = query.where('status', '==', 'active');
+      q = query(
+        strikesRef,
+        where('driverId', '==', driverId),
+        where('status', '==', 'active'),
+        orderBy('issuedAt', 'desc')
+      );
+    } else {
+      q = query(
+        strikesRef,
+        where('driverId', '==', driverId),
+        orderBy('issuedAt', 'desc')
+      );
     }
 
-    const snapshot = await query.get();
+    const snapshot = await getDocs(q);
     const strikes: Strike[] = [];
 
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       strikes.push({
         ...data,
-        id: doc.id,
+        id: docSnap.id,
         issuedAt: data.issuedAt?.toDate?.() || data.issuedAt,
         expiresAt: data.expiresAt?.toDate?.() || data.expiresAt,
         removedAt: data.removedAt?.toDate?.() || data.removedAt,
@@ -186,21 +230,20 @@ export async function issueSuspension(
     };
 
     // Add suspension to Firestore
-    await firestore()
-      .collection('suspensions')
-      .doc(suspension.id)
-      .set({
-        ...suspension,
-        startedAt: firestore.FieldValue.serverTimestamp(),
-        expiresAt: expiresAt ? firestore.Timestamp.fromDate(expiresAt) : null,
-      });
+    const suspensionRef = doc(db, 'suspensions', suspension.id);
+    await setDoc(suspensionRef, {
+      ...suspension,
+      startedAt: serverTimestamp(),
+      expiresAt: expiresAt ? Timestamp.fromDate(expiresAt) : null,
+    });
 
     // Update driver document
-    await firestore().collection('drivers').doc(driverId).update({
+    const driverRef = doc(db, 'drivers', driverId);
+    await updateDoc(driverRef, {
       suspensionStatus: type === 'permanent' ? 'suspended_perm' : 'suspended_temp',
       currentSuspensionId: suspension.id,
       isOnline: false, // Force driver offline
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     // Send notification
@@ -224,18 +267,20 @@ export async function issueSuspension(
 export async function checkExpiredSuspensions(): Promise<void> {
   try {
     const now = new Date();
-    const snapshot = await firestore()
-      .collection('suspensions')
-      .where('status', '==', 'active')
-      .where('type', '==', 'temporary')
-      .get();
+    const suspensionsRef = collection(db, 'suspensions');
+    const q = query(
+      suspensionsRef,
+      where('status', '==', 'active'),
+      where('type', '==', 'temporary')
+    );
+    const snapshot = await getDocs(q);
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
       const expiresAt = data.expiresAt?.toDate?.() || data.expiresAt;
 
       if (expiresAt && new Date(expiresAt) <= now) {
-        await liftSuspension(doc.id, 'Suspension period expired');
+        await liftSuspension(docSnap.id, 'Suspension period expired');
       }
     }
   } catch (error) {
@@ -251,29 +296,28 @@ export async function liftSuspension(
   reason: string
 ): Promise<SafetyServiceResponse> {
   try {
-    const suspensionDoc = await firestore()
-      .collection('suspensions')
-      .doc(suspensionId)
-      .get();
+    const suspensionRef = doc(db, 'suspensions', suspensionId);
+    const suspensionDoc = await getDoc(suspensionRef);
 
-    if (!suspensionDoc.exists) {
+    if (!documentExists(suspensionDoc)) {
       return { success: false, error: 'Suspension not found' };
     }
 
     const suspension = suspensionDoc.data() as Suspension;
 
     // Update suspension
-    await firestore().collection('suspensions').doc(suspensionId).update({
+    await updateDoc(suspensionRef, {
       status: 'lifted',
-      liftedAt: firestore.FieldValue.serverTimestamp(),
+      liftedAt: serverTimestamp(),
       liftedReason: reason,
     });
 
     // Update driver document
-    await firestore().collection('drivers').doc(suspension.driverId).update({
+    const driverRef = doc(db, 'drivers', suspension.driverId);
+    await updateDoc(driverRef, {
       suspensionStatus: 'active',
       currentSuspensionId: null,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
     // Notify driver
@@ -295,20 +339,18 @@ export async function removeStrike(
   reason: string
 ): Promise<SafetyServiceResponse> {
   try {
-    const strikeDoc = await firestore()
-      .collection('strikes')
-      .doc(strikeId)
-      .get();
+    const strikeRef = doc(db, 'strikes', strikeId);
+    const strikeDoc = await getDoc(strikeRef);
 
-    if (!strikeDoc.exists) {
+    if (!documentExists(strikeDoc)) {
       return { success: false, error: 'Strike not found' };
     }
 
     const strike = strikeDoc.data() as Strike;
 
-    await firestore().collection('strikes').doc(strikeId).update({
+    await updateDoc(strikeRef, {
       status: 'removed',
-      removedAt: firestore.FieldValue.serverTimestamp(),
+      removedAt: serverTimestamp(),
       removedReason: reason,
     });
 
@@ -336,12 +378,10 @@ export async function submitAppeal(
   try {
     // Check appeal window
     if (strikeId) {
-      const strikeDoc = await firestore()
-        .collection('strikes')
-        .doc(strikeId)
-        .get();
+      const strikeRef = doc(db, 'strikes', strikeId);
+      const strikeDoc = await getDoc(strikeRef);
 
-      if (strikeDoc.exists) {
+      if (documentExists(strikeDoc)) {
         const strike = strikeDoc.data();
         const issuedAt = strike?.issuedAt?.toDate?.() || strike?.issuedAt;
         const daysSinceIssue = Math.floor(
@@ -373,17 +413,16 @@ export async function submitAppeal(
       status: 'pending',
     };
 
-    await firestore()
-      .collection('appeals')
-      .doc(appeal.id)
-      .set({
-        ...appeal,
-        submittedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const appealRef = doc(db, 'appeals', appeal.id);
+    await setDoc(appealRef, {
+      ...appeal,
+      submittedAt: serverTimestamp(),
+    });
 
     // Update strike status if applicable
     if (strikeId) {
-      await firestore().collection('strikes').doc(strikeId).update({
+      const strikeRef = doc(db, 'strikes', strikeId);
+      await updateDoc(strikeRef, {
         status: 'appealed',
         appealId: appeal.id,
       });
@@ -406,18 +445,20 @@ export async function submitAppeal(
  */
 export async function getDriverAppeals(driverId: string): Promise<Appeal[]> {
   try {
-    const snapshot = await firestore()
-      .collection('appeals')
-      .where('driverId', '==', driverId)
-      .orderBy('submittedAt', 'desc')
-      .get();
+    const appealsRef = collection(db, 'appeals');
+    const q = query(
+      appealsRef,
+      where('driverId', '==', driverId),
+      orderBy('submittedAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
 
     const appeals: Appeal[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       appeals.push({
         ...data,
-        id: doc.id,
+        id: docSnap.id,
         submittedAt: data.submittedAt?.toDate?.() || data.submittedAt,
         reviewedAt: data.reviewedAt?.toDate?.() || data.reviewedAt,
       } as Appeal);
@@ -440,22 +481,20 @@ export async function reviewAppeal(
   resolution: string
 ): Promise<SafetyServiceResponse> {
   try {
-    const appealDoc = await firestore()
-      .collection('appeals')
-      .doc(appealId)
-      .get();
+    const appealRef = doc(db, 'appeals', appealId);
+    const appealDoc = await getDoc(appealRef);
 
-    if (!appealDoc.exists) {
+    if (!documentExists(appealDoc)) {
       return { success: false, error: 'Appeal not found' };
     }
 
     const appeal = appealDoc.data() as Appeal;
 
     // Update appeal
-    await firestore().collection('appeals').doc(appealId).update({
+    await updateDoc(appealRef, {
       status: decision,
       reviewedBy: reviewerId,
-      reviewedAt: firestore.FieldValue.serverTimestamp(),
+      reviewedAt: serverTimestamp(),
       resolution,
     });
 
@@ -470,7 +509,8 @@ export async function reviewAppeal(
     } else {
       // If denied and was a strike appeal, restore strike status
       if (appeal.strikeId) {
-        await firestore().collection('strikes').doc(appeal.strikeId).update({
+        const strikeRef = doc(db, 'strikes', appeal.strikeId);
+        await updateDoc(strikeRef, {
           status: 'active',
         });
       }
@@ -500,12 +540,14 @@ export async function updateDriverSafetyProfile(
     );
 
     // Get current suspension if any
-    const suspensionSnapshot = await firestore()
-      .collection('suspensions')
-      .where('driverId', '==', driverId)
-      .where('status', '==', 'active')
-      .limit(1)
-      .get();
+    const suspensionsRef = collection(db, 'suspensions');
+    const suspensionQuery = query(
+      suspensionsRef,
+      where('driverId', '==', driverId),
+      where('status', '==', 'active'),
+      limit(1)
+    );
+    const suspensionSnapshot = await getDocs(suspensionQuery);
 
     let currentSuspension: Suspension | undefined;
     let suspensionStatus: SuspensionStatus = 'active';
@@ -524,10 +566,12 @@ export async function updateDriverSafetyProfile(
     }
 
     // Get safety ratings
-    const ratingsSnapshot = await firestore()
-      .collection('safety_ratings')
-      .where('driverId', '==', driverId)
-      .get();
+    const ratingsRef = collection(db, 'safety_ratings');
+    const ratingsQuery = query(
+      ratingsRef,
+      where('driverId', '==', driverId)
+    );
+    const ratingsSnapshot = await getDocs(ratingsQuery);
 
     let safetyRating = 5.0;
     let totalSafetyRatings = 0;
@@ -535,8 +579,8 @@ export async function updateDriverSafetyProfile(
 
     if (!ratingsSnapshot.empty) {
       let totalScore = 0;
-      ratingsSnapshot.forEach((doc) => {
-        const data = doc.data();
+      ratingsSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         const score = data.overallSafetyScore || 5;
         totalScore += score;
         totalSafetyRatings++;
@@ -546,13 +590,15 @@ export async function updateDriverSafetyProfile(
     }
 
     // Calculate route adherence and speed compliance (from trip data)
-    const tripsSnapshot = await firestore()
-      .collection('trips')
-      .where('driverId', '==', driverId)
-      .where('status', '==', 'COMPLETED')
-      .orderBy('completedAt', 'desc')
-      .limit(100)
-      .get();
+    const tripsRef = collection(db, 'trips');
+    const tripsQuery = query(
+      tripsRef,
+      where('driverId', '==', driverId),
+      where('status', '==', 'COMPLETED'),
+      orderBy('completedAt', 'desc'),
+      limit(100)
+    );
+    const tripsSnapshot = await getDocs(tripsQuery);
 
     let tripsWithNoDeviations = 0;
     let tripsWithNoSpeedViolations = 0;
@@ -560,8 +606,8 @@ export async function updateDriverSafetyProfile(
     let safeTripsStreak = 0;
     let lastViolation: Date | undefined;
 
-    tripsSnapshot.forEach((doc) => {
-      const data = doc.data();
+    tripsSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       const hasDeviations = (data.safetyData?.routeDeviations?.length || 0) > 0;
       const hasSpeedViolations = (data.safetyData?.speedViolations?.length || 0) > 0;
 
@@ -601,10 +647,8 @@ export async function updateDriverSafetyProfile(
     };
 
     // Update in Firestore
-    await firestore()
-      .collection('driver_safety_profiles')
-      .doc(driverId)
-      .set(profile, { merge: true });
+    const profileRef = doc(db, 'driver_safety_profiles', driverId);
+    await setDoc(profileRef, profile, { merge: true });
 
     return { success: true, data: profile };
   } catch (error) {
@@ -623,18 +667,16 @@ export async function getDriverSafetyProfile(
   driverId: string
 ): Promise<DriverSafetyProfile | null> {
   try {
-    const doc = await firestore()
-      .collection('driver_safety_profiles')
-      .doc(driverId)
-      .get();
+    const profileRef = doc(db, 'driver_safety_profiles', driverId);
+    const profileDoc = await getDoc(profileRef);
 
-    if (!doc.exists) {
+    if (!documentExists(profileDoc)) {
       // Create a default profile
       const result = await updateDriverSafetyProfile(driverId);
       return result.data || null;
     }
 
-    return doc.data() as DriverSafetyProfile;
+    return profileDoc.data() as DriverSafetyProfile;
   } catch (error) {
     console.error('Failed to get driver safety profile:', error);
     return null;
@@ -651,12 +693,14 @@ export async function canDriverGoOnline(driverId: string): Promise<{
 }> {
   try {
     // Check for active suspension
-    const suspensionSnapshot = await firestore()
-      .collection('suspensions')
-      .where('driverId', '==', driverId)
-      .where('status', '==', 'active')
-      .limit(1)
-      .get();
+    const suspensionsRef = collection(db, 'suspensions');
+    const q = query(
+      suspensionsRef,
+      where('driverId', '==', driverId),
+      where('status', '==', 'active'),
+      limit(1)
+    );
+    const suspensionSnapshot = await getDocs(q);
 
     if (!suspensionSnapshot.empty) {
       const data = suspensionSnapshot.docs[0].data();
@@ -689,20 +733,23 @@ export async function canDriverGoOnline(driverId: string): Promise<{
 export async function expireOldStrikes(): Promise<void> {
   try {
     const now = new Date();
-    const snapshot = await firestore()
-      .collection('strikes')
-      .where('status', '==', 'active')
-      .get();
+    const strikesRef = collection(db, 'strikes');
+    const q = query(
+      strikesRef,
+      where('status', '==', 'active')
+    );
+    const snapshot = await getDocs(q);
 
-    const batch = firestore().batch();
+    const batch = writeBatch(db);
     let expiredCount = 0;
 
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       const expiresAt = data.expiresAt?.toDate?.() || data.expiresAt;
 
       if (expiresAt && new Date(expiresAt) <= now) {
-        batch.update(doc.ref, { status: 'expired' });
+        const strikeRef = doc(db, 'strikes', docSnap.id);
+        batch.update(strikeRef, { status: 'expired' });
         expiredCount++;
       }
     });
@@ -722,7 +769,8 @@ export async function expireOldStrikes(): Promise<void> {
 
 async function notifyDriverOfStrike(driverId: string, strike: Strike): Promise<void> {
   try {
-    await firestore().collection('notifications').add({
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
       userId: driverId,
       type: 'safety_strike',
       title: 'Safety Strike Issued',
@@ -733,7 +781,7 @@ async function notifyDriverOfStrike(driverId: string, strike: Strike): Promise<v
         severity: strike.severity,
       },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify driver of strike:', error);
@@ -753,7 +801,8 @@ async function notifyDriverOfSuspension(
       ? 'Your driver account has been permanently suspended due to safety violations.'
       : `Your driver account has been suspended for ${TEMP_SUSPENSION_DAYS} days due to safety violations.`;
 
-    await firestore().collection('notifications').add({
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
       userId: driverId,
       type: 'suspension',
       title,
@@ -764,7 +813,7 @@ async function notifyDriverOfSuspension(
         expiresAt: suspension.expiresAt?.toISOString(),
       },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify driver of suspension:', error);
@@ -776,13 +825,14 @@ async function notifyDriverSuspensionLifted(
   reason: string
 ): Promise<void> {
   try {
-    await firestore().collection('notifications').add({
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
       userId: driverId,
       type: 'suspension_lifted',
       title: 'Suspension Lifted',
       message: `Your account suspension has been lifted. ${reason}`,
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify driver of suspension lift:', error);
@@ -799,14 +849,15 @@ async function notifyDriverAppealResult(
       ? 'Appeal Approved'
       : 'Appeal Denied';
 
-    await firestore().collection('notifications').add({
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
       userId: driverId,
       type: 'appeal_result',
       title,
       message: resolution,
       data: { decision },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify driver of appeal result:', error);

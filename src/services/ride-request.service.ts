@@ -2,20 +2,26 @@
  * Ride Request Service
  * Handles real-time ride request matching between riders and drivers
  * Production-ready Firebase implementation with Zone-Based Pricing Support
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import { firebaseDb, firebaseFunctions } from '../config/firebase';
-import firestore, {
+import {
   collection,
   doc,
   query,
   where,
   onSnapshot,
   updateDoc,
+  getDocs,
   serverTimestamp,
   getDoc,
   orderBy,
   limit,
+  arrayUnion,
+  Timestamp,
   FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
 import { Trip } from '../stores/trip-store';
@@ -326,7 +332,7 @@ export async function declineRideRequest(
 
     // Add driver to declined list (so they don't see this request again)
     await updateDoc(tripRef, {
-      declinedBy: firestore.FieldValue.arrayUnion(driverId),
+      declinedBy: arrayUnion(driverId),
       updatedAt: serverTimestamp(),
     });
 
@@ -408,7 +414,7 @@ export async function completeTrip(
       actualDistance,
       actualDuration,
       completedAt: serverTimestamp(),
-      ratingDeadline: firestore.Timestamp.fromDate(ratingDeadline),
+      ratingDeadline: Timestamp.fromDate(ratingDeadline),
       paymentStatus: 'PENDING',
       updatedAt: serverTimestamp(),
     };
@@ -1072,11 +1078,14 @@ export async function getActiveRiderTrip(riderId: string): Promise<RideRequest |
       console.warn('Background cleanup failed:', err);
     });
 
-    const snapshot = await firestore().collection('trips')
-      .where('riderId', '==', riderId)
-      .orderBy('requestedAt', 'desc')
-      .limit(5)
-      .get();
+    const tripsRef = collection(firebaseDb, 'trips');
+    const q = query(
+      tripsRef,
+      where('riderId', '==', riderId),
+      orderBy('requestedAt', 'desc'),
+      limit(5)
+    );
+    const snapshot = await getDocs(q);
 
     for (const tripDoc of snapshot.docs) {
       const data = tripDoc.data();
@@ -1152,12 +1161,15 @@ async function cleanupStaleRiderTripsInternal(
   maxAgeMinutes: number
 ): Promise<number> {
   try {
-    const snapshot = await firestore().collection('trips')
-      .where('riderId', '==', riderId)
-      .where('status', '==', 'REQUESTED')
-      .orderBy('requestedAt', 'desc')
-      .limit(10)
-      .get();
+    const tripsRef = collection(firebaseDb, 'trips');
+    const q = query(
+      tripsRef,
+      where('riderId', '==', riderId),
+      where('status', '==', 'REQUESTED'),
+      orderBy('requestedAt', 'desc'),
+      limit(10)
+    );
+    const snapshot = await getDocs(q);
 
     let cleanedCount = 0;
     const now = Date.now();
@@ -1205,9 +1217,10 @@ async function cleanupStaleRiderTripsInternal(
  */
 export async function getRiderInfo(riderId: string): Promise<{ name: string; rating: number; photo?: string } | null> {
   try {
-    const userDoc = await firestore().collection('users').doc(riderId).get();
+    const userRef = doc(firebaseDb, 'users', riderId);
+    const userDoc = await getDoc(userRef);
 
-    if (userDoc.exists) {
+    if (documentExists(userDoc)) {
       const userData = userDoc.data();
       return {
         name: userData?.name || userData?.firstName || 'Rider',
@@ -1228,19 +1241,22 @@ export async function getRiderInfo(riderId: string): Promise<{ name: string; rat
  */
 export async function getActiveDriverTrip(driverId: string): Promise<RideRequest | null> {
   try {
-    const snapshot = await firestore().collection('trips')
-      .where('driverId', '==', driverId)
-      .orderBy('acceptedAt', 'desc')
-      .limit(5)
-      .get();
+    const tripsRef = collection(firebaseDb, 'trips');
+    const q = query(
+      tripsRef,
+      where('driverId', '==', driverId),
+      orderBy('acceptedAt', 'desc'),
+      limit(5)
+    );
+    const snapshot = await getDocs(q);
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
       const status = data.status;
 
       // Check if trip is in an active state for driver
       if (['ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
-        console.log('✅ Found active driver trip:', doc.id, 'Status:', status);
+        console.log('✅ Found active driver trip:', docSnap.id, 'Status:', status);
 
         // If riderName is missing, fetch from users collection
         let riderName = data.riderName;
@@ -1258,7 +1274,7 @@ export async function getActiveDriverTrip(driverId: string): Promise<RideRequest
         }
 
         return {
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           riderName: riderName || 'Rider',
           riderRating: riderRating || 5.0,
@@ -1341,12 +1357,15 @@ export async function cleanupStaleRiderTrips(
   maxAgeMinutes: number = 30
 ): Promise<number> {
   try {
-    const snapshot = await firestore().collection('trips')
-      .where('riderId', '==', riderId)
-      .where('status', '==', 'REQUESTED')
-      .orderBy('requestedAt', 'desc')
-      .limit(10)
-      .get();
+    const tripsRef = collection(firebaseDb, 'trips');
+    const q = query(
+      tripsRef,
+      where('riderId', '==', riderId),
+      where('status', '==', 'REQUESTED'),
+      orderBy('requestedAt', 'desc'),
+      limit(10)
+    );
+    const snapshot = await getDocs(q);
 
     let cleanedCount = 0;
     const now = Date.now();

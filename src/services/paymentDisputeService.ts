@@ -1,6 +1,9 @@
 /**
  * DRIFT PAYMENT DISPUTE & ESCROW SERVICE
  * Handles payment holds, disputes, escrow management, and refunds
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import {
@@ -11,8 +14,38 @@ import {
   ViolationEvidence,
   SafetyServiceResponse,
 } from '@/src/types/safety.types';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  arrayUnion,
+  serverTimestamp,
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
+
+// Get Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
+
+/**
+ * Helper to check if document exists
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
 
 // Configuration
 const DISPUTE_WINDOW_HOURS = 24;
@@ -28,12 +61,10 @@ export async function holdPayment(
 ): Promise<SafetyServiceResponse<PaymentEscrow>> {
   try {
     // Get trip details
-    const tripDoc = await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .get();
+    const tripRef = doc(db, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
 
-    if (!tripDoc.exists) {
+    if (!documentExists(tripDoc)) {
       return { success: false, error: 'Trip not found' };
     }
 
@@ -50,25 +81,20 @@ export async function holdPayment(
       createdAt: new Date(),
     };
 
-    await firestore()
-      .collection('payment_escrows')
-      .doc(escrow.id)
-      .set({
-        ...escrow,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const escrowRef = doc(db, 'payment_escrows', escrow.id);
+    await setDoc(escrowRef, {
+      ...escrow,
+      createdAt: serverTimestamp(),
+    });
 
     // Update trip payment status
-    await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .update({
-        paymentStatus: 'HELD',
-        escrowId: escrow.id,
-        paymentHoldReason: reason,
-        paymentHeldAt: firestore.FieldValue.serverTimestamp(),
-        autoHold,
-      });
+    await updateDoc(tripRef, {
+      paymentStatus: 'HELD',
+      escrowId: escrow.id,
+      paymentHoldReason: reason,
+      paymentHeldAt: serverTimestamp(),
+      autoHold,
+    });
 
     console.log('Payment held for trip:', tripId, 'Escrow:', escrow.id);
     return { success: true, data: escrow };
@@ -90,12 +116,10 @@ export async function createDispute(
 ): Promise<SafetyServiceResponse<PaymentDispute>> {
   try {
     // Check dispute window
-    const tripDoc = await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .get();
+    const tripRef = doc(db, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
 
-    if (!tripDoc.exists) {
+    if (!documentExists(tripDoc)) {
       return { success: false, error: 'Trip not found' };
     }
 
@@ -116,11 +140,13 @@ export async function createDispute(
     }
 
     // Check if dispute already exists
-    const existingDispute = await firestore()
-      .collection('payment_disputes')
-      .where('tripId', '==', tripId)
-      .where('status', 'in', ['pending', 'under_review'])
-      .get();
+    const disputesRef = collection(db, 'payment_disputes');
+    const existingQuery = query(
+      disputesRef,
+      where('tripId', '==', tripId),
+      where('status', 'in', ['pending', 'under_review'])
+    );
+    const existingDispute = await getDocs(existingQuery);
 
     if (!existingDispute.empty) {
       return {
@@ -153,14 +179,12 @@ export async function createDispute(
       updatedAt: new Date(),
     };
 
-    await firestore()
-      .collection('payment_disputes')
-      .doc(dispute.id)
-      .set({
-        ...dispute,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const disputeRef = doc(db, 'payment_disputes', dispute.id);
+    await setDoc(disputeRef, {
+      ...dispute,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
     // Hold payment if not already held
     if (tripData?.paymentStatus !== 'HELD') {
@@ -169,16 +193,11 @@ export async function createDispute(
         dispute.escrowId = escrowResult.data.id;
 
         // Update dispute with escrow ID
-        await firestore()
-          .collection('payment_disputes')
-          .doc(dispute.id)
-          .update({ escrowId: escrowResult.data.id });
+        await updateDoc(disputeRef, { escrowId: escrowResult.data.id });
 
         // Update escrow with dispute ID
-        await firestore()
-          .collection('payment_escrows')
-          .doc(escrowResult.data.id)
-          .update({ disputeId: dispute.id });
+        const escrowRef = doc(db, 'payment_escrows', escrowResult.data.id);
+        await updateDoc(escrowRef, { disputeId: dispute.id });
       }
     }
 
@@ -205,18 +224,20 @@ export async function getUserDisputes(
 ): Promise<PaymentDispute[]> {
   try {
     const field = userType === 'rider' ? 'riderId' : 'driverId';
-    const snapshot = await firestore()
-      .collection('payment_disputes')
-      .where(field, '==', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
+    const disputesRef = collection(db, 'payment_disputes');
+    const q = query(
+      disputesRef,
+      where(field, '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
 
     const disputes: PaymentDispute[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       disputes.push({
         ...data,
-        id: doc.id,
+        id: docSnap.id,
         createdAt: data.createdAt?.toDate?.() || data.createdAt,
         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
         resolvedAt: data.resolvedAt?.toDate?.() || data.resolvedAt,
@@ -235,18 +256,20 @@ export async function getUserDisputes(
  */
 export async function getPendingDisputes(): Promise<PaymentDispute[]> {
   try {
-    const snapshot = await firestore()
-      .collection('payment_disputes')
-      .where('status', 'in', ['pending', 'under_review'])
-      .orderBy('createdAt', 'asc')
-      .get();
+    const disputesRef = collection(db, 'payment_disputes');
+    const q = query(
+      disputesRef,
+      where('status', 'in', ['pending', 'under_review']),
+      orderBy('createdAt', 'asc')
+    );
+    const snapshot = await getDocs(q);
 
     const disputes: PaymentDispute[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
       disputes.push({
         ...data,
-        id: doc.id,
+        id: docSnap.id,
         createdAt: data.createdAt?.toDate?.() || data.createdAt,
         updatedAt: data.updatedAt?.toDate?.() || data.updatedAt,
       } as PaymentDispute);
@@ -268,14 +291,12 @@ export async function updateDisputeStatus(
   reviewerId?: string
 ): Promise<SafetyServiceResponse> {
   try {
-    await firestore()
-      .collection('payment_disputes')
-      .doc(disputeId)
-      .update({
-        status,
-        reviewedBy: reviewerId,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const disputeRef = doc(db, 'payment_disputes', disputeId);
+    await updateDoc(disputeRef, {
+      status,
+      reviewedBy: reviewerId,
+      updatedAt: serverTimestamp(),
+    });
 
     return { success: true };
   } catch (error) {
@@ -296,30 +317,25 @@ export async function resolveDispute(
   resolvedBy: string
 ): Promise<SafetyServiceResponse> {
   try {
-    const disputeDoc = await firestore()
-      .collection('payment_disputes')
-      .doc(disputeId)
-      .get();
+    const disputeRef = doc(db, 'payment_disputes', disputeId);
+    const disputeDoc = await getDoc(disputeRef);
 
-    if (!disputeDoc.exists) {
+    if (!documentExists(disputeDoc)) {
       return { success: false, error: 'Dispute not found' };
     }
 
     const dispute = disputeDoc.data() as PaymentDispute;
 
     // Update dispute
-    await firestore()
-      .collection('payment_disputes')
-      .doc(disputeId)
-      .update({
-        status: decision,
-        resolution,
-        refundAmount: refundAmount || 0,
-        strikeIssued: issueStrike,
-        resolvedAt: firestore.FieldValue.serverTimestamp(),
-        resolvedBy,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    await updateDoc(disputeRef, {
+      status: decision,
+      resolution,
+      refundAmount: refundAmount || 0,
+      strikeIssued: issueStrike,
+      resolvedAt: serverTimestamp(),
+      resolvedBy,
+      updatedAt: serverTimestamp(),
+    });
 
     // Handle escrow based on decision
     if (dispute.escrowId) {
@@ -352,14 +368,12 @@ export async function resolveDispute(
     }
 
     // Update trip
-    await firestore()
-      .collection('trips')
-      .doc(dispute.tripId)
-      .update({
-        paymentStatus: decision === 'approved' ? 'REFUNDED' : 'COMPLETED',
-        disputeResolution: resolution,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const tripRef = doc(db, 'trips', dispute.tripId);
+    await updateDoc(tripRef, {
+      paymentStatus: decision === 'approved' ? 'REFUNDED' : 'COMPLETED',
+      disputeResolution: resolution,
+      updatedAt: serverTimestamp(),
+    });
 
     // Notify both parties
     await notifyDisputeResolution(dispute, decision, resolution);
@@ -381,14 +395,12 @@ async function releaseEscrow(
   reason: string
 ): Promise<void> {
   try {
-    await firestore()
-      .collection('payment_escrows')
-      .doc(escrowId)
-      .update({
-        status,
-        releasedAt: firestore.FieldValue.serverTimestamp(),
-        releaseReason: reason,
-      });
+    const escrowRef = doc(db, 'payment_escrows', escrowId);
+    await updateDoc(escrowRef, {
+      status,
+      releasedAt: serverTimestamp(),
+      releaseReason: reason,
+    });
 
     console.log('Escrow released:', escrowId, 'Status:', status);
   } catch (error) {
@@ -405,12 +417,10 @@ async function processStripeRefund(
 ): Promise<void> {
   try {
     // Get payment intent from trip
-    const tripDoc = await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .get();
+    const tripRef = doc(db, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
 
-    if (!tripDoc.exists) return;
+    if (!documentExists(tripDoc)) return;
 
     const tripData = tripDoc.data();
     const paymentIntentId = tripData?.paymentIntentId;
@@ -442,12 +452,10 @@ export async function voidPayment(
   reason: string
 ): Promise<SafetyServiceResponse> {
   try {
-    const tripDoc = await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .get();
+    const tripRef = doc(db, 'trips', tripId);
+    const tripDoc = await getDoc(tripRef);
 
-    if (!tripDoc.exists) {
+    if (!documentExists(tripDoc)) {
       return { success: false, error: 'Trip not found' };
     }
 
@@ -458,14 +466,11 @@ export async function voidPayment(
     await processStripeRefund(tripId, amount);
 
     // Update trip
-    await firestore()
-      .collection('trips')
-      .doc(tripId)
-      .update({
-        paymentStatus: 'VOIDED',
-        paymentVoidReason: reason,
-        paymentVoidedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    await updateDoc(tripRef, {
+      paymentStatus: 'VOIDED',
+      paymentVoidReason: reason,
+      paymentVoidedAt: serverTimestamp(),
+    });
 
     console.log('Payment voided for trip:', tripId);
     return { success: true };
@@ -482,22 +487,26 @@ export async function autoResolveHeldPayments(): Promise<void> {
   try {
     const cutoffTime = new Date(Date.now() - DISPUTE_WINDOW_HOURS * 60 * 60 * 1000);
 
-    const snapshot = await firestore()
-      .collection('trips')
-      .where('paymentStatus', '==', 'HELD')
-      .where('paymentHeldAt', '<', cutoffTime)
-      .get();
+    const tripsRef = collection(db, 'trips');
+    const q = query(
+      tripsRef,
+      where('paymentStatus', '==', 'HELD'),
+      where('paymentHeldAt', '<', cutoffTime)
+    );
+    const snapshot = await getDocs(q);
 
-    for (const doc of snapshot.docs) {
-      const tripId = doc.id;
-      const tripData = doc.data();
+    for (const docSnap of snapshot.docs) {
+      const tripId = docSnap.id;
+      const tripData = docSnap.data();
 
       // Check if there's a dispute
-      const disputeSnapshot = await firestore()
-        .collection('payment_disputes')
-        .where('tripId', '==', tripId)
-        .where('status', 'in', ['pending', 'under_review'])
-        .get();
+      const disputesRef = collection(db, 'payment_disputes');
+      const disputeQuery = query(
+        disputesRef,
+        where('tripId', '==', tripId),
+        where('status', 'in', ['pending', 'under_review'])
+      );
+      const disputeSnapshot = await getDocs(disputeQuery);
 
       if (disputeSnapshot.empty) {
         // No dispute filed - release payment to driver
@@ -509,13 +518,11 @@ export async function autoResolveHeldPayments(): Promise<void> {
           );
         }
 
-        await firestore()
-          .collection('trips')
-          .doc(tripId)
-          .update({
-            paymentStatus: 'COMPLETED',
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          });
+        const tripRef = doc(db, 'trips', tripId);
+        await updateDoc(tripRef, {
+          paymentStatus: 'COMPLETED',
+          updatedAt: serverTimestamp(),
+        });
 
         console.log('Payment auto-released for trip:', tripId);
       }
@@ -533,13 +540,11 @@ export async function addDisputeEvidence(
   evidence: ViolationEvidence
 ): Promise<SafetyServiceResponse> {
   try {
-    await firestore()
-      .collection('payment_disputes')
-      .doc(disputeId)
-      .update({
-        evidence: firestore.FieldValue.arrayUnion(evidence),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const disputeRef = doc(db, 'payment_disputes', disputeId);
+    await updateDoc(disputeRef, {
+      evidence: arrayUnion(evidence),
+      updatedAt: serverTimestamp(),
+    });
 
     return { success: true };
   } catch (error) {
@@ -554,7 +559,8 @@ export async function addDisputeEvidence(
 
 async function createDisputeAdminAlert(dispute: PaymentDispute): Promise<void> {
   try {
-    await firestore().collection('admin_alerts').add({
+    const alertsRef = collection(db, 'admin_alerts');
+    await addDoc(alertsRef, {
       type: 'payment_dispute',
       priority: dispute.autoHold ? 'high' : 'medium',
       disputeId: dispute.id,
@@ -564,7 +570,7 @@ async function createDisputeAdminAlert(dispute: PaymentDispute): Promise<void> {
       amount: dispute.amount,
       reason: dispute.reason,
       status: 'unread',
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to create admin alert:', error);
@@ -576,7 +582,8 @@ async function notifyDriverOfDispute(
   dispute: PaymentDispute
 ): Promise<void> {
   try {
-    await firestore().collection('notifications').add({
+    const notificationsRef = collection(db, 'notifications');
+    await addDoc(notificationsRef, {
       userId: driverId,
       type: 'payment_dispute',
       title: 'Payment Dispute Filed',
@@ -588,7 +595,7 @@ async function notifyDriverOfDispute(
         reason: dispute.reason,
       },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify driver of dispute:', error);
@@ -601,8 +608,10 @@ async function notifyDisputeResolution(
   resolution: string
 ): Promise<void> {
   try {
+    const notificationsRef = collection(db, 'notifications');
+
     // Notify rider
-    await firestore().collection('notifications').add({
+    await addDoc(notificationsRef, {
       userId: dispute.riderId,
       type: 'dispute_resolved',
       title: decision === 'approved' ? 'Dispute Approved' : 'Dispute Denied',
@@ -613,11 +622,11 @@ async function notifyDisputeResolution(
         decision,
       },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
 
     // Notify driver
-    await firestore().collection('notifications').add({
+    await addDoc(notificationsRef, {
       userId: dispute.driverId,
       type: 'dispute_resolved',
       title: decision === 'approved' ? 'Dispute Ruled Against You' : 'Dispute Dismissed',
@@ -628,7 +637,7 @@ async function notifyDisputeResolution(
         decision,
       },
       read: false,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error('Failed to notify dispute resolution:', error);

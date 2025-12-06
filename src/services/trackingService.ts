@@ -10,6 +10,9 @@
  * - Share via SMS using expo-sms
  * - Copy link to clipboard
  * - Proper cleanup on session end
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import { firebaseFunctions } from '../config/firebase';
@@ -41,9 +44,9 @@ import type {
 const DEFAULT_UPDATE_INTERVAL_MS = 10000;
 
 /**
- * Hosting URL for tracking links (update this when deploying)
+ * Hosting URL for tracking links (Firebase Hosting production)
  */
-const TRACKING_BASE_URL = 'https://drift-cayman.web.app';
+const TRACKING_BASE_URL = 'https://drift-global.web.app';
 
 // ============================================================================
 // Active Session Management
@@ -478,10 +481,10 @@ export function getShareableUrl(): string | null {
 // ============================================================================
 
 /**
- * Build a tracking URL from a token
+ * Build a tracking URL from a token/session ID
  */
 export function buildTrackingUrl(token: string): string {
-  return `${TRACKING_BASE_URL}/track/${token}`;
+  return `${TRACKING_BASE_URL}/track?session=${token}`;
 }
 
 /**

@@ -1,15 +1,13 @@
 /**
- * Drift Firebase Authentication Service - React Native Firebase v22 Modular API
+ * Drift Firebase Authentication Service - React Native Firebase v22+ Modular API
  *
- * CORRECT v22 MODULAR API USAGE:
- * ✅ Import functions directly from module
- * ✅ Pass auth instance as first parameter
- * ✅ Use serverTimestamp from Firestore
- * ❌ Do NOT use getAuth(), getFirestore(), getApp()
- * ❌ Do NOT chain methods like auth().signInWithEmailAndPassword()
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import auth, {
+import { getApp } from '@react-native-firebase/app';
+import {
+  getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithCredential,
@@ -23,8 +21,8 @@ import auth, {
   FirebaseAuthTypes
 } from '@react-native-firebase/auth';
 
-import firestore, {
-  collection,
+import {
+  getFirestore,
   doc,
   getDoc,
   setDoc,
@@ -47,11 +45,12 @@ function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): b
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 // ============================================================================
-// Get Firebase instances - v22 modular way
+// Get Firebase instances - v22+ modular API with 'main' database
 // ============================================================================
 
-const authInstance = auth();
-const firestoreInstance = firestore();
+const app = getApp();
+const authInstance = getAuth(app);
+const firestoreInstance = getFirestore(app, 'main');
 
 // ============================================================================
 // Types
@@ -131,7 +130,7 @@ export async function registerWithEmail(
 ): Promise<{ user: DriftUser; needsVerification: boolean }> {
   try {
     console.log('🚀 Starting email registration...');
-    
+
     // Step 1: Create Firebase Auth user using modular API
     const userCredential = await createUserWithEmailAndPassword(
       authInstance,
@@ -213,7 +212,7 @@ export async function registerWithEmail(
 export async function signInWithEmail(email: string, password: string): Promise<DriftUser> {
   try {
     console.log('🚀 Starting email sign in...');
-    
+
     const userCredential = await signInWithEmailAndPassword(
       authInstance,
       email,
@@ -364,7 +363,7 @@ export async function signInWithGoogle(role: UserRole = 'RIDER', gender?: 'male'
 export async function getUserData(userId: string): Promise<DriftUser | null> {
   try {
     console.log('📖 Fetching user data for:', userId);
-    
+
     const userRef = doc(firestoreInstance, 'users', userId);
     const userDoc = await getDoc(userRef);
 

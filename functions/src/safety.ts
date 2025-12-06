@@ -9,8 +9,10 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 
-const db = admin.firestore();
+// Using 'main' database (restored from backup)
+const db = getFirestore(admin.app(), 'main');
 
 // Configuration
 const STRIKE_EXPIRATION_DAYS = 30; // 1 month of good driving to remove a strike
@@ -25,7 +27,7 @@ const DISPUTE_WINDOW_HOURS = 24;
 /**
  * Issue a strike to a driver
  */
-export const issueStrike = onCall(async (request) => {
+export const issueStrike = onCall({ region: 'us-east1' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -199,7 +201,7 @@ async function issuePermanentSuspension(
 /**
  * Expire old strikes - runs daily
  */
-export const expireStrikes = onSchedule('every 24 hours', async () => {
+export const expireStrikes = onSchedule({ schedule: 'every 24 hours', region: 'us-east1' }, async () => {
   try {
     const now = new Date();
     const snapshot = await db
@@ -232,7 +234,7 @@ export const expireStrikes = onSchedule('every 24 hours', async () => {
 /**
  * Lift expired temporary suspensions - runs hourly
  */
-export const liftExpiredSuspensions = onSchedule('every 1 hours', async () => {
+export const liftExpiredSuspensions = onSchedule({ schedule: 'every 1 hours', region: 'us-east1' }, async () => {
   try {
     const now = new Date();
     const snapshot = await db
@@ -281,7 +283,7 @@ export const liftExpiredSuspensions = onSchedule('every 1 hours', async () => {
 /**
  * Auto-resolve held payments without disputes - runs hourly
  */
-export const autoResolveHeldPayments = onSchedule('every 1 hours', async () => {
+export const autoResolveHeldPayments = onSchedule({ schedule: 'every 1 hours', region: 'us-east1' }, async () => {
   try {
     const cutoffTime = new Date(Date.now() - DISPUTE_WINDOW_HOURS * 60 * 60 * 1000);
 
@@ -333,7 +335,7 @@ export const autoResolveHeldPayments = onSchedule('every 1 hours', async () => {
  * Handle new emergency alert
  */
 export const onEmergencyAlertCreated = onDocumentCreated(
-  'emergency_alerts/{alertId}',
+  { document: 'emergency_alerts/{alertId}', region: 'us-east1', database: 'main' },
   async (event) => {
     try {
       const alertData = event.data?.data();
@@ -366,7 +368,7 @@ export const onEmergencyAlertCreated = onDocumentCreated(
 /**
  * Handle trip safety violations
  */
-export const onTripUpdated = onDocumentUpdated('trips/{tripId}', async (event) => {
+export const onTripUpdated = onDocumentUpdated({ document: 'trips/{tripId}', region: 'us-east1', database: 'main' }, async (event) => {
   try {
     const beforeData = event.data?.before.data();
     const afterData = event.data?.after.data();
@@ -414,7 +416,7 @@ export const onTripUpdated = onDocumentUpdated('trips/{tripId}', async (event) =
 /**
  * Process strike queue
  */
-export const processStrikeQueue = onSchedule('every 5 minutes', async () => {
+export const processStrikeQueue = onSchedule({ schedule: 'every 5 minutes', region: 'us-east1' }, async () => {
   try {
     const snapshot = await db
       .collection('strike_queue')
@@ -469,7 +471,7 @@ export const processStrikeQueue = onSchedule('every 5 minutes', async () => {
 /**
  * Review and resolve appeal (admin only)
  */
-export const resolveAppeal = onCall(async (request) => {
+export const resolveAppeal = onCall({ region: 'us-east1' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -558,7 +560,7 @@ export const resolveAppeal = onCall(async (request) => {
 /**
  * Resolve payment dispute (admin only)
  */
-export const resolveDispute = onCall(async (request) => {
+export const resolveDispute = onCall({ region: 'us-east1' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -676,7 +678,7 @@ export const resolveDispute = onCall(async (request) => {
 /**
  * Get safety dashboard data (admin only)
  */
-export const getSafetyDashboard = onCall(async (request) => {
+export const getSafetyDashboard = onCall({ region: 'us-east1' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

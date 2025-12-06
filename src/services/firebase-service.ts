@@ -1,23 +1,23 @@
 /**
- * Firebase Service - React Native Firebase v22 Modular API
- * 
+ * Firebase Service - React Native Firebase v22+ Modular API
+ *
  * General Firebase operations using the correct modular API
- * 
- * CORRECT v22 MODULAR API USAGE:
- * ✅ Call auth() and firestore() directly
- * ✅ Import functions like createUserWithEmailAndPassword, doc, setDoc
- * ✅ Pass instances as first parameter
- * ❌ Do NOT use getAuth() or getFirestore()
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
-import auth, {
+import { getApp } from '@react-native-firebase/app';
+import {
+  getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendPasswordResetEmail
 } from '@react-native-firebase/auth';
 
-import firestore, {
+import {
+  getFirestore,
   collection,
   doc,
   setDoc,
@@ -42,11 +42,12 @@ function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): b
 }
 
 // ============================================================================
-// Get Firebase instances - v22 modular way
+// Get Firebase instances - v22+ modular API with 'main' database
 // ============================================================================
 
-const authInstance = auth();
-const firestoreInstance = firestore();
+const app = getApp();
+const authInstance = getAuth(app);
+const firestoreInstance = getFirestore(app, 'main');
 
 // ============================================================================
 // Firebase Service

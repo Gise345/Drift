@@ -1,20 +1,20 @@
 /**
- * Google Sign-In Service - React Native Firebase v22 Modular API
- * 
- * CORRECT v22 MODULAR API USAGE:
- * ✅ Call auth() and firestore() directly
- * ✅ Import functions like signInWithCredential, signOut
- * ✅ Pass auth/firestore instance as first parameter
- * ❌ Do NOT use getAuth() or getFirestore()
+ * Google Sign-In Service - React Native Firebase v22+ Modular API
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import auth, {
+import { getApp } from '@react-native-firebase/app';
+import {
+  getAuth,
   signInWithCredential,
   signOut,
   GoogleAuthProvider
 } from '@react-native-firebase/auth';
-import firestore, {
+import {
+  getFirestore,
   doc,
   getDoc,
   setDoc,
@@ -24,11 +24,12 @@ import firestore, {
 import { Platform } from 'react-native';
 
 // ============================================================================
-// Get Firebase instances - v22 modular way
+// Get Firebase instances - v22+ modular API with 'main' database
 // ============================================================================
 
-const authInstance = auth();
-const firestoreInstance = firestore();
+const app = getApp();
+const authInstance = getAuth(app);
+const firestoreInstance = getFirestore(app, 'main');
 
 // ============================================================================
 // Configuration
@@ -114,7 +115,7 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
     console.log('🔐 Signing in to Firebase...');
     const userCredential = await signInWithCredential(authInstance, googleCredential);
     const firebaseUser = userCredential.user;
-    
+
     console.log('✅ Firebase user authenticated:', firebaseUser.uid);
 
     // Create or update user profile in Firestore
@@ -126,7 +127,7 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
     if (!userDoc.exists) {
       // New user - create profile
       console.log('✅ Creating new user profile...');
-      
+
       if (!firebaseUser.email) {
         throw new Error('No email address associated with Google account');
       }
@@ -163,7 +164,7 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
     } else {
       // Existing user - update profile and get roles
       console.log('✅ Updating existing user profile...');
-      
+
       const existingData = userDoc.data();
 
       if (!firebaseUser.email) {
@@ -248,7 +249,7 @@ export const signOutGoogle = async (): Promise<void> => {
   try {
     // Sign out from Google
     await GoogleSignin.signOut();
-    
+
     // Sign out from Firebase using modular API
     await signOut(authInstance);
   } catch (error) {

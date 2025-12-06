@@ -7,6 +7,7 @@ import {
   SectionList,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -14,23 +15,36 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTripStore, Trip as TripData } from '@/src/stores/trip-store';
 import { useUserStore, RecentTravel } from '@/src/stores/user-store';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { canRateOrTipTrip } from '@/src/services/ride-request.service';
 
 /**
  * Activity Tab Screen
  * Shows past trip history grouped by month (most recent first)
+ * With rate driver and add tip functionality
  */
 
 interface Trip {
   id: string;
   date: string;
   time: string;
-  timestamp: Date; // For sorting
+  timestamp: Date;
   from: string;
   to: string;
   driver: string;
+  driverPhoto?: string;
   cost: string;
-  status: 'completed' | 'cancelled';
+  status: 'completed' | 'cancelled' | 'awaiting_action';
   rating?: number;
+  tip?: number;
+  canRate: boolean;
+  canTip: boolean;
+  hasRated: boolean;
+  hasTipped: boolean;
+  remainingTime?: string;
+  completedAt?: Date;
+  ratingDeadline?: Date;
+  vehicleInfo?: string;
+  driverId?: string;
 }
 
 interface TripSection {
@@ -73,6 +87,32 @@ const getMonthYear = (date: Date | undefined): string => {
 // Convert Firebase trip to display format
 const convertTrip = (trip: TripData): Trip => {
   const tripDate = trip.requestedAt || trip.createdAt;
+
+  // Check rating/tip eligibility
+  const ratingStatus = canRateOrTipTrip({
+    completedAt: trip.completedAt,
+    ratingDeadline: trip.ratingDeadline,
+    driverRating: trip.driverRating,
+    tip: trip.tip,
+    status: trip.status,
+  });
+
+  // Determine status
+  let status: 'completed' | 'cancelled' | 'awaiting_action' = 'completed';
+  if (trip.status === 'CANCELLED') {
+    status = 'cancelled';
+  } else if ((trip.status === 'AWAITING_TIP' || trip.status === 'COMPLETED') && (ratingStatus.canRate || ratingStatus.canTip)) {
+    status = 'awaiting_action';
+  }
+
+  // Build vehicle info string
+  let vehicleInfo = '';
+  if (trip.driverInfo?.vehicle) {
+    const v = trip.driverInfo.vehicle;
+    vehicleInfo = `${v.color} ${v.make} ${v.model}`.trim();
+    if (v.plate) vehicleInfo += ` • ${v.plate}`;
+  }
+
   return {
     id: trip.id,
     date: formatDate(tripDate),
@@ -81,9 +121,20 @@ const convertTrip = (trip: TripData): Trip => {
     from: trip.pickup?.placeName || trip.pickup?.address || 'Unknown pickup',
     to: trip.destination?.placeName || trip.destination?.address || 'Unknown destination',
     driver: trip.driverInfo?.name || 'Driver',
+    driverPhoto: trip.driverInfo?.photo,
     cost: `$${(trip.finalCost || trip.estimatedCost || 0).toFixed(2)}`,
-    status: trip.status === 'CANCELLED' ? 'cancelled' : 'completed',
+    status,
     rating: trip.driverRating,
+    tip: trip.tip,
+    canRate: ratingStatus.canRate,
+    canTip: ratingStatus.canTip,
+    hasRated: ratingStatus.hasRated,
+    hasTipped: ratingStatus.hasTipped,
+    remainingTime: ratingStatus.remainingTime,
+    completedAt: trip.completedAt,
+    ratingDeadline: ratingStatus.deadlineDate,
+    vehicleInfo,
+    driverId: trip.driverId || trip.driverInfo?.id,
   };
 };
 
@@ -100,6 +151,10 @@ const convertRecentTravel = (travel: RecentTravel): Trip => {
     driver: 'Driver',
     cost: `$${travel.cost.toFixed(2)}`,
     status: 'completed',
+    canRate: false,
+    canTip: false,
+    hasRated: false,
+    hasTipped: false,
   };
 };
 
@@ -119,7 +174,7 @@ const groupTripsByMonth = (trips: Trip[]): TripSection[] => {
     grouped[monthYear].push(trip);
   });
 
-  // Convert to sections array (already sorted since we sorted trips first)
+  // Convert to sections array
   const sections: TripSection[] = Object.entries(grouped).map(([title, data]) => ({
     title,
     data,
@@ -153,7 +208,7 @@ export default function ActivityScreen() {
   // Update local state when store trips change
   useEffect(() => {
     const past = storePastTrips
-      .filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED')
+      .filter(t => t.status === 'COMPLETED' || t.status === 'CANCELLED' || t.status === 'AWAITING_TIP')
       .map(convertTrip);
 
     // Also get recent travels from user store
@@ -181,12 +236,41 @@ export default function ActivityScreen() {
     }
   };
 
+  const handleRateDriver = (trip: Trip) => {
+    router.push({
+      pathname: '/(rider)/rate-driver',
+      params: { tripId: trip.id }
+    });
+  };
+
+  const handleAddTip = (trip: Trip) => {
+    router.push({
+      pathname: '/(rider)/rate-driver',
+      params: { tripId: trip.id, showTip: 'true' }
+    });
+  };
+
   const renderSectionHeader = ({ section }: { section: TripSection }) => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{section.title}</Text>
       <Text style={styles.sectionCount}>{section.data.length} trip{section.data.length !== 1 ? 's' : ''}</Text>
     </View>
   );
+
+  const renderStars = (rating: number) => {
+    return (
+      <View style={styles.starsRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Ionicons
+            key={star}
+            name={star <= rating ? 'star' : 'star-outline'}
+            size={14}
+            color={star <= rating ? '#F59E0B' : '#D1D5DB'}
+          />
+        ))}
+      </View>
+    );
+  };
 
   const renderTripCard = ({ item }: { item: Trip }) => (
     <TouchableOpacity
@@ -197,12 +281,15 @@ export default function ActivityScreen() {
       })}
       activeOpacity={0.7}
     >
-      {/* Date Header */}
+      {/* Date Header with Status */}
       <View style={styles.dateHeader}>
-        <Ionicons name="calendar-outline" size={16} color="#6B7280" />
-        <Text style={styles.dateText}>{item.date} · {item.time}</Text>
-        {item.status === 'completed' && (
+        <View style={styles.dateRow}>
+          <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+          <Text style={styles.dateText}>{item.date} · {item.time}</Text>
+        </View>
+        {item.status === 'completed' && !item.canRate && !item.canTip && (
           <View style={styles.completedBadge}>
+            <Ionicons name="checkmark-circle" size={12} color="#059669" />
             <Text style={styles.badgeText}>Completed</Text>
           </View>
         )}
@@ -211,6 +298,41 @@ export default function ActivityScreen() {
             <Text style={[styles.badgeText, styles.cancelledText]}>Cancelled</Text>
           </View>
         )}
+        {item.status === 'awaiting_action' && (
+          <View style={[styles.completedBadge, styles.actionBadge]}>
+            <Ionicons name="time-outline" size={12} color="#5d1289" />
+            <Text style={[styles.badgeText, styles.actionText]}>Action Needed</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Driver Info */}
+      <View style={styles.driverSection}>
+        <View style={styles.driverAvatar}>
+          {item.driverPhoto ? (
+            <Image source={{ uri: item.driverPhoto }} style={styles.driverImage} />
+          ) : (
+            <Ionicons name="person" size={24} color="#9CA3AF" />
+          )}
+        </View>
+        <View style={styles.driverDetails}>
+          <Text style={styles.driverName}>{item.driver}</Text>
+          {item.vehicleInfo ? (
+            <Text style={styles.vehicleInfo}>{item.vehicleInfo}</Text>
+          ) : null}
+          {item.hasRated && item.rating ? (
+            <View style={styles.ratedRow}>
+              {renderStars(item.rating)}
+              <Text style={styles.ratedText}>You rated {item.rating} stars</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.costColumn}>
+          <Text style={styles.costValue}>{item.cost}</Text>
+          {item.hasTipped && item.tip ? (
+            <Text style={styles.tipText}>+ ${item.tip.toFixed(2)} tip</Text>
+          ) : null}
+        </View>
       </View>
 
       {/* Route */}
@@ -226,23 +348,55 @@ export default function ActivityScreen() {
         </View>
       </View>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <View style={styles.driverInfo}>
-          <Ionicons name="person-outline" size={16} color="#6B7280" />
-          <Text style={styles.driverName}>{item.driver}</Text>
-        </View>
-        <View style={styles.costContainer}>
-          <Text style={styles.costLabel}>Cost:</Text>
-          <Text style={styles.costValue}>{item.cost}</Text>
-        </View>
-        {item.rating && (
-          <View style={styles.ratingContainer}>
-            <Ionicons name="star" size={14} color="#F59E0B" />
-            <Text style={styles.ratingText}>{item.rating}.0</Text>
+      {/* Action Buttons - Rate & Tip */}
+      {(item.canRate || item.canTip) && (
+        <View style={styles.actionSection}>
+          {/* Countdown Timer */}
+          {item.remainingTime && (
+            <View style={styles.countdownRow}>
+              <Ionicons name="time-outline" size={14} color="#6B7280" />
+              <Text style={styles.countdownText}>{item.remainingTime} to rate & tip</Text>
+            </View>
+          )}
+
+          <View style={styles.actionButtons}>
+            {item.canRate && (
+              <TouchableOpacity
+                style={styles.rateButton}
+                onPress={() => handleRateDriver(item)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="star" size={18} color="#FFF" />
+                <Text style={styles.rateButtonText}>Rate Driver</Text>
+              </TouchableOpacity>
+            )}
+            {item.canTip && (
+              <TouchableOpacity
+                style={[styles.tipButton, !item.canRate && styles.tipButtonFull]}
+                onPress={() => handleAddTip(item)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cash-outline" size={18} color="#5d1289" />
+                <Text style={styles.tipButtonText}>Add Tip</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        )}
-      </View>
+        </View>
+      )}
+
+      {/* Already rated/tipped summary */}
+      {item.hasRated && !item.canTip && item.status !== 'cancelled' && (
+        <View style={styles.completedActions}>
+          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+          <Text style={styles.completedActionsText}>
+            {item.hasRated && item.hasTipped
+              ? 'Rated & Tipped'
+              : item.hasRated
+                ? 'Rated'
+                : 'Tipped'}
+          </Text>
+        </View>
+      )}
 
       {/* Chevron */}
       <Ionicons
@@ -377,22 +531,32 @@ const styles = StyleSheet.create({
   dateHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   dateText: {
     fontSize: 14,
     color: '#6B7280',
     marginLeft: 6,
-    flex: 1,
   },
   completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     backgroundColor: '#D1FAE5',
+    gap: 4,
   },
   cancelledBadge: {
     backgroundColor: '#FEE2E2',
+  },
+  actionBadge: {
+    backgroundColor: '#EDE9FE',
   },
   badgeText: {
     fontSize: 11,
@@ -401,6 +565,72 @@ const styles = StyleSheet.create({
   },
   cancelledText: {
     color: '#DC2626',
+  },
+  actionText: {
+    color: '#5d1289',
+  },
+  driverSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  driverAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    overflow: 'hidden',
+  },
+  driverImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  driverDetails: {
+    flex: 1,
+  },
+  driverName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  vehicleInfo: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  ratedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 6,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  ratedText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  costColumn: {
+    alignItems: 'flex-end',
+  },
+  costValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#10B981',
+    marginTop: 2,
   },
   routeContainer: {
     flexDirection: 'row',
@@ -435,57 +665,86 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   address: {
-    fontSize: 15,
-    color: '#000',
+    fontSize: 14,
+    color: '#374151',
     fontWeight: '500',
   },
-  footer: {
+  actionSection: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 4,
+  },
+  countdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    justifyContent: 'center',
+    marginBottom: 10,
+    gap: 6,
   },
-  driverInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginLeft: 6,
-  },
-  costContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  costLabel: {
+  countdownText: {
     fontSize: 12,
     color: '#6B7280',
-    marginRight: 4,
+    fontWeight: '500',
   },
-  costValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  ratingContainer: {
+  rateButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#5d1289',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
   },
-  ratingText: {
-    fontSize: 13,
+  rateButtonText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#000',
-    marginLeft: 4,
+    color: '#FFF',
+  },
+  tipButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#5d1289',
+    gap: 6,
+  },
+  tipButtonFull: {
+    flex: 1,
+  },
+  tipButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5d1289',
+  },
+  completedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 6,
+  },
+  completedActionsText: {
+    fontSize: 13,
+    color: '#10B981',
+    fontWeight: '500',
   },
   chevron: {
     position: 'absolute',
     right: 16,
-    top: '50%',
-    marginTop: -10,
+    top: 16,
   },
   emptyContainer: {
     flex: 1,

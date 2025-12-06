@@ -1,40 +1,35 @@
 /**
- * Firebase Configuration - React Native Firebase v21
+ * Firebase Configuration - React Native Firebase v22+ Modular API
  *
- * CURRENT VERSION: v21.14.0
- * The deprecation warnings about using getApp() are for v22 migration.
- * Current implementation is CORRECT for v21.
- *
- * When upgrading to v22:
- * - Follow migration guide: https://rnfirebase.io/migrating-to-v22
- * - Update to modular API matching Firebase Web SDK
- *
- * Current setup (v21):
- * - Call auth(), firestore() directly (CORRECT)
- * - Auto-initialized via google-services.json (Android) and GoogleService-Info.plist (iOS)
+ * UPGRADED TO v23.5.0
+ * Using modular API with named database 'main' (restored from backup)
  */
 
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
-import storage, { FirebaseStorageTypes } from '@react-native-firebase/storage';
-import functions from '@react-native-firebase/functions';
+import { getApp } from '@react-native-firebase/app';
+import { getAuth, FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { getFirestore, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { getStorage } from '@react-native-firebase/storage';
+import { getFunctions } from '@react-native-firebase/functions';
+
 // ============================================================================
-// Firebase Instances - v22 Modular API
+// Firebase Instances - v22+ Modular API with 'main' database
 // ============================================================================
 
-// Auth instance - call auth() directly, don't use getAuth()
-export const firebaseAuth = auth();
+// Get the default Firebase app
+const app = getApp();
 
-// Firestore instance - call firestore() directly, don't use getFirestore()
-export const firebaseDb = firestore();
+// Auth instance
+export const firebaseAuth = getAuth(app);
+
+// Firestore instance - using 'main' database (restored from backup)
+export const firebaseDb = getFirestore(app, 'main');
 export const db = firebaseDb; // Alias for consistency
 
-// Functions instance - explicitly set region to match deployed functions
-// Gen 2 functions deploy to us-central1 by default
-export const firebaseFunctions = functions();
+// Functions instance - using us-east1 region
+export const firebaseFunctions = getFunctions(app, 'us-east1');
 
 // Storage instance
-export const firebaseStorage = storage();
+export const firebaseStorage = getStorage(app);
 
 // ============================================================================
 // Helper Functions
@@ -73,5 +68,5 @@ export default {
   auth: firebaseAuth,
   db: firebaseDb,
   storage: firebaseStorage,
-  functions: firebaseFunctions, 
+  functions: firebaseFunctions,
 };

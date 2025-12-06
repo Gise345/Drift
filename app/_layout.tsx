@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import { AutoUpdate } from '@/src/components/AutoUpdate';
 
 // Stripe publishable key from environment
@@ -37,12 +37,76 @@ console.log('📱 Root Layout - App ownership:', Constants.appOwnership, '| Stri
  * This defines the overall navigation structure of your app.
  * All routes must be defined here or in sub-layouts.
  */
+/**
+ * Parse tracking URL and extract trip ID
+ * Supports:
+ * - drift://track?tripId=XXX
+ * - drift://track?session=XXX (legacy)
+ * - https://drift-global.web.app/track?tripId=XXX
+ * - https://drift-global.web.app/track?session=XXX
+ */
+function parseTrackingUrl(url: string): string | null {
+  try {
+    // Handle drift:// scheme
+    if (url.startsWith('drift://track')) {
+      const queryStart = url.indexOf('?');
+      if (queryStart === -1) return null;
+
+      const queryString = url.substring(queryStart + 1);
+      const params = new URLSearchParams(queryString);
+      return params.get('tripId') || params.get('session');
+    }
+
+    // Handle https:// URLs
+    if (url.includes('/track')) {
+      const urlObj = new URL(url);
+      return urlObj.searchParams.get('tripId') || urlObj.searchParams.get('session');
+    }
+
+    return null;
+  } catch (e) {
+    console.error('Error parsing tracking URL:', e);
+    return null;
+  }
+}
+
 export default function RootLayout() {
   const { initialize } = useAuthStore();
+  const router = useRouter();
 
   useEffect(() => {
     // Initialize auth on app start
     initialize();
+  }, []);
+
+  // Handle deep links for tracking
+  useEffect(() => {
+    // Handle URL when app is already open
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      console.log('Deep link received (foreground):', url);
+      const tripId = parseTrackingUrl(url);
+      if (tripId) {
+        console.log('Navigating to track-trip with tripId:', tripId);
+        router.push({ pathname: '/track-trip', params: { tripId } });
+      }
+    });
+
+    // Handle URL that opened the app
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('Deep link received (initial):', url);
+        const tripId = parseTrackingUrl(url);
+        if (tripId) {
+          console.log('Navigating to track-trip with tripId:', tripId);
+          // Small delay to ensure navigation stack is ready
+          setTimeout(() => {
+            router.push({ pathname: '/track-trip', params: { tripId } });
+          }, 100);
+        }
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   const stackContent = (
@@ -69,6 +133,15 @@ export default function RootLayout() {
 
       {/* Driver screens */}
       <Stack.Screen name="(driver)" />
+
+      {/* Public tracking screen (no auth required) */}
+      <Stack.Screen
+        name="track-trip"
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+        }}
+      />
     </Stack>
   );
 
