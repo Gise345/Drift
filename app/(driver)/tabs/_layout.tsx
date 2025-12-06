@@ -6,6 +6,9 @@
  * EXPO SDK 52 Compatible
  *
  * GUARD: Redirects to registration if driver profile doesn't exist or registration is incomplete
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -15,7 +18,12 @@ import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+
+// Get Firebase instances - use 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function DriverTabsLayout() {
   const insets = useSafeAreaInsets();
@@ -39,18 +47,14 @@ export default function DriverTabsLayout() {
 
     try {
       // Check if driver profile exists in Firebase
-      const driverDoc = await firestore()
-        .collection('drivers')
-        .doc(user.id)
-        .get();
+      const driverRef = doc(db, 'drivers', user.id);
+      const driverDoc = await getDoc(driverRef);
 
       if (!driverDoc.exists) {
         // No driver profile - check if there's a saved registration in progress
         try {
-          const registrationDoc = await firestore()
-            .collection('driverRegistrationProgress')
-            .doc(user.id)
-            .get();
+          const registrationRef = doc(db, 'driverRegistrationProgress', user.id);
+          const registrationDoc = await getDoc(registrationRef);
 
           if (registrationDoc.exists) {
             const progress = registrationDoc.data();

@@ -442,7 +442,8 @@
 
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+        // Use 'main' database (restored from backup) - UPGRADED TO v23.5.0
+        const db = firebase.app().firestore('main');
 
         // Global variables
         let map;

@@ -22,7 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Shadows, BorderRadius } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, updateDoc, serverTimestamp } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface VehicleFormData {
   make: string;
@@ -181,14 +186,12 @@ export default function UpdateVehicleScreen() {
         seats: parseInt(formData.seats),
       };
 
-      // Update vehicle in Firebase
-      await firestore()
-        .collection('drivers')
-        .doc(user.id)
-        .update({
-          vehicle: vehicleData,
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      // Update vehicle in Firebase using modular API
+      const driverRef = doc(db, 'drivers', user.id);
+      await updateDoc(driverRef, {
+        vehicle: vehicleData,
+        updatedAt: serverTimestamp(),
+      });
 
       // Reload profile to get updated data
       await loadDriverProfile(user.id);
@@ -225,17 +228,15 @@ export default function UpdateVehicleScreen() {
         seats: parseInt(formData.seats),
       };
 
-      // Update vehicle and set documents status to pending re-verification
-      await firestore()
-        .collection('drivers')
-        .doc(user.id)
-        .update({
-          vehicle: vehicleData,
-          'documents.registration.status': 'pending',
-          'documents.insurance.status': 'pending',
-          vehicleUpdatedAt: firestore.FieldValue.serverTimestamp(),
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      // Update vehicle and set documents status to pending re-verification using modular API
+      const driverRef = doc(db, 'drivers', user.id);
+      await updateDoc(driverRef, {
+        vehicle: vehicleData,
+        'documents.registration.status': 'pending',
+        'documents.insurance.status': 'pending',
+        vehicleUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
       // Reload profile
       await loadDriverProfile(user.id);

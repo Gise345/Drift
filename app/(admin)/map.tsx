@@ -1,6 +1,9 @@
 /**
  * LIVE MAP SCREEN
  * Shows active drivers on a real-time map
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -17,7 +20,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, onSnapshot, writeBatch, deleteField, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface ActiveDriver {
   id: string;
@@ -53,99 +61,98 @@ export default function LiveMapScreen() {
     // Set up real-time listener for active drivers
     console.log('🗺️ Admin Map: Setting up driver listener...');
 
-    const unsubscribe = firestore()
-      .collection('drivers')
-      .where('isOnline', '==', true)
-      .onSnapshot(
-        async (snapshot) => {
-          try {
-            console.log(`🗺️ Admin Map: Received ${snapshot.docs.length} online drivers`);
+    const driversRef = collection(db, 'drivers');
+    const onlineDriversQuery = query(driversRef, where('isOnline', '==', true));
 
-            const driversList: ActiveDriver[] = [];
+    const unsubscribe = onSnapshot(
+      onlineDriversQuery,
+      async (snapshot) => {
+        try {
+          console.log(`🗺️ Admin Map: Received ${snapshot.docs.length} online drivers`);
 
-            for (const doc of snapshot.docs) {
-              const data = doc.data();
+          const driversList: ActiveDriver[] = [];
 
-              console.log(`🗺️ Driver ${doc.id}:`, {
-                name: `${data.firstName} ${data.lastName}`,
-                isOnline: data.isOnline,
-                hasLocation: !!(data.currentLocation?.lat && data.currentLocation?.lng),
-                location: data.currentLocation,
-              });
+          for (const driverDoc of snapshot.docs) {
+            const data = driverDoc.data();
 
-              // Only include drivers with valid location data AND recent updates
-              // Filter out stale locations (older than 10 minutes)
-              const locationUpdatedAt = data.currentLocation?.updatedAt?.toDate?.();
-              const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-              const isLocationFresh = !locationUpdatedAt || locationUpdatedAt > tenMinutesAgo;
+            console.log(`🗺️ Driver ${driverDoc.id}:`, {
+              name: `${data.firstName} ${data.lastName}`,
+              isOnline: data.isOnline,
+              hasLocation: !!(data.currentLocation?.lat && data.currentLocation?.lng),
+              location: data.currentLocation,
+            });
 
-              if (data.currentLocation?.lat && data.currentLocation?.lng && isLocationFresh) {
-                let currentTrip = undefined;
+            // Only include drivers with valid location data AND recent updates
+            // Filter out stale locations (older than 10 minutes)
+            const locationUpdatedAt = data.currentLocation?.updatedAt?.toDate?.();
+            const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+            const isLocationFresh = !locationUpdatedAt || locationUpdatedAt > tenMinutesAgo;
 
-                // Check if driver is on a trip
-                if (data.currentTripId) {
-                  const tripDoc = await firestore()
-                    .collection('trips')
-                    .doc(data.currentTripId)
-                    .get();
+            if (data.currentLocation?.lat && data.currentLocation?.lng && isLocationFresh) {
+              let currentTrip = undefined;
 
-                  if (tripDoc.exists) {
-                    const tripData = tripDoc.data();
-                    currentTrip = {
-                      id: tripDoc.id,
-                      pickup: tripData?.pickup?.address || 'Unknown',
-                      destination: tripData?.destination?.address || 'Unknown',
-                    };
-                  }
+              // Check if driver is on a trip
+              if (data.currentTripId) {
+                const tripDocRef = doc(db, 'trips', data.currentTripId);
+                const tripDocSnap = await getDoc(tripDocRef);
+
+                if (tripDocSnap.exists()) {
+                  const tripData = tripDocSnap.data();
+                  currentTrip = {
+                    id: tripDocSnap.id,
+                    pickup: tripData?.pickup?.address || 'Unknown',
+                    destination: tripData?.destination?.address || 'Unknown',
+                  };
                 }
-
-                driversList.push({
-                  id: doc.id,
-                  name: `${data.firstName} ${data.lastName}`,
-                  phone: data.phone,
-                  location: {
-                    lat: data.currentLocation.lat,
-                    lng: data.currentLocation.lng,
-                    heading: data.currentLocation.heading,
-                    updatedAt: data.currentLocation.updatedAt?.toDate(),
-                  },
-                  vehicle: {
-                    make: data.vehicle?.make || 'Unknown',
-                    model: data.vehicle?.model || 'Unknown',
-                    licensePlate: data.vehicle?.licensePlate || 'Unknown',
-                  },
-                  status: currentTrip ? 'on_trip' : 'available',
-                  currentTrip,
-                });
               }
-            }
 
-            console.log(`🗺️ Admin Map: Final driver list has ${driversList.length} drivers`);
-            setDrivers(driversList);
-            setLoading(false);
-
-            // Fit map to show all drivers
-            if (driversList.length > 0 && mapRef.current) {
-              const coordinates = driversList.map((d) => ({
-                latitude: d.location.lat,
-                longitude: d.location.lng,
-              }));
-
-              mapRef.current.fitToCoordinates(coordinates, {
-                edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-                animated: true,
+              driversList.push({
+                id: driverDoc.id,
+                name: `${data.firstName} ${data.lastName}`,
+                phone: data.phone,
+                location: {
+                  lat: data.currentLocation.lat,
+                  lng: data.currentLocation.lng,
+                  heading: data.currentLocation.heading,
+                  updatedAt: data.currentLocation.updatedAt?.toDate(),
+                },
+                vehicle: {
+                  make: data.vehicle?.make || 'Unknown',
+                  model: data.vehicle?.model || 'Unknown',
+                  licensePlate: data.vehicle?.licensePlate || 'Unknown',
+                },
+                status: currentTrip ? 'on_trip' : 'available',
+                currentTrip,
               });
             }
-          } catch (error) {
-            console.error('❌ Error loading drivers:', error);
           }
-        },
-        (error) => {
-          console.error('❌ Error in drivers listener:', error);
-          Alert.alert('Error', 'Failed to load driver locations');
+
+          console.log(`🗺️ Admin Map: Final driver list has ${driversList.length} drivers`);
+          setDrivers(driversList);
           setLoading(false);
+
+          // Fit map to show all drivers
+          if (driversList.length > 0 && mapRef.current) {
+            const coordinates = driversList.map((d) => ({
+              latitude: d.location.lat,
+              longitude: d.location.lng,
+            }));
+
+            mapRef.current.fitToCoordinates(coordinates, {
+              edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+              animated: true,
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error loading drivers:', error);
         }
-      );
+      },
+      (error) => {
+        console.error('❌ Error in drivers listener:', error);
+        Alert.alert('Error', 'Failed to load driver locations');
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, []);
@@ -173,24 +180,24 @@ export default function LiveMapScreen() {
     console.log('\n🔍 ===== DEBUG: CHECKING ALL DRIVERS =====');
 
     try {
+      const driversRef = collection(db, 'drivers');
+
       // Check all drivers
-      const allDrivers = await firestore().collection('drivers').get();
+      const allDrivers = await getDocs(driversRef);
       console.log(`📊 Total drivers in database: ${allDrivers.docs.length}`);
 
-      allDrivers.docs.forEach(doc => {
-        const data = doc.data();
+      allDrivers.docs.forEach((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = driverDoc.data();
         console.log(`\nDriver: ${data.firstName} ${data.lastName}`);
-        console.log(`  ID: ${doc.id}`);
+        console.log(`  ID: ${driverDoc.id}`);
         console.log(`  isOnline: ${data.isOnline}`);
         console.log(`  registrationStatus: ${data.registrationStatus}`);
         console.log(`  currentLocation:`, data.currentLocation);
       });
 
       // Check specifically for online drivers
-      const onlineDrivers = await firestore()
-        .collection('drivers')
-        .where('isOnline', '==', true)
-        .get();
+      const onlineQuery = query(driversRef, where('isOnline', '==', true));
+      const onlineDrivers = await getDocs(onlineQuery);
 
       console.log(`\n🟢 Online drivers: ${onlineDrivers.docs.length}`);
 
@@ -200,8 +207,8 @@ export default function LiveMapScreen() {
           `Total drivers: ${allDrivers.docs.length}\nOnline drivers: 0\n\nCheck console for details.`
         );
       } else {
-        const onlineDriverNames = onlineDrivers.docs.map(doc => {
-          const data = doc.data();
+        const onlineDriverNames = onlineDrivers.docs.map((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = driverDoc.data();
           const hasLocation = !!(data.currentLocation?.lat && data.currentLocation?.lng);
           return `${data.firstName} ${data.lastName} (Location: ${hasLocation ? 'Yes' : 'No'})`;
         }).join('\n');
@@ -234,24 +241,23 @@ export default function LiveMapScreen() {
             try {
               console.log('🧹 Clearing stale driver online status...');
 
-              const onlineDrivers = await firestore()
-                .collection('drivers')
-                .where('isOnline', '==', true)
-                .get();
+              const driversRef = collection(db, 'drivers');
+              const onlineQuery = query(driversRef, where('isOnline', '==', true));
+              const onlineDrivers = await getDocs(onlineQuery);
 
               const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-              const batch = firestore().batch();
+              const batch = writeBatch(db);
               let staleCount = 0;
 
-              for (const doc of onlineDrivers.docs) {
-                const data = doc.data();
+              for (const driverDoc of onlineDrivers.docs) {
+                const data = driverDoc.data();
                 const locationUpdatedAt = data.currentLocation?.updatedAt?.toDate?.();
 
                 // If no location timestamp or timestamp is older than 10 minutes
                 if (!locationUpdatedAt || locationUpdatedAt < tenMinutesAgo) {
-                  batch.update(doc.ref, {
+                  batch.update(driverDoc.ref, {
                     isOnline: false,
-                    currentLocation: firestore.FieldValue.delete(),
+                    currentLocation: deleteField(),
                   });
                   staleCount++;
                   console.log(`🔴 Marking ${data.firstName} ${data.lastName} as offline (stale location)`);

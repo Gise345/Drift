@@ -1,6 +1,9 @@
 /**
  * ADMIN STRIKES MANAGEMENT SCREEN
  * View and manage driver strikes from the strike queue
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -19,8 +22,28 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  setDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  Timestamp,
+} from '@react-native-firebase/firestore';
+import { Colors, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface StrikeQueueItem {
   id: string;
@@ -69,26 +92,25 @@ export default function StrikesManagementScreen() {
   const loadData = useCallback(async () => {
     try {
       // Load strike queue
-      const queueSnapshot = await firestore()
-        .collection('strike_queue')
-        .where('status', '==', 'pending')
-        .orderBy('createdAt', 'desc')
-        .limit(50)
-        .get();
+      const queueQuery = query(
+        collection(db, 'strike_queue'),
+        where('status', '==', 'pending'),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      const queueSnapshot = await getDocs(queueQuery);
 
       const queueList: StrikeQueueItem[] = await Promise.all(
-        queueSnapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        queueSnapshot.docs.map(async (queueDoc) => {
+          const data = queueDoc.data();
 
           // Get driver name
           let driverName = 'Unknown Driver';
           if (data.driverId) {
             try {
-              const driverDoc = await firestore()
-                .collection('drivers')
-                .doc(data.driverId)
-                .get();
-              if (driverDoc.exists) {
+              const driverRef = doc(db, 'drivers', data.driverId);
+              const driverDoc = await getDoc(driverRef);
+              if (driverDoc.exists()) {
                 driverName = driverDoc.data()?.name || 'Unknown Driver';
               }
             } catch (e) {
@@ -97,7 +119,7 @@ export default function StrikesManagementScreen() {
           }
 
           return {
-            id: doc.id,
+            id: queueDoc.id,
             driverId: data.driverId,
             driverName,
             tripId: data.tripId,
@@ -114,24 +136,23 @@ export default function StrikesManagementScreen() {
       setQueueItems(queueList);
 
       // Load recent strikes
-      const strikesSnapshot = await firestore()
-        .collection('strikes')
-        .orderBy('issuedAt', 'desc')
-        .limit(30)
-        .get();
+      const strikesQuery = query(
+        collection(db, 'strikes'),
+        orderBy('issuedAt', 'desc'),
+        limit(30)
+      );
+      const strikesSnapshot = await getDocs(strikesQuery);
 
       const strikesList: Strike[] = await Promise.all(
-        strikesSnapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        strikesSnapshot.docs.map(async (strikeDoc) => {
+          const data = strikeDoc.data();
 
           let driverName = 'Unknown Driver';
           if (data.driverId) {
             try {
-              const driverDoc = await firestore()
-                .collection('drivers')
-                .doc(data.driverId)
-                .get();
-              if (driverDoc.exists) {
+              const driverRef = doc(db, 'drivers', data.driverId);
+              const driverDoc = await getDoc(driverRef);
+              if (driverDoc.exists()) {
                 driverName = driverDoc.data()?.name || 'Unknown Driver';
               }
             } catch (e) {
@@ -140,7 +161,7 @@ export default function StrikesManagementScreen() {
           }
 
           return {
-            id: doc.id,
+            id: strikeDoc.id,
             driverId: data.driverId,
             driverName,
             tripId: data.tripId,
@@ -184,11 +205,12 @@ export default function StrikesManagementScreen() {
 
     try {
       // Get current strike count for driver
-      const existingStrikes = await firestore()
-        .collection('strikes')
-        .where('driverId', '==', selectedItem.driverId)
-        .where('status', '==', 'active')
-        .get();
+      const existingStrikesQuery = query(
+        collection(db, 'strikes'),
+        where('driverId', '==', selectedItem.driverId),
+        where('status', '==', 'active')
+      );
+      const existingStrikes = await getDocs(existingStrikesQuery);
 
       const strikeNumber = existingStrikes.size + 1;
 
@@ -199,49 +221,45 @@ export default function StrikesManagementScreen() {
         type: selectedItem.type,
         strikeNumber,
         status: 'active',
-        issuedAt: firestore.FieldValue.serverTimestamp(),
-        expiresAt: firestore.Timestamp.fromDate(
+        issuedAt: serverTimestamp(),
+        expiresAt: Timestamp.fromDate(
           new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) // 90 days
         ),
         queueItemId: selectedItem.id,
         adminNotes: issueNotes.trim() || undefined,
       };
 
-      await firestore().collection('strikes').add(strikeData);
+      await addDoc(collection(db, 'strikes'), strikeData);
 
       // Update queue item
-      await firestore()
-        .collection('strike_queue')
-        .doc(selectedItem.id)
-        .update({
-          status: 'issued',
-          processedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const queueItemRef = doc(db, 'strike_queue', selectedItem.id);
+      await updateDoc(queueItemRef, {
+        status: 'issued',
+        processedAt: serverTimestamp(),
+      });
 
       // Update driver safety profile
-      await firestore()
-        .collection('driver_safety_profiles')
-        .doc(selectedItem.driverId)
-        .set({
-          activeStrikes: strikeNumber,
-          lastStrikeAt: firestore.FieldValue.serverTimestamp(),
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+      const safetyProfileRef = doc(db, 'driver_safety_profiles', selectedItem.driverId);
+      await setDoc(safetyProfileRef, {
+        activeStrikes: strikeNumber,
+        lastStrikeAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
 
       // Check if suspension needed (strike 2 = 7 day suspension, strike 3 = permanent)
       if (strikeNumber >= 2) {
         const suspensionType = strikeNumber >= 3 ? 'permanent' : 'temporary';
         const suspensionEnd = strikeNumber >= 3
           ? null
-          : firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+          : Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
-        await firestore().collection('suspensions').add({
+        await addDoc(collection(db, 'suspensions'), {
           driverId: selectedItem.driverId,
           type: suspensionType,
           reason: `Strike ${strikeNumber} issued`,
           strikeId: selectedItem.id,
           status: 'active',
-          startedAt: firestore.FieldValue.serverTimestamp(),
+          startedAt: serverTimestamp(),
           endsAt: suspensionEnd,
         });
 
@@ -278,14 +296,12 @@ export default function StrikesManagementScreen() {
           onPress: async () => {
             setProcessing(true);
             try {
-              await firestore()
-                .collection('strike_queue')
-                .doc(selectedItem.id)
-                .update({
-                  status: 'dismissed',
-                  processedAt: firestore.FieldValue.serverTimestamp(),
-                  dismissReason: issueNotes.trim() || 'No reason provided',
-                });
+              const queueItemRef = doc(db, 'strike_queue', selectedItem.id);
+              await updateDoc(queueItemRef, {
+                status: 'dismissed',
+                processedAt: serverTimestamp(),
+                dismissReason: issueNotes.trim() || 'No reason provided',
+              });
 
               Alert.alert('Dismissed', 'Queue item has been dismissed.');
               setShowIssueModal(false);

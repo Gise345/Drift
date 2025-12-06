@@ -25,8 +25,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 import { canRateOrTipTrip, addLateTip } from '@/src/services/ride-request.service';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const Colors = {
   primary: '#5d1289',
@@ -77,8 +82,9 @@ export default function AddLateTipScreen() {
       }
 
       try {
-        const tripDoc = await firestore().collection('trips').doc(actualTripId).get();
-        if (tripDoc.exists) {
+        const tripRef = doc(db, 'trips', actualTripId);
+        const tripDoc = await getDoc(tripRef);
+        if (tripDoc.exists()) {
           const data = tripDoc.data();
           setTripData(data);
 

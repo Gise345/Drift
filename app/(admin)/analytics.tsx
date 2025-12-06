@@ -1,6 +1,9 @@
 /**
  * ANALYTICS SCREEN
  * Shows platform statistics and insights
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -17,7 +20,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, getDocs, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface PlatformStats {
   totalRiders: number;
@@ -67,32 +75,25 @@ export default function AnalyticsScreen() {
   const loadPlatformStats = async () => {
     try {
       // Get total riders
-      const ridersSnapshot = await firestore()
-        .collection('users')
-        .where('roles', 'array-contains', 'RIDER')
-        .get();
+      const usersRef = collection(db, 'users');
+      const ridersQuery = query(usersRef, where('roles', 'array-contains', 'RIDER'));
+      const ridersSnapshot = await getDocs(ridersQuery);
 
       // Get total drivers
-      const driversSnapshot = await firestore()
-        .collection('drivers')
-        .get();
+      const driversRef = collection(db, 'drivers');
+      const driversSnapshot = await getDocs(driversRef);
 
       // Get active drivers (approved)
-      const activeDriversSnapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'approved')
-        .get();
+      const activeDriversQuery = query(driversRef, where('registrationStatus', '==', 'approved'));
+      const activeDriversSnapshot = await getDocs(activeDriversQuery);
 
       // Get pending drivers
-      const pendingDriversSnapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'pending')
-        .get();
+      const pendingDriversQuery = query(driversRef, where('registrationStatus', '==', 'pending'));
+      const pendingDriversSnapshot = await getDocs(pendingDriversQuery);
 
       // Get all trips
-      const tripsSnapshot = await firestore()
-        .collection('trips')
-        .get();
+      const tripsRef = collection(db, 'trips');
+      const tripsSnapshot = await getDocs(tripsRef);
 
       // Calculate trip stats
       let completedTrips = 0;
@@ -101,7 +102,7 @@ export default function AnalyticsScreen() {
       let totalRating = 0;
       let ratingCount = 0;
 
-      tripsSnapshot.docs.forEach((doc) => {
+      tripsSnapshot.docs.forEach((doc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
         const data = doc.data();
         if (data.status === 'COMPLETED') {
           completedTrips++;
@@ -151,16 +152,15 @@ export default function AnalyticsScreen() {
       const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
       // Get completed trips
-      const tripsSnapshot = await firestore()
-        .collection('trips')
-        .where('status', '==', 'COMPLETED')
-        .get();
+      const tripsRef = collection(db, 'trips');
+      const completedTripsQuery = query(tripsRef, where('status', '==', 'COMPLETED'));
+      const tripsSnapshot = await getDocs(completedTripsQuery);
 
       const calculateStats = (startDate: Date, endDate: Date = now) => {
         let trips = 0;
         let revenue = 0;
 
-        tripsSnapshot.docs.forEach((doc) => {
+        tripsSnapshot.docs.forEach((doc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
           const data = doc.data();
           const completedAt = data.completedAt?.toDate();
           if (completedAt && completedAt >= startDate && completedAt < endDate) {
@@ -235,7 +235,7 @@ export default function AnalyticsScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+            <Ionicons name="arrow-back" size={24} color={Colors.black} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Analytics</Text>
           <View style={{ width: 40 }} />
@@ -253,7 +253,7 @@ export default function AnalyticsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Analytics</Text>
         <View style={{ width: 40 }} />
@@ -435,7 +435,7 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.gray[50],
   },
   header: {
     flexDirection: 'row',
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Typography.fontSize.xl,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
   },
   scrollContent: {
     padding: Spacing.lg,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.xs,
     marginBottom: Spacing.lg,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   periodButton: {
     flex: 1,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   metricHeader: {
     flexDirection: 'row',
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: Typography.fontSize['2xl'],
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
     marginBottom: 4,
   },
   metricLabel: {
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: Typography.fontSize.lg,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
     marginBottom: Spacing.md,
   },
   overviewGrid: {
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     alignItems: 'center',
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   overviewIcon: {
     width: 56,
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
   overviewValue: {
     fontSize: Typography.fontSize['2xl'],
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
     marginBottom: 4,
   },
   overviewLabel: {
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   statItem: {
     flexDirection: 'row',
@@ -585,7 +585,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: Typography.fontSize.lg,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.black,
   },
   ratingRow: {
     flexDirection: 'row',

@@ -8,7 +8,7 @@
  */
 
 import { firebaseDb } from '../config/firebase';
-import firestore, {
+import {
   collection,
   doc,
   query,
@@ -16,6 +16,7 @@ import firestore, {
   onSnapshot,
   addDoc,
   updateDoc,
+  getDoc,
   getDocs,
   orderBy,
   limit,
@@ -315,7 +316,7 @@ export async function getMessageHistory(
 export async function isMessagingEnabled(tripId: string): Promise<boolean> {
   try {
     const tripRef = doc(firebaseDb, 'trips', tripId);
-    const tripDoc = await tripRef.get();
+    const tripDoc = await getDoc(tripRef);
 
     if (!tripDoc.exists) {
       return false;
@@ -383,10 +384,11 @@ export async function sendMessageNotification(
   messageText: string
 ): Promise<boolean> {
   try {
-    const functions = require('@react-native-firebase/functions').default;
+    // Import functions from firebase config (already using modular API)
+    const { firebaseFunctions } = await import('../config/firebase');
 
-    // Call Cloud Function to send push notification
-    const sendNotification = functions().httpsCallable('sendMessageNotification');
+    // Call Cloud Function to send push notification using modular API
+    const sendNotification = firebaseFunctions.httpsCallable('sendMessageNotification');
 
     await sendNotification({
       tripId,

@@ -18,7 +18,12 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { submitDriverRating } from '@/src/services/rating.service';
 import { canRateOrTipTrip } from '@/src/services/ride-request.service';
 import { BlockUserModal } from '@/components/modal/BlockUserModal';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function RateDriverScreen() {
   const router = useRouter();
@@ -56,8 +61,9 @@ export default function RateDriverScreen() {
 
       if (actualTripId && !currentTrip) {
         try {
-          const tripDoc = await firestore().collection('trips').doc(actualTripId).get();
-          if (tripDoc.exists) {
+          const tripRef = doc(db, 'trips', actualTripId);
+          const tripDoc = await getDoc(tripRef);
+          if (tripDoc.exists()) {
             const data = tripDoc.data();
             setTripData(data);
 

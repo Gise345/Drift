@@ -1,3 +1,7 @@
+/**
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
+ */
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,7 +18,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { useDriverStore } from '@/src/stores/driver-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc, collection, query, where, getDocs } from '@react-native-firebase/firestore';
+
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 /**
  * Profile Tab Screen
@@ -38,17 +46,17 @@ export default function ProfileScreen() {
 
       try {
         // Get user document for rating and createdAt
-        const userDoc = await firestore()
-          .collection('users')
-          .doc(user.id)
-          .get();
+        const userRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userRef);
 
         // Count completed trips from trips collection
-        const tripsSnapshot = await firestore()
-          .collection('trips')
-          .where('riderId', '==', user.id)
-          .where('status', 'in', ['COMPLETED', 'AWAITING_TIP'])
-          .get();
+        const tripsRef = collection(db, 'trips');
+        const tripsQuery = query(
+          tripsRef,
+          where('riderId', '==', user.id),
+          where('status', 'in', ['COMPLETED', 'AWAITING_TIP'])
+        );
+        const tripsSnapshot = await getDocs(tripsQuery);
 
         const tripCount = tripsSnapshot.size;
 
@@ -91,10 +99,8 @@ export default function ProfileScreen() {
     try {
       const hasDriverRole = user?.roles?.includes('DRIVER');
 
-      const driverDoc = await firestore()
-        .collection('drivers')
-        .doc(user.id)
-        .get();
+      const driverRef = doc(db, 'drivers', user.id);
+      const driverDoc = await getDoc(driverRef);
 
       const driverExists = driverDoc.exists;
 

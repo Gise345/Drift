@@ -1,6 +1,9 @@
 /**
  * ADMIN TRIP DETAIL SCREEN
  * Shows full trip details with map route, PDF download, and admin actions
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,10 +21,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { Colors, Shadows } from '@/src/constants/theme';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface TripData {
   id: string;
@@ -142,9 +150,10 @@ export default function AdminTripDetailScreen() {
       setLoading(true);
       setError(null);
 
-      const tripDoc = await firestore().collection('trips').doc(id).get();
+      const tripDocRef = doc(db, 'trips', id);
+      const tripDoc = await getDoc(tripDocRef);
 
-      if (!tripDoc.exists) {
+      if (!tripDoc.exists()) {
         setError('Trip not found');
         setLoading(false);
         return;
@@ -165,8 +174,9 @@ export default function AdminTripDetailScreen() {
       let rider = null;
       if (data.riderId) {
         try {
-          const userDoc = await firestore().collection('users').doc(data.riderId).get();
-          if (userDoc.exists) {
+          const userDocRef = doc(db, 'users', data.riderId);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
             const userData = userDoc.data();
             rider = {
               id: data.riderId,
@@ -185,8 +195,9 @@ export default function AdminTripDetailScreen() {
       let driver = null;
       if (data.driverId) {
         try {
-          const driverDoc = await firestore().collection('drivers').doc(data.driverId).get();
-          if (driverDoc.exists) {
+          const driverDocRef = doc(db, 'drivers', data.driverId);
+          const driverDoc = await getDoc(driverDocRef);
+          if (driverDoc.exists()) {
             const driverData = driverDoc.data();
             driver = {
               id: data.driverId,
@@ -945,7 +956,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderRadius: 16,
     padding: 20,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   infoHeader: {
     flexDirection: 'row',
@@ -975,7 +986,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 16,
     padding: 20,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 16 },
   routeContainer: { flexDirection: 'row' },

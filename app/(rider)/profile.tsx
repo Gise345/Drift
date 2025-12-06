@@ -15,7 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { DriverService } from '@/src/services/driver.service';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -34,13 +39,11 @@ export default function ProfileScreen() {
       if (!user?.id) return;
 
       try {
-        // Load user document for additional stats
-        const userDoc = await firestore()
-          .collection('users')
-          .doc(user.id)
-          .get();
+        // Load user document for additional stats using modular API
+        const userRef = doc(db, 'users', user.id);
+        const userDoc = await getDoc(userRef);
 
-        if (userDoc.exists) {
+        if (userDoc.exists()) {
           const userData = userDoc.data();
 
           // Calculate years since joining
@@ -91,13 +94,11 @@ export default function ProfileScreen() {
       // Check if user already has driver role
       const hasDriverRole = user?.roles?.includes('DRIVER');
 
-      // Check if driver profile exists in Firebase
-      const driverDoc = await firestore()
-        .collection('drivers')
-        .doc(user.id)
-        .get();
+      // Check if driver profile exists in Firebase using modular API
+      const driverRef = doc(db, 'drivers', user.id);
+      const driverDoc = await getDoc(driverRef);
 
-      const driverExists = driverDoc.exists;
+      const driverExists = driverDoc.exists();
       const driverData = driverDoc.data();
 
       console.log('🔍 Driver check:', { hasDriverRole, driverExists, userId: user.id });

@@ -14,7 +14,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const { width } = Dimensions.get('window');
 
@@ -92,9 +97,10 @@ export default function TripDetailScreen() {
 
       console.log('📋 Loading driver trip details for:', id);
 
-      const tripDoc = await firestore().collection('trips').doc(id).get();
+      const tripRef = doc(db, 'trips', id);
+      const tripDoc = await getDoc(tripRef);
 
-      if (!tripDoc.exists) {
+      if (!tripDoc.exists()) {
         setError('Trip not found');
         setLoading(false);
         return;
@@ -127,10 +133,11 @@ export default function TripDetailScreen() {
         riderRating = data.riderRating || data.riderProfileRating || 5.0;
         riderPhoto = data.riderPhoto;
       } else if (data.riderId) {
-        // Fetch from users collection
+        // Fetch from users collection using modular API
         try {
-          const userDoc = await firestore().collection('users').doc(data.riderId).get();
-          if (userDoc.exists) {
+          const userRef = doc(db, 'users', data.riderId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
             const userData = userDoc.data();
             riderName = userData?.name || userData?.firstName || 'Rider';
             riderRating = userData?.rating || 5.0;

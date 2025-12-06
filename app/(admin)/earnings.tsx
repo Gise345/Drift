@@ -1,6 +1,9 @@
 /**
  * EARNINGS & PAYOUTS SCREEN
  * Shows driver earnings and manages payouts
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -18,7 +21,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, query, where, orderBy, limit, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface DriverEarnings {
   driverId: string;
@@ -73,49 +81,46 @@ export default function EarningsScreen() {
     try {
       // Get all drivers and filter for approved/active ones
       // This supports both registrationStatus='approved' and status='active'
-      const driversSnapshot = await firestore()
-        .collection('drivers')
-        .get();
+      const driversRef = collection(db, 'drivers');
+      const driversSnapshot = await getDocs(driversRef);
 
       // Filter to only approved/active drivers
-      const approvedDriverDocs = driversSnapshot.docs.filter(doc => {
-        const data = doc.data();
+      const approvedDriverDocs = driversSnapshot.docs.filter((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = driverDoc.data();
         return data.registrationStatus === 'approved' ||
                data.status === 'active' ||
                data.status === 'approved';
       });
 
       const earningsList: DriverEarnings[] = await Promise.all(
-        approvedDriverDocs.map(async (doc) => {
-          const data = doc.data();
+        approvedDriverDocs.map(async (driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = driverDoc.data();
 
           // Get driver's total earnings
-          const earningsDoc = await firestore()
-            .collection('drivers')
-            .doc(doc.id)
-            .collection('earnings')
-            .doc('summary')
-            .get();
+          const earningsDocRef = doc(db, 'drivers', driverDoc.id, 'earnings', 'summary');
+          const earningsDocSnap = await getDoc(earningsDocRef);
 
-          const earningsData = earningsDoc.data();
+          const earningsData = earningsDocSnap.data();
           const totalEarnings = earningsData?.allTime || 0;
 
           // Get pending payout amount (not yet paid out)
           const pendingPayout = earningsData?.pendingPayout || 0;
 
           // Get last payout
-          const lastPayoutSnapshot = await firestore()
-            .collection('payouts')
-            .where('driverId', '==', doc.id)
-            .where('status', '==', 'completed')
-            .orderBy('completedAt', 'desc')
-            .limit(1)
-            .get();
+          const payoutsRef = collection(db, 'payouts');
+          const lastPayoutQuery = query(
+            payoutsRef,
+            where('driverId', '==', driverDoc.id),
+            where('status', '==', 'completed'),
+            orderBy('completedAt', 'desc'),
+            limit(1)
+          );
+          const lastPayoutSnapshot = await getDocs(lastPayoutQuery);
 
           const lastPayout = lastPayoutSnapshot.docs[0]?.data();
 
           return {
-            driverId: doc.id,
+            driverId: driverDoc.id,
             driverName: `${data.firstName} ${data.lastName}`,
             totalEarnings,
             pendingPayout,
@@ -138,16 +143,18 @@ export default function EarningsScreen() {
 
   const loadPayouts = async () => {
     try {
-      const payoutsSnapshot = await firestore()
-        .collection('payouts')
-        .orderBy('requestedAt', 'desc')
-        .limit(50)
-        .get();
+      const payoutsRef = collection(db, 'payouts');
+      const payoutsQuery = query(
+        payoutsRef,
+        orderBy('requestedAt', 'desc'),
+        limit(50)
+      );
+      const payoutsSnapshot = await getDocs(payoutsQuery);
 
-      const payoutsList: Payout[] = payoutsSnapshot.docs.map((doc) => {
-        const data = doc.data();
+      const payoutsList: Payout[] = payoutsSnapshot.docs.map((payoutDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = payoutDoc.data();
         return {
-          id: doc.id,
+          id: payoutDoc.id,
           driverId: data.driverId,
           driverName: data.driverName,
           amount: data.amount,
@@ -185,27 +192,24 @@ export default function EarningsScreen() {
           onPress: async () => {
             try {
               // Create payout record
-              await firestore().collection('payouts').add({
+              const payoutsRef = collection(db, 'payouts');
+              await addDoc(payoutsRef, {
                 driverId: driver.driverId,
                 driverName: driver.driverName,
                 amount: driver.pendingPayout,
                 status: 'processing',
-                requestedAt: new Date(),
+                requestedAt: serverTimestamp(),
                 method: 'Bank Transfer',
-                createdAt: new Date(),
+                createdAt: serverTimestamp(),
               });
 
               // Clear pending payout
-              await firestore()
-                .collection('drivers')
-                .doc(driver.driverId)
-                .collection('earnings')
-                .doc('summary')
-                .update({
-                  pendingPayout: 0,
-                  lastPayoutAt: new Date(),
-                  lastPayoutAmount: driver.pendingPayout,
-                });
+              const earningsSummaryRef = doc(db, 'drivers', driver.driverId, 'earnings', 'summary');
+              await updateDoc(earningsSummaryRef, {
+                pendingPayout: 0,
+                lastPayoutAt: serverTimestamp(),
+                lastPayoutAmount: driver.pendingPayout,
+              });
 
               Alert.alert('Success', 'Payout has been processed successfully.');
               loadData();

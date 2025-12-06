@@ -1,6 +1,9 @@
 /**
  * RIDERS SCREEN
  * Shows all registered riders with details
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -18,7 +21,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, orderBy, limit, getDocs, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface Rider {
   id: string;
@@ -46,24 +54,29 @@ export default function RidersScreen() {
 
   const loadRiders = async () => {
     try {
-      let query = firestore()
-        .collection('users')
-        .where('roles', 'array-contains', 'RIDER')
-        .orderBy('createdAt', 'desc')
-        .limit(100);
+      const usersRef = collection(db, 'users');
+      const tripsRef = collection(db, 'trips');
 
-      const snapshot = await query.get();
+      const ridersQuery = query(
+        usersRef,
+        where('roles', 'array-contains', 'RIDER'),
+        orderBy('createdAt', 'desc'),
+        limit(100)
+      );
+
+      const snapshot = await getDocs(ridersQuery);
 
       const ridersList: Rider[] = await Promise.all(
-        snapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        snapshot.docs.map(async (userDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = userDoc.data();
 
           // Get rider's trip count
-          const tripsSnapshot = await firestore()
-            .collection('trips')
-            .where('riderId', '==', doc.id)
-            .where('status', '==', 'COMPLETED')
-            .get();
+          const tripsQuery = query(
+            tripsRef,
+            where('riderId', '==', userDoc.id),
+            where('status', '==', 'COMPLETED')
+          );
+          const tripsSnapshot = await getDocs(tripsQuery);
 
           const totalTrips = tripsSnapshot.size;
 
@@ -72,7 +85,7 @@ export default function RidersScreen() {
           const lastTripAt = lastTrip?.data()?.completedAt?.toDate();
 
           return {
-            id: doc.id,
+            id: userDoc.id,
             name: data.name || 'Unknown',
             email: data.email || '',
             phone: data.phone || '',

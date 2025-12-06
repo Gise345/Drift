@@ -13,7 +13,12 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface TripReceipt {
   id: string;
@@ -63,9 +68,10 @@ export default function TripReceiptScreen() {
 
       console.log('📋 Loading trip receipt for:', id);
 
-      const tripDoc = await firestore().collection('trips').doc(id).get();
+      const tripRef = doc(db, 'trips', id);
+      const tripDoc = await getDoc(tripRef);
 
-      if (!tripDoc.exists) {
+      if (!tripDoc.exists()) {
         setError('Trip not found');
         setLoading(false);
         return;
@@ -90,8 +96,9 @@ export default function TripReceiptScreen() {
         riderName = data.riderName;
       } else if (data.riderId) {
         try {
-          const userDoc = await firestore().collection('users').doc(data.riderId).get();
-          if (userDoc.exists) {
+          const userRef = doc(db, 'users', data.riderId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
             const userData = userDoc.data();
             riderName = userData?.name || userData?.firstName || 'Rider';
           }

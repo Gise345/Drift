@@ -1,6 +1,9 @@
 /**
  * SAFETY & REPORTS SCREEN
  * Shows incident reports and safety issues
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -18,7 +21,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, query, where, orderBy, limit, getDocs, updateDoc, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface SafetyReport {
   id: string;
@@ -53,21 +61,31 @@ export default function SafetyReportsScreen() {
 
   const loadReports = async () => {
     try {
-      let query = firestore()
-        .collection('safety_reports')
-        .orderBy('reportedAt', 'desc')
-        .limit(100);
+      const reportsRef = collection(db, 'safety_reports');
 
+      // Build query - note: we need to handle filter differently since we can't chain .where() after orderBy in modular API
+      let reportsQuery;
       if (filter !== 'all') {
-        query = query.where('status', '==', filter);
+        reportsQuery = query(
+          reportsRef,
+          where('status', '==', filter),
+          orderBy('reportedAt', 'desc'),
+          limit(100)
+        );
+      } else {
+        reportsQuery = query(
+          reportsRef,
+          orderBy('reportedAt', 'desc'),
+          limit(100)
+        );
       }
 
-      const snapshot = await query.get();
+      const snapshot = await getDocs(reportsQuery);
 
-      const reportsList: SafetyReport[] = snapshot.docs.map((doc) => {
-        const data = doc.data();
+      const reportsList: SafetyReport[] = snapshot.docs.map((reportDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = reportDoc.data();
         return {
-          id: doc.id,
+          id: reportDoc.id,
           type: data.type || 'other',
           priority: data.priority || 'medium',
           status: data.status || 'pending',
@@ -175,17 +193,15 @@ export default function SafetyReportsScreen() {
             try {
               const updates: any = {
                 status: newStatus,
-                updatedAt: new Date(),
+                updatedAt: serverTimestamp(),
               };
 
               if (newStatus === 'resolved') {
-                updates.resolvedAt = new Date();
+                updates.resolvedAt = serverTimestamp();
               }
 
-              await firestore()
-                .collection('safety_reports')
-                .doc(report.id)
-                .update(updates);
+              const reportRef = doc(db, 'safety_reports', report.id);
+              await updateDoc(reportRef, updates);
 
               Alert.alert('Success', 'Report status updated successfully.');
               loadReports();

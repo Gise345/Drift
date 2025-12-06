@@ -1,6 +1,9 @@
 /**
  * ADMIN DASHBOARD
  * Main admin screen with navigation to different admin functions
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useEffect, useState } from 'react';
@@ -16,7 +19,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, getDocs } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -34,45 +42,37 @@ export default function AdminDashboard() {
 
   const loadStats = async () => {
     try {
+      const driversRef = collection(db, 'drivers');
+      const usersRef = collection(db, 'users');
+      const tripIssuesRef = collection(db, 'tripIssues');
+
       // Get pending driver applications (try both field names)
-      let pendingSnapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'pending')
-        .get();
+      let pendingQuery = query(driversRef, where('registrationStatus', '==', 'pending'));
+      let pendingSnapshot = await getDocs(pendingQuery);
 
       if (pendingSnapshot.empty) {
-        pendingSnapshot = await firestore()
-          .collection('drivers')
-          .where('status', '==', 'pending')
-          .get();
+        pendingQuery = query(driversRef, where('status', '==', 'pending'));
+        pendingSnapshot = await getDocs(pendingQuery);
       }
 
       // Get active drivers (try both field names)
-      let activeSnapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'approved')
-        .get();
+      let activeQuery = query(driversRef, where('registrationStatus', '==', 'approved'));
+      let activeSnapshot = await getDocs(activeQuery);
 
       if (activeSnapshot.empty) {
-        activeSnapshot = await firestore()
-          .collection('drivers')
-          .where('status', '==', 'approved')
-          .get();
+        activeQuery = query(driversRef, where('status', '==', 'approved'));
+        activeSnapshot = await getDocs(activeQuery);
       }
 
       // Get total riders
-      const ridersSnapshot = await firestore()
-        .collection('users')
-        .where('roles', 'array-contains', 'RIDER')
-        .get();
+      const ridersQuery = query(usersRef, where('roles', 'array-contains', 'RIDER'));
+      const ridersSnapshot = await getDocs(ridersQuery);
 
       // Get pending trip issues
       let pendingIssuesCount = 0;
       try {
-        const issuesSnapshot = await firestore()
-          .collection('tripIssues')
-          .where('status', '==', 'pending')
-          .get();
+        const issuesQuery = query(tripIssuesRef, where('status', '==', 'pending'));
+        const issuesSnapshot = await getDocs(issuesQuery);
         pendingIssuesCount = issuesSnapshot.size;
       } catch (e) {
         // Collection might not exist yet

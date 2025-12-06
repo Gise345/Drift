@@ -31,11 +31,12 @@ import {
   serverTimestamp,
   FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
-import functions from '@react-native-firebase/functions';
+import { getFunctions } from '@react-native-firebase/functions';
 
 // Get Firebase instances
 const app = getApp();
 const db = getFirestore(app, 'main');
+const firebaseFunctions = getFunctions(app, 'us-east1');
 
 /**
  * Helper to check if document exists
@@ -430,8 +431,8 @@ async function processStripeRefund(
       return;
     }
 
-    // Call refund function
-    const refundFunction = functions().httpsCallable('refundStripePayment');
+    // Call refund function using modular API
+    const refundFunction = firebaseFunctions.httpsCallable('refundStripePayment');
     await refundFunction({
       paymentIntentId,
       amount,

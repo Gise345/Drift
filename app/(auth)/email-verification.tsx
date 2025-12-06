@@ -1,10 +1,12 @@
 /**
  * Drift Email Verification Screen
- * 
+ *
  * ✅ UPDATED: Now with ScrollView to prevent content cutoff
  * ✅ UPDATED: Proper SafeAreaView with edges
  * ✅ UPDATED: Extra bottom padding for phone navigation buttons
- * 
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup) UPGRADED TO v23.5.0
+ *
  * Prompts users to verify their email
  * Allows resending verification email
  * Checks verification status
@@ -29,6 +31,12 @@ import {
   checkEmailVerification,
   signOutUser,
 } from '@/src/services/firebase-auth-service';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, updateDoc } from '@react-native-firebase/firestore';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function EmailVerificationScreen() {
   const router = useRouter();
@@ -59,8 +67,7 @@ export default function EmailVerificationScreen() {
           const { getCurrentUser } = await import('@/src/services/firebase-auth-service');
           const currentUser = getCurrentUser();
           if (currentUser) {
-            const { default: firestore, doc, updateDoc } = await import('@react-native-firebase/firestore');
-            const userRef = doc(firestore(), 'users', currentUser.uid);
+            const userRef = doc(db, 'users', currentUser.uid);
             await updateDoc(userRef, {
               emailVerified: true,
             });

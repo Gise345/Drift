@@ -1,6 +1,9 @@
 /**
  * ADMIN APPEALS REVIEW SCREEN
  * Review and process driver appeals for strikes and suspensions
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -19,8 +22,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, orderBy, where, limit, query, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface Appeal {
   id: string;
@@ -54,29 +62,33 @@ export default function AppealsReviewScreen() {
 
   const loadAppeals = useCallback(async () => {
     try {
-      let query = firestore()
-        .collection('appeals')
-        .orderBy('submittedAt', 'desc');
+      const appealsRef = collection(db, 'appeals');
+      let appealsQuery;
 
       if (filter !== 'all') {
-        query = query.where('status', '==', filter);
+        appealsQuery = query(
+          appealsRef,
+          where('status', '==', filter),
+          orderBy('submittedAt', 'desc'),
+          limit(50)
+        );
+      } else {
+        appealsQuery = query(appealsRef, orderBy('submittedAt', 'desc'), limit(50));
       }
 
-      const snapshot = await query.limit(50).get();
+      const snapshot = await getDocs(appealsQuery);
 
       const appealsList: Appeal[] = await Promise.all(
-        snapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        snapshot.docs.map(async (appealDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = appealDoc.data();
 
           // Get driver name
           let driverName = 'Unknown Driver';
           if (data.driverId) {
             try {
-              const driverDoc = await firestore()
-                .collection('drivers')
-                .doc(data.driverId)
-                .get();
-              if (driverDoc.exists) {
+              const driverDocRef = doc(db, 'drivers', data.driverId);
+              const driverDoc = await getDoc(driverDocRef);
+              if (driverDoc.exists()) {
                 driverName = driverDoc.data()?.name || 'Unknown Driver';
               }
             } catch (e) {
@@ -89,11 +101,9 @@ export default function AppealsReviewScreen() {
           let strikeNumber = 0;
           if (data.strikeId) {
             try {
-              const strikeDoc = await firestore()
-                .collection('strikes')
-                .doc(data.strikeId)
-                .get();
-              if (strikeDoc.exists) {
+              const strikeDocRef = doc(db, 'strikes', data.strikeId);
+              const strikeDoc = await getDoc(strikeDocRef);
+              if (strikeDoc.exists()) {
                 strikeType = strikeDoc.data()?.type || '';
                 strikeNumber = strikeDoc.data()?.strikeNumber || 0;
               }
@@ -103,7 +113,7 @@ export default function AppealsReviewScreen() {
           }
 
           return {
-            id: doc.id,
+            id: appealDoc.id,
             driverId: data.driverId,
             driverName,
             strikeId: data.strikeId,
@@ -157,54 +167,48 @@ export default function AppealsReviewScreen() {
 
     try {
       // Update appeal status
-      await firestore()
-        .collection('appeals')
-        .doc(selectedAppeal.id)
-        .update({
-          status: decision,
-          reviewedAt: firestore.FieldValue.serverTimestamp(),
-          reviewedBy: 'admin', // In production, use actual admin ID
-          reviewNotes: reviewNotes.trim(),
-        });
+      const appealDocRef = doc(db, 'appeals', selectedAppeal.id);
+      await updateDoc(appealDocRef, {
+        status: decision,
+        reviewedAt: serverTimestamp(),
+        reviewedBy: 'admin', // In production, use actual admin ID
+        reviewNotes: reviewNotes.trim(),
+      });
 
       // If approved and has strikeId, remove the strike
       if (decision === 'approved' && selectedAppeal.strikeId) {
-        await firestore()
-          .collection('strikes')
-          .doc(selectedAppeal.strikeId)
-          .update({
-            status: 'appealed',
-            appealedAt: firestore.FieldValue.serverTimestamp(),
-            appealId: selectedAppeal.id,
-          });
+        const strikeDocRef = doc(db, 'strikes', selectedAppeal.strikeId);
+        await updateDoc(strikeDocRef, {
+          status: 'appealed',
+          appealedAt: serverTimestamp(),
+          appealId: selectedAppeal.id,
+        });
 
         // Update driver's active strike count
-        const strikesSnapshot = await firestore()
-          .collection('strikes')
-          .where('driverId', '==', selectedAppeal.driverId)
-          .where('status', '==', 'active')
-          .get();
+        const strikesRef = collection(db, 'strikes');
+        const strikesQuery = query(
+          strikesRef,
+          where('driverId', '==', selectedAppeal.driverId),
+          where('status', '==', 'active')
+        );
+        const strikesSnapshot = await getDocs(strikesQuery);
 
-        await firestore()
-          .collection('driver_safety_profiles')
-          .doc(selectedAppeal.driverId)
-          .update({
-            activeStrikes: strikesSnapshot.size,
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          });
+        const safetyProfileRef = doc(db, 'driver_safety_profiles', selectedAppeal.driverId);
+        await updateDoc(safetyProfileRef, {
+          activeStrikes: strikesSnapshot.size,
+          updatedAt: serverTimestamp(),
+        });
       }
 
       // If approved and has suspensionId, lift the suspension
       if (decision === 'approved' && selectedAppeal.suspensionId) {
-        await firestore()
-          .collection('suspensions')
-          .doc(selectedAppeal.suspensionId)
-          .update({
-            status: 'lifted',
-            liftedAt: firestore.FieldValue.serverTimestamp(),
-            liftReason: 'appeal_approved',
-            appealId: selectedAppeal.id,
-          });
+        const suspensionDocRef = doc(db, 'suspensions', selectedAppeal.suspensionId);
+        await updateDoc(suspensionDocRef, {
+          status: 'lifted',
+          liftedAt: serverTimestamp(),
+          liftReason: 'appeal_approved',
+          appealId: selectedAppeal.id,
+        });
       }
 
       Alert.alert(

@@ -4,7 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/src/stores/auth-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -27,15 +32,11 @@ export default function NotificationsScreen() {
     if (!user?.id) return;
 
     try {
-      const doc = await firestore()
-        .collection('users')
-        .doc(user.id)
-        .collection('settings')
-        .doc('notifications')
-        .get();
+      const notifRef = doc(db, 'users', user.id, 'settings', 'notifications');
+      const notifDoc = await getDoc(notifRef);
 
-      if (doc.exists) {
-        const data = doc.data();
+      if (notifDoc.exists()) {
+        const data = notifDoc.data();
         setSettings({
           rideUpdates: data?.rideUpdates ?? true,
           driverMessages: data?.driverMessages ?? true,
@@ -58,16 +59,13 @@ export default function NotificationsScreen() {
     setSettings(prev => ({ ...prev, [key]: newValue }));
 
     try {
-      // Save to Firebase
-      await firestore()
-        .collection('users')
-        .doc(user.id)
-        .collection('settings')
-        .doc('notifications')
-        .set(
-          { [key]: newValue, updatedAt: firestore.FieldValue.serverTimestamp() },
-          { merge: true }
-        );
+      // Save to Firebase using modular API
+      const notifRef = doc(db, 'users', user.id, 'settings', 'notifications');
+      await setDoc(
+        notifRef,
+        { [key]: newValue, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
     } catch (error) {
       console.error('Error saving notification setting:', error);
       // Revert on error

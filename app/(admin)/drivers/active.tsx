@@ -1,6 +1,9 @@
 /**
  * ACTIVE DRIVERS SCREEN
  * Shows all approved/active drivers with management options
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState } from 'react';
@@ -18,7 +21,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, getDocs, where, query, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface ActiveDriver {
   id: string;
@@ -51,24 +59,21 @@ export default function ActiveDriversScreen() {
   const loadDrivers = async () => {
     try {
       // Try querying by registrationStatus first (primary field)
-      let snapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'approved')
-        .get();
+      const driversRef = collection(db, 'drivers');
+      let driversQuery = query(driversRef, where('registrationStatus', '==', 'approved'));
+      let snapshot = await getDocs(driversQuery);
 
       // If no results, try querying by status field (fallback for older documents)
       if (snapshot.empty) {
         console.log('🔄 No drivers found with registrationStatus, trying status field...');
-        snapshot = await firestore()
-          .collection('drivers')
-          .where('status', '==', 'approved')
-          .get();
+        driversQuery = query(driversRef, where('status', '==', 'approved'));
+        snapshot = await getDocs(driversQuery);
       }
 
-      const driversList: ActiveDriver[] = snapshot.docs.map(doc => {
-        const data = doc.data();
+      const driversList: ActiveDriver[] = snapshot.docs.map((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = driverDoc.data();
         return {
-          id: doc.id,
+          id: driverDoc.id,
           firstName: data.firstName || '',
           lastName: data.lastName || '',
           email: data.email || '',

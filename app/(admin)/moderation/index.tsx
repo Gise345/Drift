@@ -1,6 +1,9 @@
 /**
  * ADMIN MODERATION DASHBOARD
  * Central hub for managing safety violations, strikes, appeals, and emergency alerts
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -16,8 +19,21 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+} from '@react-native-firebase/firestore';
+import { Colors, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface ModerationStats {
   pendingStrikes: number;
@@ -53,7 +69,32 @@ export default function ModerationDashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      // Load counts in parallel
+      // Load counts in parallel using modular queries
+      const strikeQueueQuery = query(
+        collection(db, 'strike_queue'),
+        where('status', '==', 'pending')
+      );
+      const appealsQuery = query(
+        collection(db, 'appeals'),
+        where('status', '==', 'pending')
+      );
+      const disputesQuery = query(
+        collection(db, 'payment_disputes'),
+        where('status', '==', 'pending')
+      );
+      const emergencyQuery = query(
+        collection(db, 'emergency_alerts'),
+        where('status', '==', 'active')
+      );
+      const suspensionsQuery = query(
+        collection(db, 'suspensions'),
+        where('status', '==', 'active')
+      );
+      const flagsQuery = query(
+        collection(db, 'driver_flags'),
+        where('status', '==', 'pending')
+      );
+
       const [
         strikeQueueSnapshot,
         appealsSnapshot,
@@ -62,12 +103,12 @@ export default function ModerationDashboard() {
         suspensionsSnapshot,
         flagsSnapshot,
       ] = await Promise.all([
-        firestore().collection('strike_queue').where('status', '==', 'pending').get(),
-        firestore().collection('appeals').where('status', '==', 'pending').get(),
-        firestore().collection('payment_disputes').where('status', '==', 'pending').get(),
-        firestore().collection('emergency_alerts').where('status', '==', 'active').get(),
-        firestore().collection('suspensions').where('status', '==', 'active').get(),
-        firestore().collection('driver_flags').where('status', '==', 'pending').get(),
+        getDocs(strikeQueueQuery),
+        getDocs(appealsQuery),
+        getDocs(disputesQuery),
+        getDocs(emergencyQuery),
+        getDocs(suspensionsQuery),
+        getDocs(flagsQuery),
       ]);
 
       setStats({
@@ -83,16 +124,17 @@ export default function ModerationDashboard() {
       const recentItemsList: RecentItem[] = [];
 
       // Get recent strikes
-      const recentStrikes = await firestore()
-        .collection('strikes')
-        .orderBy('issuedAt', 'desc')
-        .limit(5)
-        .get();
+      const recentStrikesQuery = query(
+        collection(db, 'strikes'),
+        orderBy('issuedAt', 'desc'),
+        limit(5)
+      );
+      const recentStrikes = await getDocs(recentStrikesQuery);
 
-      recentStrikes.docs.forEach(doc => {
-        const data = doc.data();
+      recentStrikes.docs.forEach(strikeDoc => {
+        const data = strikeDoc.data();
         recentItemsList.push({
-          id: doc.id,
+          id: strikeDoc.id,
           type: 'strike',
           title: `Strike Issued`,
           subtitle: `Driver ${data.driverId?.slice(-6) || 'Unknown'} - ${data.type || 'Violation'}`,
@@ -102,16 +144,17 @@ export default function ModerationDashboard() {
       });
 
       // Get recent appeals
-      const recentAppeals = await firestore()
-        .collection('appeals')
-        .orderBy('submittedAt', 'desc')
-        .limit(5)
-        .get();
+      const recentAppealsQuery = query(
+        collection(db, 'appeals'),
+        orderBy('submittedAt', 'desc'),
+        limit(5)
+      );
+      const recentAppeals = await getDocs(recentAppealsQuery);
 
-      recentAppeals.docs.forEach(doc => {
-        const data = doc.data();
+      recentAppeals.docs.forEach(appealDoc => {
+        const data = appealDoc.data();
         recentItemsList.push({
-          id: doc.id,
+          id: appealDoc.id,
           type: 'appeal',
           title: 'Appeal Submitted',
           subtitle: `Driver ${data.driverId?.slice(-6) || 'Unknown'}`,
@@ -121,16 +164,17 @@ export default function ModerationDashboard() {
       });
 
       // Get recent emergencies
-      const recentEmergencies = await firestore()
-        .collection('emergency_alerts')
-        .orderBy('triggeredAt', 'desc')
-        .limit(5)
-        .get();
+      const recentEmergenciesQuery = query(
+        collection(db, 'emergency_alerts'),
+        orderBy('triggeredAt', 'desc'),
+        limit(5)
+      );
+      const recentEmergencies = await getDocs(recentEmergenciesQuery);
 
-      recentEmergencies.docs.forEach(doc => {
-        const data = doc.data();
+      recentEmergencies.docs.forEach(emergencyDoc => {
+        const data = emergencyDoc.data();
         recentItemsList.push({
-          id: doc.id,
+          id: emergencyDoc.id,
           type: 'emergency',
           title: 'Emergency Alert',
           subtitle: `Trip ${data.tripId?.slice(-6) || 'Unknown'}`,

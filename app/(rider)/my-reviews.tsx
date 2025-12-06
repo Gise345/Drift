@@ -1,6 +1,9 @@
 /**
  * My Reviews Screen - Rider View
  * Shows reviews left by drivers for this rider
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,7 +20,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { TouchableOpacity } from 'react-native';
 import { useAuthStore } from '@/src/stores/auth-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, orderBy, limit, getDocs } from '@react-native-firebase/firestore';
+
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface Review {
   id: string;
@@ -42,12 +49,14 @@ export default function MyReviewsScreen() {
     if (!user?.id) return;
 
     try {
-      const reviewsSnapshot = await firestore()
-        .collection('riderReviews')
-        .where('riderId', '==', user.id)
-        .orderBy('createdAt', 'desc')
-        .limit(50)
-        .get();
+      const reviewsRef = collection(db, 'riderReviews');
+      const reviewsQuery = query(
+        reviewsRef,
+        where('riderId', '==', user.id),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      const reviewsSnapshot = await getDocs(reviewsQuery);
 
       const reviewData: Review[] = reviewsSnapshot.docs.map(doc => {
         const data = doc.data();

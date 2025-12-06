@@ -1,3 +1,8 @@
+/**
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -16,7 +21,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  serverTimestamp,
+} from '@react-native-firebase/firestore';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 // Issues that can be selected for low ratings
 const RIDER_ISSUES = [
@@ -97,12 +118,10 @@ export default function RateRider() {
         // If we have riderId, fetch latest rider data from users collection
         if (currentTrip.riderId) {
           try {
-            const userDoc = await firestore()
-              .collection('users')
-              .doc(currentTrip.riderId)
-              .get();
+            const userRef = doc(db, 'users', currentTrip.riderId);
+            const userDoc = await getDoc(userRef);
 
-            if (userDoc.exists) {
+            if (userDoc.exists()) {
               const userData = userDoc.data();
               name = userData?.name || userData?.firstName || name;
               photo = userData?.profilePhotoUrl || userData?.photoUrl || photo;
@@ -147,8 +166,7 @@ export default function RateRider() {
 
     try {
       // Create the rider review document
-      const reviewRef = firestore().collection('riderReviews').doc();
-      await reviewRef.set({
+      const reviewRef = await addDoc(collection(db, 'riderReviews'), {
         tripId,
         riderId,
         driverId,
@@ -156,14 +174,15 @@ export default function RateRider() {
         rating,
         comment: comment || null,
         issues: selectedIssues,
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       // Update the trip with the rider rating
-      await firestore().collection('trips').doc(tripId).update({
+      const tripRef = doc(db, 'trips', tripId);
+      await updateDoc(tripRef, {
         riderRating: rating,
         riderReviewId: reviewRef.id,
-        riderRatedAt: firestore.FieldValue.serverTimestamp(),
+        riderRatedAt: serverTimestamp(),
       });
 
       // Update rider's average rating stats
@@ -182,10 +201,11 @@ export default function RateRider() {
   const updateRiderRatingStats = async (riderId: string) => {
     try {
       // Get all reviews for this rider
-      const reviewsSnapshot = await firestore()
-        .collection('riderReviews')
-        .where('riderId', '==', riderId)
-        .get();
+      const reviewsQuery = query(
+        collection(db, 'riderReviews'),
+        where('riderId', '==', riderId)
+      );
+      const reviewsSnapshot = await getDocs(reviewsQuery);
 
       const reviews = reviewsSnapshot.docs;
       const totalReviews = reviews.length;
@@ -194,17 +214,18 @@ export default function RateRider() {
 
       // Calculate average rating
       let totalRating = 0;
-      reviews.forEach((doc) => {
-        totalRating += doc.data().rating || 0;
+      reviews.forEach((reviewDoc) => {
+        totalRating += reviewDoc.data().rating || 0;
       });
 
       const averageRating = totalRating / totalReviews;
 
       // Update user document with new rating
-      await firestore().collection('users').doc(riderId).update({
+      const userRef = doc(db, 'users', riderId);
+      await updateDoc(userRef, {
         rating: Number(averageRating.toFixed(2)),
         totalRatings: totalReviews,
-        lastRatedAt: firestore.FieldValue.serverTimestamp(),
+        lastRatedAt: serverTimestamp(),
       });
 
       console.log('✅ Rider rating stats updated:', { averageRating, totalReviews });

@@ -31,6 +31,12 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { EarningsService } from '@/src/services/earnings.service';
 import { TransactionService } from '@/src/services/transaction.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, query, where, orderBy, limit, getDocs } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const { width } = Dimensions.get('window');
 
@@ -108,15 +114,16 @@ export default function DriverEarningsScreen() {
       const balance = await TransactionService.getWalletBalance(driver.id);
       setWalletBalance(balance.available);
 
-      // Load recent trips from Firestore
-      const firestore = require('@react-native-firebase/firestore').default;
-      const tripsSnapshot = await firestore()
-        .collection('trips')
-        .where('driverId', '==', driver.id)
-        .where('status', '==', 'COMPLETED')
-        .orderBy('completedAt', 'desc')
-        .limit(3)
-        .get();
+      // Load recent trips from Firestore using modular API
+      const tripsRef = collection(db, 'trips');
+      const tripsQuery = query(
+        tripsRef,
+        where('driverId', '==', driver.id),
+        where('status', '==', 'COMPLETED'),
+        orderBy('completedAt', 'desc'),
+        limit(3)
+      );
+      const tripsSnapshot = await getDocs(tripsQuery);
 
       const trips = tripsSnapshot.docs.map((doc: any) => {
         const data = doc.data();

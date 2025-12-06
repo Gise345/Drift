@@ -1,6 +1,9 @@
 /**
  * ADMIN EMERGENCY ALERTS SCREEN
  * Monitor and respond to active emergency SOS alerts
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -20,8 +23,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, addDoc, onSnapshot, orderBy, where, limit, query, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface EmergencyAlert {
   id: string;
@@ -72,19 +80,25 @@ export default function EmergencyAlertsScreen() {
 
   const loadAlerts = useCallback(async () => {
     try {
-      let query = firestore()
-        .collection('emergency_alerts')
-        .orderBy('triggeredAt', 'desc');
+      const alertsRef = collection(db, 'emergency_alerts');
+      let alertsQuery;
 
       if (filter !== 'all') {
-        query = query.where('status', '==', filter);
+        alertsQuery = query(
+          alertsRef,
+          where('status', '==', filter),
+          orderBy('triggeredAt', 'desc'),
+          limit(50)
+        );
+      } else {
+        alertsQuery = query(alertsRef, orderBy('triggeredAt', 'desc'), limit(50));
       }
 
-      const snapshot = await query.limit(50).get();
+      const snapshot = await getDocs(alertsQuery);
 
       const alertsList: EmergencyAlert[] = await Promise.all(
-        snapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        snapshot.docs.map(async (alertDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = alertDoc.data();
 
           // Get user/driver/rider names
           let userName = 'Unknown';
@@ -97,11 +111,9 @@ export default function EmergencyAlertsScreen() {
           // Get triggering user info
           if (data.userId) {
             try {
-              const userDoc = await firestore()
-                .collection('users')
-                .doc(data.userId)
-                .get();
-              if (userDoc.exists) {
+              const userDocRef = doc(db, 'users', data.userId);
+              const userDoc = await getDoc(userDocRef);
+              if (userDoc.exists()) {
                 userName = userDoc.data()?.name || 'Unknown';
                 userPhone = userDoc.data()?.phone || '';
               }
@@ -113,11 +125,9 @@ export default function EmergencyAlertsScreen() {
           // Get driver info
           if (data.driverId) {
             try {
-              const driverDoc = await firestore()
-                .collection('drivers')
-                .doc(data.driverId)
-                .get();
-              if (driverDoc.exists) {
+              const driverDocRef = doc(db, 'drivers', data.driverId);
+              const driverDoc = await getDoc(driverDocRef);
+              if (driverDoc.exists()) {
                 driverName = driverDoc.data()?.name || '';
                 driverPhone = driverDoc.data()?.phone || '';
               }
@@ -129,11 +139,9 @@ export default function EmergencyAlertsScreen() {
           // Get rider info
           if (data.riderId) {
             try {
-              const riderDoc = await firestore()
-                .collection('users')
-                .doc(data.riderId)
-                .get();
-              if (riderDoc.exists) {
+              const riderDocRef = doc(db, 'users', data.riderId);
+              const riderDoc = await getDoc(riderDocRef);
+              if (riderDoc.exists()) {
                 riderName = riderDoc.data()?.name || '';
                 riderPhone = riderDoc.data()?.phone || '';
               }
@@ -143,7 +151,7 @@ export default function EmergencyAlertsScreen() {
           }
 
           return {
-            id: doc.id,
+            id: alertDoc.id,
             tripId: data.tripId,
             userId: data.userId,
             userType: data.userType,
@@ -182,14 +190,13 @@ export default function EmergencyAlertsScreen() {
     loadAlerts();
 
     // Set up real-time listener for active alerts
-    const unsubscribe = firestore()
-      .collection('emergency_alerts')
-      .where('status', '==', 'active')
-      .onSnapshot((snapshot) => {
-        if (!snapshot.empty && filter === 'active') {
-          loadAlerts();
-        }
-      });
+    const alertsRef = collection(db, 'emergency_alerts');
+    const activeAlertsQuery = query(alertsRef, where('status', '==', 'active'));
+    const unsubscribe = onSnapshot(activeAlertsQuery, (snapshot) => {
+      if (!snapshot.empty && filter === 'active') {
+        loadAlerts();
+      }
+    });
 
     return () => unsubscribe();
   }, [loadAlerts, filter]);
@@ -216,27 +223,26 @@ export default function EmergencyAlertsScreen() {
     setProcessing(true);
 
     try {
-      await firestore()
-        .collection('emergency_alerts')
-        .doc(selectedAlert.id)
-        .update({
-          status: resolution,
-          resolvedAt: firestore.FieldValue.serverTimestamp(),
-          resolvedBy: 'admin', // In production, use actual admin ID
-          resolutionNotes: resolutionNotes.trim(),
-        });
+      const alertDocRef = doc(db, 'emergency_alerts', selectedAlert.id);
+      await updateDoc(alertDocRef, {
+        status: resolution,
+        resolvedAt: serverTimestamp(),
+        resolvedBy: 'admin', // In production, use actual admin ID
+        resolutionNotes: resolutionNotes.trim(),
+      });
 
       // If false alarm, may need to flag the user
       if (resolution === 'false_alarm') {
         // Create a flag for review
-        await firestore().collection('admin_alerts').add({
+        const adminAlertsRef = collection(db, 'admin_alerts');
+        await addDoc(adminAlertsRef, {
           type: 'false_sos',
           userId: selectedAlert.userId,
           userType: selectedAlert.userType,
           tripId: selectedAlert.tripId,
           emergencyAlertId: selectedAlert.id,
           status: 'pending',
-          createdAt: firestore.FieldValue.serverTimestamp(),
+          createdAt: serverTimestamp(),
           notes: resolutionNotes.trim(),
         });
       }

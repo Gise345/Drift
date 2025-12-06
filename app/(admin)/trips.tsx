@@ -1,6 +1,9 @@
 /**
  * ALL TRIPS SCREEN
  * Shows all trips (completed, cancelled, in-progress)
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState } from 'react';
@@ -17,7 +20,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, orderBy, where, limit, query, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface Trip {
   id: string;
@@ -45,15 +53,28 @@ export default function AllTripsScreen() {
 
   const loadTrips = async () => {
     try {
-      let query = firestore().collection('trips').orderBy('createdAt', 'desc').limit(100);
+      const tripsRef = collection(db, 'trips');
+      let tripsQuery;
 
       if (filter === 'completed') {
-        query = query.where('status', '==', 'COMPLETED');
+        tripsQuery = query(
+          tripsRef,
+          where('status', '==', 'COMPLETED'),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        );
       } else if (filter === 'cancelled') {
-        query = query.where('status', '==', 'CANCELLED');
+        tripsQuery = query(
+          tripsRef,
+          where('status', '==', 'CANCELLED'),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        );
+      } else {
+        tripsQuery = query(tripsRef, orderBy('createdAt', 'desc'), limit(100));
       }
 
-      const snapshot = await query.get();
+      const snapshot = await getDocs(tripsQuery);
 
       // Get all unique rider and driver IDs
       const riderIds = new Set<string>();
@@ -68,8 +89,9 @@ export default function AllTripsScreen() {
       const riderNames: Record<string, string> = {};
       for (const riderId of riderIds) {
         try {
-          const userDoc = await firestore().collection('users').doc(riderId).get();
-          if (userDoc.exists) {
+          const userDocRef = doc(db, 'users', riderId);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
             const userData = userDoc.data();
             riderNames[riderId] = userData?.name || userData?.displayName || 'Unknown Rider';
           }
@@ -82,8 +104,9 @@ export default function AllTripsScreen() {
       const driverNames: Record<string, string> = {};
       for (const driverId of driverIds) {
         try {
-          const driverDoc = await firestore().collection('drivers').doc(driverId).get();
-          if (driverDoc.exists) {
+          const driverDocRef = doc(db, 'drivers', driverId);
+          const driverDoc = await getDoc(driverDocRef);
+          if (driverDoc.exists()) {
             const driverData = driverDoc.data();
             driverNames[driverId] = `${driverData?.firstName || ''} ${driverData?.lastName || ''}`.trim() || 'Unknown Driver';
           }
@@ -92,10 +115,10 @@ export default function AllTripsScreen() {
         }
       }
 
-      const tripsList: Trip[] = snapshot.docs.map(doc => {
-        const data = doc.data();
+      const tripsList: Trip[] = snapshot.docs.map((tripDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = tripDoc.data();
         return {
-          id: doc.id,
+          id: tripDoc.id,
           riderName: data.riderInfo?.name || riderNames[data.riderId] || 'Unknown Rider',
           driverName: data.driverInfo?.name || driverNames[data.driverId] || 'Unknown Driver',
           pickup: data.pickup?.address || 'Unknown',

@@ -12,7 +12,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, updateDoc, arrayUnion } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface ShareTripModalProps {
   visible: boolean;
@@ -62,15 +67,15 @@ export const ShareTripModal: React.FC<ShareTripModalProps> = ({
     return link;
   };
 
-  // Save shared contact to Firestore using React Native Firebase
+  // Save shared contact to Firestore using modular API
   const saveSharedContact = async (contactInfo: string) => {
     try {
-      const tripRef = firestore().collection('trips').doc(tripId);
+      const tripRef = doc(db, 'trips', tripId);
 
       // Note: serverTimestamp() cannot be used inside arrayUnion()
       // Use a regular Date timestamp instead
-      await tripRef.update({
-        sharedWith: firestore.FieldValue.arrayUnion({
+      await updateDoc(tripRef, {
+        sharedWith: arrayUnion({
           contact: contactInfo,
           sharedAt: new Date().toISOString(),
         }),

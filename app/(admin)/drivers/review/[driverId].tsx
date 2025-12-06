@@ -1,6 +1,9 @@
 /**
  * ADMIN - DRIVER APPLICATION REVIEW
  * Detailed review screen for approving/rejecting driver applications
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,10 +20,15 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 import { updateDriverRegistrationStatus } from '@/src/services/driver-registration.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function DriverReviewScreen() {
   const router = useRouter();
@@ -46,12 +54,10 @@ export default function DriverReviewScreen() {
       console.log('📖 Loading driver data for:', driverId);
 
       // Load driver profile
-      const driverDoc = await firestore()
-        .collection('drivers')
-        .doc(driverId as string)
-        .get();
+      const driverDocRef = doc(db, 'drivers', driverId as string);
+      const driverDoc = await getDoc(driverDocRef);
 
-      if (!driverDoc.exists) {
+      if (!driverDoc.exists()) {
         Alert.alert('Error', 'Driver not found. They may have been removed or the ID is invalid.');
         router.back();
         return;
@@ -77,14 +83,10 @@ export default function DriverReviewScreen() {
       });
 
       // Load document URLs
-      const docsSnapshot = await firestore()
-        .collection('drivers')
-        .doc(driverId as string)
-        .collection('documents')
-        .doc('urls')
-        .get();
+      const docsRef = doc(db, 'drivers', driverId as string, 'documents', 'urls');
+      const docsSnapshot = await getDoc(docsRef);
 
-      if (docsSnapshot.exists) {
+      if (docsSnapshot.exists()) {
         setDocuments(docsSnapshot.data());
       }
 

@@ -17,8 +17,13 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, addDoc, serverTimestamp } from '@react-native-firebase/firestore';
 import { useAuthStore } from '@/src/stores/auth-store';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const ISSUE_TYPES = {
   driver_behavior: {
@@ -96,8 +101,9 @@ export default function ReportIssueScreen() {
     setIsSubmitting(true);
 
     try {
-      // Save report to Firestore
-      await firestore().collection('support_tickets').add({
+      // Save report to Firestore using modular API
+      const supportTicketsRef = collection(db, 'support_tickets');
+      await addDoc(supportTicketsRef, {
         tripId: tripId as string,
         riderId: user?.uid,
         riderEmail: user?.email,
@@ -108,8 +114,8 @@ export default function ReportIssueScreen() {
         additionalDetails: additionalDetails.trim(),
         status: 'open',
         priority: issueType === 'safety_concern' ? 'high' : 'normal',
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       Alert.alert(

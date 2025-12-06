@@ -1,3 +1,8 @@
+/**
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -15,7 +20,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { NotificationService } from '@/src/services/notification.service';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from '@react-native-firebase/firestore';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 type NotificationType = 'ride' | 'earnings' | 'system' | 'promo' | 'document';
 
@@ -61,15 +77,11 @@ export default function Notifications() {
     if (!driver?.id) return;
 
     try {
-      const doc = await firestore()
-        .collection('drivers')
-        .doc(driver.id)
-        .collection('settings')
-        .doc('notifications')
-        .get();
+      const settingsRef = doc(db, 'drivers', driver.id, 'settings', 'notifications');
+      const settingsDoc = await getDoc(settingsRef);
 
-      if (doc.exists) {
-        const data = doc.data();
+      if (settingsDoc.exists()) {
+        const data = settingsDoc.data();
         setNotificationsEnabled(data?.enabled ?? true);
         setRideNotifications(data?.ride ?? true);
         setEarningsNotifications(data?.earnings ?? true);
@@ -90,15 +102,12 @@ export default function Notifications() {
     if (!driver?.id) return;
 
     try {
-      await firestore()
-        .collection('drivers')
-        .doc(driver.id)
-        .collection('settings')
-        .doc('notifications')
-        .set(
-          { [key]: value, updatedAt: firestore.FieldValue.serverTimestamp() },
-          { merge: true }
-        );
+      const settingsRef = doc(db, 'drivers', driver.id, 'settings', 'notifications');
+      await setDoc(
+        settingsRef,
+        { [key]: value, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
     } catch (error) {
       console.error('Error saving notification setting:', error);
     }

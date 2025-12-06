@@ -1,6 +1,9 @@
 /**
  * ADMIN SUSPENSIONS MANAGEMENT SCREEN
  * View and manage driver suspensions
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -19,8 +22,26 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  updateDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+} from '@react-native-firebase/firestore';
+import { Colors, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firestore with 'main' database
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface Suspension {
   id: string;
@@ -54,30 +75,37 @@ export default function SuspensionsScreen() {
 
   const loadSuspensions = useCallback(async () => {
     try {
-      let query = firestore()
-        .collection('suspensions')
-        .orderBy('startedAt', 'desc');
-
+      // Build query based on filter
+      let suspensionsQuery;
       if (filter !== 'all') {
-        query = query.where('status', '==', filter);
+        suspensionsQuery = query(
+          collection(db, 'suspensions'),
+          where('status', '==', filter),
+          orderBy('startedAt', 'desc'),
+          limit(50)
+        );
+      } else {
+        suspensionsQuery = query(
+          collection(db, 'suspensions'),
+          orderBy('startedAt', 'desc'),
+          limit(50)
+        );
       }
 
-      const snapshot = await query.limit(50).get();
+      const snapshot = await getDocs(suspensionsQuery);
 
       const suspensionsList: Suspension[] = await Promise.all(
-        snapshot.docs.map(async (doc) => {
-          const data = doc.data();
+        snapshot.docs.map(async (suspensionDoc) => {
+          const data = suspensionDoc.data();
 
           // Get driver info
           let driverName = 'Unknown Driver';
           let driverEmail = '';
           if (data.driverId) {
             try {
-              const driverDoc = await firestore()
-                .collection('drivers')
-                .doc(data.driverId)
-                .get();
-              if (driverDoc.exists) {
+              const driverRef = doc(db, 'drivers', data.driverId);
+              const driverDoc = await getDoc(driverRef);
+              if (driverDoc.exists()) {
                 driverName = driverDoc.data()?.name || 'Unknown Driver';
                 driverEmail = driverDoc.data()?.email || '';
               }
@@ -87,7 +115,7 @@ export default function SuspensionsScreen() {
           }
 
           return {
-            id: doc.id,
+            id: suspensionDoc.id,
             driverId: data.driverId,
             driverName,
             driverEmail,
@@ -141,35 +169,31 @@ export default function SuspensionsScreen() {
 
     try {
       // Update suspension
-      await firestore()
-        .collection('suspensions')
-        .doc(selectedSuspension.id)
-        .update({
-          status: 'lifted',
-          liftedAt: firestore.FieldValue.serverTimestamp(),
-          liftedBy: 'admin', // In production, use actual admin ID
-          liftReason: liftReason.trim(),
-        });
+      const suspensionRef = doc(db, 'suspensions', selectedSuspension.id);
+      await updateDoc(suspensionRef, {
+        status: 'lifted',
+        liftedAt: serverTimestamp(),
+        liftedBy: 'admin', // In production, use actual admin ID
+        liftReason: liftReason.trim(),
+      });
 
       // Update driver safety profile
-      await firestore()
-        .collection('driver_safety_profiles')
-        .doc(selectedSuspension.driverId)
-        .update({
-          suspensionStatus: 'none',
-          suspensionLiftedAt: firestore.FieldValue.serverTimestamp(),
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const safetyProfileRef = doc(db, 'driver_safety_profiles', selectedSuspension.driverId);
+      await updateDoc(safetyProfileRef, {
+        suspensionStatus: 'none',
+        suspensionLiftedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
 
       // Create audit log entry
-      await firestore().collection('moderation_actions').add({
+      await addDoc(collection(db, 'moderation_actions'), {
         type: 'suspension_lifted',
         targetType: 'driver',
         targetId: selectedSuspension.driverId,
         suspensionId: selectedSuspension.id,
         adminId: 'admin',
         reason: liftReason.trim(),
-        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       Alert.alert(

@@ -16,7 +16,24 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  serverTimestamp
+} from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 /**
  * WISE PAYOUT METHODS SCREEN
@@ -62,17 +79,14 @@ export default function PayoutMethodsScreen() {
 
     try {
       setLoading(true);
-      const snapshot = await firestore()
-        .collection('drivers')
-        .doc(driver.id)
-        .collection('payoutMethods')
-        .where('type', '==', 'wise')
-        .get();
+      const payoutMethodsRef = collection(db, 'drivers', driver.id, 'payoutMethods');
+      const payoutQuery = query(payoutMethodsRef, where('type', '==', 'wise'));
+      const snapshot = await getDocs(payoutQuery);
 
-      const accounts: WiseAccount[] = snapshot.docs.map(doc => {
-        const data = doc.data();
+      const accounts: WiseAccount[] = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
         return {
-          id: doc.id,
+          id: docSnap.id,
           accountHolderName: data.accountHolderName,
           sortCode: data.sortCode,
           accountNumber: data.accountNumber,
@@ -156,19 +170,16 @@ export default function PayoutMethodsScreen() {
 
       const isFirstAccount = wiseAccounts.length === 0;
 
-      await firestore()
-        .collection('drivers')
-        .doc(driver.id)
-        .collection('payoutMethods')
-        .add({
-          type: 'wise',
-          accountHolderName: newAccount.accountHolderName,
-          sortCode: newAccount.sortCode,
-          accountNumber: newAccount.accountNumber,
-          isDefault: isFirstAccount,
-          verificationStatus: 'pending',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const payoutMethodsRef = collection(db, 'drivers', driver.id, 'payoutMethods');
+      await addDoc(payoutMethodsRef, {
+        type: 'wise',
+        accountHolderName: newAccount.accountHolderName,
+        sortCode: newAccount.sortCode,
+        accountNumber: newAccount.accountNumber,
+        isDefault: isFirstAccount,
+        verificationStatus: 'pending',
+        createdAt: serverTimestamp(),
+      });
 
       await loadWiseAccounts();
 
@@ -195,15 +206,11 @@ export default function PayoutMethodsScreen() {
     if (!driver?.id) return;
 
     try {
-      const batch = firestore().batch();
+      const batch = writeBatch(db);
 
-      // Set all accounts to non-default
+      // Set all accounts to non-default using modular API
       wiseAccounts.forEach(account => {
-        const ref = firestore()
-          .collection('drivers')
-          .doc(driver.id)
-          .collection('payoutMethods')
-          .doc(account.id);
+        const ref = doc(db, 'drivers', driver.id, 'payoutMethods', account.id);
         batch.update(ref, { isDefault: account.id === accountId });
       });
 
@@ -239,12 +246,8 @@ export default function PayoutMethodsScreen() {
             if (!driver?.id) return;
 
             try {
-              await firestore()
-                .collection('drivers')
-                .doc(driver.id)
-                .collection('payoutMethods')
-                .doc(accountId)
-                .delete();
+              const accountRef = doc(db, 'drivers', driver.id, 'payoutMethods', accountId);
+              await deleteDoc(accountRef);
 
               await loadWiseAccounts();
               Alert.alert('Success', 'Wise account removed');

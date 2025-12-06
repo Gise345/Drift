@@ -16,8 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, getDoc, collection, addDoc, serverTimestamp } from '@react-native-firebase/firestore';
 import * as Print from 'expo-print';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 import * as Sharing from 'expo-sharing';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { BlockUserModal } from '@/components/modal/BlockUserModal';
@@ -157,9 +162,10 @@ export default function TripDetailScreen() {
 
       console.log('📋 Loading trip details for:', id);
 
-      const tripDoc = await firestore().collection('trips').doc(id).get();
+      const tripRef = doc(db, 'trips', id);
+      const tripDoc = await getDoc(tripRef);
 
-      if (!tripDoc.exists) {
+      if (!tripDoc.exists()) {
         setError('Trip not found');
         setLoading(false);
         return;
@@ -439,7 +445,8 @@ export default function TripDetailScreen() {
     setSubmittingReport(true);
 
     try {
-      await firestore().collection('tripIssues').add({
+      const tripIssuesRef = collection(db, 'tripIssues');
+      await addDoc(tripIssuesRef, {
         tripId: trip.id,
         riderId: user?.id,
         riderName: user?.name || 'Unknown',
@@ -450,8 +457,8 @@ export default function TripDetailScreen() {
         tripDate: trip.date,
         tripCost: trip.totalCostRaw,
         status: 'pending', // pending, reviewed, refunded, rejected, driver_suspended, driver_banned
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         adminAction: null,
         adminNotes: null,
         resolvedAt: null,

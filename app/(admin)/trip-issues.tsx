@@ -1,3 +1,10 @@
+/**
+ * Admin Trip Issues Screen
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,7 +21,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDocs, updateDoc, orderBy, where, query, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface TripIssue {
   id: string;
@@ -68,22 +80,26 @@ export default function TripIssuesScreen() {
     try {
       setLoading(true);
 
-      let query = firestore().collection('tripIssues').orderBy('createdAt', 'desc');
+      const issuesRef = collection(db, 'tripIssues');
+      let issuesQuery;
 
       if (filter === 'pending') {
-        query = firestore()
-          .collection('tripIssues')
-          .where('status', '==', 'pending')
-          .orderBy('createdAt', 'desc');
+        issuesQuery = query(
+          issuesRef,
+          where('status', '==', 'pending'),
+          orderBy('createdAt', 'desc')
+        );
+      } else {
+        issuesQuery = query(issuesRef, orderBy('createdAt', 'desc'));
       }
 
-      const snapshot = await query.get();
+      const snapshot = await getDocs(issuesQuery);
       const issuesList: TripIssue[] = [];
 
-      snapshot.forEach((doc) => {
-        const data = doc.data();
+      snapshot.forEach((issueDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = issueDoc.data();
         issuesList.push({
-          id: doc.id,
+          id: issueDoc.id,
           tripId: data.tripId,
           riderId: data.riderId,
           riderName: data.riderName || 'Unknown',
@@ -141,12 +157,13 @@ export default function TripIssuesScreen() {
           break;
       }
 
-      await firestore().collection('tripIssues').doc(selectedIssue.id).update({
+      const issueDocRef = doc(db, 'tripIssues', selectedIssue.id);
+      await updateDoc(issueDocRef, {
         status: newStatus,
         adminAction: action,
         adminNotes: adminNotes.trim() || null,
-        resolvedAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
+        resolvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       // Send notification to rider (TODO: implement push notification)

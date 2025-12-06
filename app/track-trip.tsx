@@ -11,6 +11,9 @@
  * - Driver/vehicle information display
  * - Trip status updates
  * - No authentication required
+ *
+ * ✅ UPGRADED TO v23.5.0
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -27,7 +30,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, doc, onSnapshot } from '@react-native-firebase/firestore';
+
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -144,10 +151,9 @@ export default function TrackTripScreen() {
 
     console.log('Subscribing to trip:', tripId);
 
-    const unsubscribe = firestore()
-      .collection('trips')
-      .doc(tripId)
-      .onSnapshot(
+    const tripRef = doc(db, 'trips', tripId);
+    const unsubscribe = onSnapshot(
+      tripRef,
         (doc) => {
           if (!doc.exists) {
             setError('Trip not found');

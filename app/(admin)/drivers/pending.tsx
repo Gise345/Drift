@@ -1,6 +1,9 @@
 /**
  * ADMIN - PENDING DRIVER APPLICATIONS
  * Review and approve/reject driver registrations
+ *
+ * UPGRADED TO React Native Firebase v22+ Modular API
+ * Using 'main' database (restored from backup) UPGRADED TO v23.5.0
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -17,8 +20,13 @@ import {
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, getDocs, where, query, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface PendingDriver {
   id: string;
@@ -53,15 +61,14 @@ export default function PendingDriverApplications() {
   const loadPendingDrivers = async () => {
     try {
       // Query by registrationStatus field only
-      const snapshot = await firestore()
-        .collection('drivers')
-        .where('registrationStatus', '==', 'pending')
-        .get();
+      const driversRef = collection(db, 'drivers');
+      const driversQuery = query(driversRef, where('registrationStatus', '==', 'pending'));
+      const snapshot = await getDocs(driversQuery);
 
-      const pendingDrivers: PendingDriver[] = snapshot.docs.map((doc) => {
-        const data = doc.data();
+      const pendingDrivers: PendingDriver[] = snapshot.docs.map((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = driverDoc.data();
         return {
-          id: doc.id,
+          id: driverDoc.id,
           firstName: data.firstName || '',
           lastName: data.lastName || '',
           email: data.email || '',
@@ -249,7 +256,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   driverHeader: {
     flexDirection: 'row',

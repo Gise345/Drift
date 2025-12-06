@@ -5,6 +5,9 @@
  * - View all violations
  * - Filter by severity
  * - Take action on drivers (warn, suspend, ban)
+ *
+ * ✅ UPGRADED TO React Native Firebase v22+ Modular API
+ * ✅ Using 'main' database (restored from backup)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -22,7 +25,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, orderBy, limit, query, serverTimestamp, increment, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 interface DriverViolation {
   driverId: string;
@@ -38,18 +46,6 @@ interface DriverViolation {
     severity: 'minor' | 'moderate' | 'severe';
     timestamp: Date;
   }[];
-}
-
-interface ViolationDetail {
-  id: string;
-  tripId: string;
-  maxSpeed: number;
-  speedLimit: number;
-  maxExcessSpeed: number;
-  duration: number;
-  severity: string;
-  timestamp: Date;
-  location: { latitude: number; longitude: number };
 }
 
 const SEVERITY_COLORS = {
@@ -77,22 +73,24 @@ export default function SpeedViolationsScreen() {
       setLoading(true);
 
       // Get all speed violations from the speedViolations collection
-      const violationsSnapshot = await firestore()
-        .collection('speedViolations')
-        .orderBy('startTime', 'desc')
-        .limit(500)
-        .get();
+      const violationsRef = collection(db, 'speedViolations');
+      const violationsQuery = query(
+        violationsRef,
+        orderBy('startTime', 'desc'),
+        limit(500)
+      );
+      const violationsSnapshot = await getDocs(violationsQuery);
 
       // Group violations by driver
       const violationsByDriver: Record<string, any[]> = {};
-      violationsSnapshot.docs.forEach(doc => {
-        const data = doc.data();
+      violationsSnapshot.docs.forEach((violationDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+        const data = violationDoc.data();
         const driverId = data.driverId;
         if (!violationsByDriver[driverId]) {
           violationsByDriver[driverId] = [];
         }
         violationsByDriver[driverId].push({
-          id: doc.id,
+          id: violationDoc.id,
           tripId: data.tripId,
           maxSpeed: data.maxSpeed || 0,
           speedLimit: data.speedLimit || 25,
@@ -106,8 +104,9 @@ export default function SpeedViolationsScreen() {
       const driversList: DriverViolation[] = [];
 
       for (const [driverId, violations] of Object.entries(violationsByDriver)) {
-        const driverDoc = await firestore().collection('drivers').doc(driverId).get();
-        const driverData = driverDoc.data();
+        const driverDocRef = doc(db, 'drivers', driverId);
+        const driverDocSnap = await getDoc(driverDocRef);
+        const driverData = driverDocSnap.data();
         const driverName = driverData
           ? `${driverData.firstName || ''} ${driverData.lastName || ''}`.trim() || 'Unknown Driver'
           : 'Unknown Driver';
@@ -160,9 +159,10 @@ export default function SpeedViolationsScreen() {
   const handleWarnDriver = async (driverId: string) => {
     setProcessingAction(true);
     try {
-      await firestore().collection('drivers').doc(driverId).update({
-        'safetyData.lastWarningAt': firestore.FieldValue.serverTimestamp(),
-        'safetyData.warningCount': firestore.FieldValue.increment(1),
+      const driverRef = doc(db, 'drivers', driverId);
+      await updateDoc(driverRef, {
+        'safetyData.lastWarningAt': serverTimestamp(),
+        'safetyData.warningCount': increment(1),
       });
 
       // TODO: Send push notification to driver
@@ -182,11 +182,12 @@ export default function SpeedViolationsScreen() {
     try {
       const suspendUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
-      await firestore().collection('drivers').doc(driverId).update({
+      const driverRef = doc(db, 'drivers', driverId);
+      await updateDoc(driverRef, {
         status: 'suspended',
         suspendedUntil: suspendUntil,
         suspensionReason: 'Repeated speeding violations',
-        'safetyData.suspensionCount': firestore.FieldValue.increment(1),
+        'safetyData.suspensionCount': increment(1),
       });
 
       Alert.alert(
@@ -215,9 +216,10 @@ export default function SpeedViolationsScreen() {
           onPress: async () => {
             setProcessingAction(true);
             try {
-              await firestore().collection('drivers').doc(driverId).update({
+              const driverRef = doc(db, 'drivers', driverId);
+              await updateDoc(driverRef, {
                 status: 'banned',
-                bannedAt: firestore.FieldValue.serverTimestamp(),
+                bannedAt: serverTimestamp(),
                 banReason: 'Severe speeding violations - safety risk',
               });
 
@@ -246,7 +248,7 @@ export default function SpeedViolationsScreen() {
     });
   };
 
-  const getSeverityBadge = (violations: ViolationDetail[]) => {
+  const getSeverityBadge = (violations: { severity: string }[]) => {
     const severeCount = violations.filter((v) => v.severity === 'severe').length;
     const moderateCount = violations.filter((v) => v.severity === 'moderate').length;
 

@@ -100,6 +100,15 @@ export async function confirmStripePayment(
   try {
     console.log('💰 Confirming Stripe payment:', paymentIntentId);
 
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
+    console.log('🔑 Auth token refreshed for payment confirmation');
+
     // React Native Firebase uses httpsCallable directly on functions instance
     const confirmPayment = firebaseFunctions.httpsCallable('confirmStripePayment');
 
@@ -128,6 +137,14 @@ export async function getStripePaymentStatus(
 ): Promise<{ paymentIntentId: string; status: string; amount: number }> {
   try {
     console.log('🔍 Getting Stripe payment status:', paymentIntentId);
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
 
     const getStatus = firebaseFunctions.httpsCallable('getStripePaymentStatus');
 
@@ -159,6 +176,14 @@ export async function refundStripePayment(
   try {
     console.log('🔄 Processing Stripe refund:', paymentIntentId);
 
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
+
     // React Native Firebase uses httpsCallable directly on functions instance
     const refundPayment = firebaseFunctions.httpsCallable('refundStripePayment');
 
@@ -187,6 +212,14 @@ export async function getOrCreateStripeCustomer(): Promise<{ customerId: string 
   try {
     console.log('👤 Getting or creating Stripe customer...');
 
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
+
     const getCustomer = firebaseFunctions.httpsCallable('getOrCreateStripeCustomer');
 
     const result = await getCustomer({});
@@ -209,6 +242,14 @@ export async function getOrCreateStripeCustomer(): Promise<{ customerId: string 
 export async function createStripeSetupIntent(): Promise<StripeSetupIntentResult> {
   try {
     console.log('💳 Creating Stripe setup intent...');
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
 
     const createSetupIntent = firebaseFunctions.httpsCallable('createStripeSetupIntent');
 
@@ -242,6 +283,14 @@ export async function confirmStripeSetupIntent(
 ): Promise<{ setupIntentId: string; status: string; paymentMethodId: string }> {
   try {
     console.log('💰 Confirming Stripe setup intent:', setupIntentId);
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    // Force token refresh to prevent auth errors
+    await user.getIdToken(true);
 
     const confirmSetup = firebaseFunctions.httpsCallable('confirmStripeSetupIntent');
 
@@ -301,6 +350,9 @@ export class StripeService {
    */
   static async removePaymentMethod(userId: string, methodId: string): Promise<void> {
     try {
+      // Ensure auth is valid before calling
+      await ensureAuthenticated();
+
       const removeMethod = firebaseFunctions.httpsCallable('removeStripePaymentMethod');
       await removeMethod({ paymentMethodId: methodId });
       console.log('🗑️ Removed Stripe payment method:', methodId);
@@ -315,6 +367,9 @@ export class StripeService {
    */
   static async setDefaultMethod(userId: string, methodId: string): Promise<void> {
     try {
+      // Ensure auth is valid before calling
+      await ensureAuthenticated();
+
       const setDefault = firebaseFunctions.httpsCallable('setDefaultStripePaymentMethod');
       await setDefault({ paymentMethodId: methodId });
       console.log('⭐ Set default Stripe payment method:', methodId);
