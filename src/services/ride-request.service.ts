@@ -8,6 +8,7 @@
  */
 
 import { firebaseDb, firebaseFunctions } from '../config/firebase';
+import { httpsCallable } from '@react-native-firebase/functions';
 import {
   collection,
   doc,
@@ -544,7 +545,7 @@ async function updateDriverEarnings(
   tipAmount: number
 ): Promise<void> {
   try {
-    const updateEarnings = firebaseFunctions.httpsCallable('updateDriverEarnings');
+    const updateEarnings = httpsCallable(firebaseFunctions, 'updateDriverEarnings');
 
     const result = await updateEarnings({
       driverId,
@@ -1048,7 +1049,7 @@ async function updateDriverEarningsForLateTip(
   tipAmount: number
 ): Promise<void> {
   try {
-    const updateEarnings = firebaseFunctions.httpsCallable('updateDriverEarnings');
+    const updateEarnings = httpsCallable(firebaseFunctions, 'updateDriverEarnings');
 
     await updateEarnings({
       driverId,

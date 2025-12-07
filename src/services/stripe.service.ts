@@ -3,10 +3,11 @@
  * Production Stripe integration using Firebase Cloud Functions
  * Supports Payment Sheet for card payments
  *
- * REACT NATIVE FIREBASE v21 (not Web SDK)
+ * REACT NATIVE FIREBASE v23+ MODULAR API
  */
 
 import { firebaseFunctions, firebaseAuth } from '@/src/config/firebase';
+import { httpsCallable } from '@react-native-firebase/functions';
 
 export interface StripePaymentMethod {
   id: string;
@@ -61,8 +62,8 @@ export async function createStripePaymentIntent(
     const token = await user.getIdToken(true);
     console.log('🔑 Auth token refreshed, length:', token.length);
 
-    // React Native Firebase uses httpsCallable directly on functions instance
-    const createPaymentIntent = firebaseFunctions.httpsCallable('createStripePaymentIntent');
+    // React Native Firebase v23+ modular API
+    const createPaymentIntent = httpsCallable(firebaseFunctions, 'createStripePaymentIntent');
 
     const result = await createPaymentIntent({
       amount,
@@ -109,8 +110,8 @@ export async function confirmStripePayment(
     await user.getIdToken(true);
     console.log('🔑 Auth token refreshed for payment confirmation');
 
-    // React Native Firebase uses httpsCallable directly on functions instance
-    const confirmPayment = firebaseFunctions.httpsCallable('confirmStripePayment');
+    // React Native Firebase v23+ modular API
+    const confirmPayment = httpsCallable(firebaseFunctions, 'confirmStripePayment');
 
     const result = await confirmPayment({ paymentIntentId });
 
@@ -146,7 +147,7 @@ export async function getStripePaymentStatus(
     // Force token refresh to prevent auth errors
     await user.getIdToken(true);
 
-    const getStatus = firebaseFunctions.httpsCallable('getStripePaymentStatus');
+    const getStatus = httpsCallable(firebaseFunctions, 'getStripePaymentStatus');
 
     const result = await getStatus({ paymentIntentId });
 
@@ -184,8 +185,8 @@ export async function refundStripePayment(
     // Force token refresh to prevent auth errors
     await user.getIdToken(true);
 
-    // React Native Firebase uses httpsCallable directly on functions instance
-    const refundPayment = firebaseFunctions.httpsCallable('refundStripePayment');
+    // React Native Firebase v23+ modular API
+    const refundPayment = httpsCallable(firebaseFunctions, 'refundStripePayment');
 
     const result = await refundPayment({
       paymentIntentId,
@@ -220,7 +221,7 @@ export async function getOrCreateStripeCustomer(): Promise<{ customerId: string 
     // Force token refresh to prevent auth errors
     await user.getIdToken(true);
 
-    const getCustomer = firebaseFunctions.httpsCallable('getOrCreateStripeCustomer');
+    const getCustomer = httpsCallable(firebaseFunctions, 'getOrCreateStripeCustomer');
 
     const result = await getCustomer({});
 
@@ -243,15 +244,12 @@ export async function createStripeSetupIntent(): Promise<StripeSetupIntentResult
   try {
     console.log('💳 Creating Stripe setup intent...');
 
-    // Ensure user is authenticated and token is fresh
-    const user = firebaseAuth.currentUser;
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-    // Force token refresh to prevent auth errors
-    await user.getIdToken(true);
+    // Ensure auth is ready and get fresh token
+    const { uid, idToken } = await ensureAuthenticated();
 
-    const createSetupIntent = firebaseFunctions.httpsCallable('createStripeSetupIntent');
+    console.log('🔑 Auth ready for setup intent, user:', uid, '| Token length:', idToken.length);
+
+    const createSetupIntent = httpsCallable(firebaseFunctions, 'createStripeSetupIntent');
 
     const result = await createSetupIntent({});
 
@@ -284,15 +282,12 @@ export async function confirmStripeSetupIntent(
   try {
     console.log('💰 Confirming Stripe setup intent:', setupIntentId);
 
-    // Ensure user is authenticated and token is fresh
-    const user = firebaseAuth.currentUser;
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-    // Force token refresh to prevent auth errors
-    await user.getIdToken(true);
+    // Ensure auth is ready and get fresh token
+    const { uid, idToken } = await ensureAuthenticated();
 
-    const confirmSetup = firebaseFunctions.httpsCallable('confirmStripeSetupIntent');
+    console.log('🔑 Auth ready for confirm setup, user:', uid, '| Token length:', idToken.length);
+
+    const confirmSetup = httpsCallable(firebaseFunctions, 'confirmStripeSetupIntent');
 
     const result = await confirmSetup({ setupIntentId, setAsDefault });
 
@@ -311,17 +306,76 @@ export async function confirmStripeSetupIntent(
 }
 
 /**
- * Helper to ensure user is authenticated before calling functions
+ * Helper to ensure user is authenticated and get a fresh ID token
+ * Waits for auth state to be ready if needed
+ * Returns both the user ID and the fresh ID token for manual attachment if needed
  */
-async function ensureAuthenticated(): Promise<string> {
-  const user = firebaseAuth.currentUser;
+async function ensureAuthenticated(): Promise<{ uid: string; idToken: string }> {
+  // First check if we already have a current user
+  let user = firebaseAuth.currentUser;
+
+  // If no user, wait a moment for auth state to initialize
   if (!user) {
-    throw new Error('User not authenticated');
+    console.log('⏳ Waiting for auth state to initialize...');
+    // Wait up to 5 seconds for auth state
+    for (let i = 0; i < 10; i++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      user = firebaseAuth.currentUser;
+      if (user) {
+        console.log('✅ Auth state initialized after waiting');
+        break;
+      }
+    }
   }
+
+  if (!user) {
+    console.error('❌ No authenticated user found after waiting');
+    throw new Error('UNAUTHENTICATED');
+  }
+
   // Force token refresh to ensure it's valid
-  await user.getIdToken(true);
-  console.log('🔑 Auth verified for user:', user.uid);
-  return user.uid;
+  let idToken: string;
+  try {
+    idToken = await user.getIdToken(true);
+    console.log('🔑 Auth verified for user:', user.uid, '| Token length:', idToken.length);
+  } catch (tokenError) {
+    console.error('❌ Failed to refresh auth token:', tokenError);
+    throw new Error('UNAUTHENTICATED');
+  }
+
+  return { uid: user.uid, idToken };
+}
+
+/**
+ * Workaround for React Native Firebase httpsCallable auth token issue
+ * Sometimes the auth token isn't properly attached to callable function requests
+ * This helper ensures we have a valid auth state before making the call
+ */
+async function callAuthenticatedFunction<T>(
+  functionName: string,
+  data: any = {}
+): Promise<T> {
+  // Ensure auth is ready and get fresh token
+  const { uid, idToken } = await ensureAuthenticated();
+
+  console.log(`📞 Calling ${functionName} for user ${uid}...`);
+
+  // Make the callable function request
+  const callable = httpsCallable(firebaseFunctions, functionName);
+
+  try {
+    const result = await callable(data);
+    return result.data as T;
+  } catch (error: any) {
+    // If we get UNAUTHENTICATED, log detailed info for debugging
+    if (error?.code === 'unauthenticated' || error?.message?.includes('UNAUTHENTICATED')) {
+      console.error(`❌ ${functionName} returned UNAUTHENTICATED despite having token`);
+      console.error('Token exists:', !!idToken);
+      console.error('Token length:', idToken?.length);
+      console.error('User UID:', uid);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -333,14 +387,23 @@ export class StripeService {
    */
   static async getPaymentMethods(userId: string): Promise<StripePaymentMethod[]> {
     try {
-      // Ensure auth is valid before calling
-      await ensureAuthenticated();
+      console.log('📋 Fetching Stripe payment methods...');
+      const methods = await callAuthenticatedFunction<StripePaymentMethod[]>(
+        'getStripePaymentMethods',
+        {}
+      );
+      console.log('✅ Loaded', methods?.length || 0, 'payment methods');
+      return methods || [];
+    } catch (error: any) {
+      // Log the specific error for debugging
+      console.error('Error loading payment methods:', error?.message || error);
+      console.error('Error code:', error?.code);
 
-      const getMethods = firebaseFunctions.httpsCallable('getStripePaymentMethods');
-      const result = await getMethods({});
-      return (result.data as StripePaymentMethod[]) || [];
-    } catch (error) {
-      console.error('Error loading payment methods:', error);
+      // If it's an auth error, the user might need to re-login
+      if (error?.message === 'UNAUTHENTICATED' || error?.code === 'unauthenticated') {
+        console.warn('⚠️ User authentication expired - payment methods unavailable');
+      }
+
       return [];
     }
   }
@@ -353,7 +416,7 @@ export class StripeService {
       // Ensure auth is valid before calling
       await ensureAuthenticated();
 
-      const removeMethod = firebaseFunctions.httpsCallable('removeStripePaymentMethod');
+      const removeMethod = httpsCallable(firebaseFunctions, 'removeStripePaymentMethod');
       await removeMethod({ paymentMethodId: methodId });
       console.log('🗑️ Removed Stripe payment method:', methodId);
     } catch (error) {
@@ -370,7 +433,7 @@ export class StripeService {
       // Ensure auth is valid before calling
       await ensureAuthenticated();
 
-      const setDefault = firebaseFunctions.httpsCallable('setDefaultStripePaymentMethod');
+      const setDefault = httpsCallable(firebaseFunctions, 'setDefaultStripePaymentMethod');
       await setDefault({ paymentMethodId: methodId });
       console.log('⭐ Set default Stripe payment method:', methodId);
     } catch (error) {

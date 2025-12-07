@@ -20,6 +20,16 @@ const TEMP_SUSPENSION_DAYS = 7;
 const MAX_STRIKES = 3;
 const DISPUTE_WINDOW_HOURS = 24;
 
+/**
+ * Common options for all callable functions
+ * invoker: 'public' allows any caller to invoke the function at the Cloud Run level
+ * Authentication is still enforced within the function via request.auth
+ */
+const callableOptions = {
+  region: 'us-east1' as const,
+  invoker: 'public' as const,
+};
+
 // =============================================================================
 // STRIKE MANAGEMENT
 // =============================================================================
@@ -27,7 +37,7 @@ const DISPUTE_WINDOW_HOURS = 24;
 /**
  * Issue a strike to a driver
  */
-export const issueStrike = onCall({ region: 'us-east1' }, async (request) => {
+export const issueStrike = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -471,7 +481,7 @@ export const processStrikeQueue = onSchedule({ schedule: 'every 5 minutes', regi
 /**
  * Review and resolve appeal (admin only)
  */
-export const resolveAppeal = onCall({ region: 'us-east1' }, async (request) => {
+export const resolveAppeal = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -560,7 +570,7 @@ export const resolveAppeal = onCall({ region: 'us-east1' }, async (request) => {
 /**
  * Resolve payment dispute (admin only)
  */
-export const resolveDispute = onCall({ region: 'us-east1' }, async (request) => {
+export const resolveDispute = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -678,7 +688,7 @@ export const resolveDispute = onCall({ region: 'us-east1' }, async (request) => 
 /**
  * Get safety dashboard data (admin only)
  */
-export const getSafetyDashboard = onCall({ region: 'us-east1' }, async (request) => {
+export const getSafetyDashboard = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

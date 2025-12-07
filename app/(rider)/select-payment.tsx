@@ -87,12 +87,27 @@ export default function SelectPaymentScreen() {
   const chargeAmountUSD = getUSDAmount(chargeAmountKYD);
 
   // Load saved Stripe payment methods
+  // Wait for both user state AND Firebase auth to be ready
   useEffect(() => {
-    loadPaymentMethods();
+    // Small delay to ensure Firebase Auth state is synchronized
+    const timer = setTimeout(() => {
+      loadPaymentMethods();
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [user]);
 
   const loadPaymentMethods = async () => {
     if (!user) return;
+
+    // Also verify Firebase auth is ready
+    const currentUser = firebaseAuth.currentUser;
+    if (!currentUser) {
+      console.log('⏳ Waiting for Firebase auth to be ready...');
+      // Firebase auth not ready yet, wait a bit longer
+      setTimeout(loadPaymentMethods, 500);
+      return;
+    }
 
     try {
       setLoadingMethods(true);

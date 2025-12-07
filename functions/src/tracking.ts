@@ -20,6 +20,16 @@ import { v4 as uuidv4 } from 'uuid';
 // Using 'main' database (restored from backup)
 const db = getFirestore(admin.app(), 'main');
 
+/**
+ * Common options for all callable functions
+ * invoker: 'public' allows any caller to invoke the function at the Cloud Run level
+ * Authentication is still enforced within the function via request.auth
+ */
+const callableOptions = {
+  region: 'us-east1' as const,
+  invoker: 'public' as const,
+};
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -191,7 +201,7 @@ function buildTrackingUrl(token: string): string {
  *
  * @returns { sessionId, token, shareableUrl }
  */
-export const createTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
+export const createTrackingSession = onCall(callableOptions, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -345,7 +355,7 @@ export const createTrackingSession = onCall({ region: 'us-east1' }, async (reque
  * @param request.tripPhase - Current phase of the trip
  * @param request.estimatedMinutes - Estimated minutes to arrival
  */
-export const updateTrackingLocation = onCall({ region: 'us-east1' }, async (request) => {
+export const updateTrackingLocation = onCall(callableOptions, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -445,7 +455,7 @@ export const updateTrackingLocation = onCall({ region: 'us-east1' }, async (requ
  * @param request.sessionId - The tracking session ID (optional if tripId provided)
  * @param request.tripId - The trip ID (alternative to sessionId)
  */
-export const completeTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
+export const completeTrackingSession = onCall(callableOptions, async (request) => {
   try {
     // Verify authentication
     if (!request.auth) {
@@ -541,7 +551,7 @@ export const completeTrackingSession = onCall({ region: 'us-east1' }, async (req
  *
  * @param request.token - The unique tracking token
  */
-export const getTrackingSession = onCall({ region: 'us-east1' }, async (request) => {
+export const getTrackingSession = onCall(callableOptions, async (request) => {
   try {
     const { token } = request.data as { token: string };
 

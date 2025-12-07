@@ -16,6 +16,7 @@
  */
 
 import { firebaseFunctions } from '../config/firebase';
+import { httpsCallable } from '@react-native-firebase/functions';
 import * as SMS from 'expo-sms';
 import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
@@ -106,7 +107,7 @@ export async function createTrackingSession(
     console.log('📍 Creating tracking session for trip:', params.tripId);
 
     // Call the Cloud Function
-    const createSession = firebaseFunctions.httpsCallable('createTrackingSession');
+    const createSession = httpsCallable(firebaseFunctions, 'createTrackingSession');
     const result = await createSession(params);
     const data = result.data as CreateTrackingResponse;
 
@@ -207,7 +208,7 @@ export async function updateLocation(
       estimatedMinutes,
     };
 
-    const updateTracking = firebaseFunctions.httpsCallable('updateTrackingLocation');
+    const updateTracking = httpsCallable(firebaseFunctions, 'updateTrackingLocation');
     const result = await updateTracking(params);
     const data = result.data as UpdateLocationResponse;
 
@@ -357,7 +358,7 @@ export async function completeSession(
 
     console.log('🏁 Completing tracking session');
 
-    const completeTracking = firebaseFunctions.httpsCallable('completeTrackingSession');
+    const completeTracking = httpsCallable(firebaseFunctions, 'completeTrackingSession');
     const result = await completeTracking(params);
     const data = result.data as CompleteSessionResponse;
 

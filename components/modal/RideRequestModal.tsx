@@ -233,7 +233,9 @@ export default function RideRequestModal({
               <View style={styles.womenOnlyAlert}>
                 <Ionicons name="information-circle" size={18} color="#BE185D" />
                 <Text style={styles.womenOnlyAlertText}>
-                  This is a women-only ride request. The rider expects a female driver, if this doesn't match your profile, you may withdraw from this arrangement. Or If a male presents themselves at pickup location, you may cancel and receive 50% of the contribution for your gas & time.
+                  Women-Only Ride Request: This rider has requested a female driver. 
+                  If this doesn't describe you, please decline. If a male passenger 
+                  presents at pickup, you may cancel and receive 50% compensation.
                 </Text>
               </View>
             )}

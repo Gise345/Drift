@@ -59,10 +59,21 @@ interface PaymentMethodRequest {
 }
 
 /**
+ * Common options for all callable functions
+ * invoker: 'public' allows any caller to invoke the function at the Cloud Run level
+ * Authentication is still enforced within the function via request.auth
+ * This fixes the UNAUTHENTICATED issue with React Native Firebase
+ */
+const callableOptions = {
+  region: 'us-east1' as const,
+  invoker: 'public' as const, // Allow public invocation - auth is checked in function
+};
+
+/**
  * GET OR CREATE STRIPE CUSTOMER
  * Creates a Stripe customer for the authenticated user or returns existing one
  */
-export const getOrCreateStripeCustomer = onCall({ region: 'us-east1' }, async (request) => {
+export const getOrCreateStripeCustomer = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -118,7 +129,7 @@ export const getOrCreateStripeCustomer = onCall({ region: 'us-east1' }, async (r
  * CREATE STRIPE PAYMENT INTENT
  * Creates a payment intent for the mobile Payment Sheet
  */
-export const createStripePaymentIntent = onCall({ region: 'us-east1' }, async (request) => {
+export const createStripePaymentIntent = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -223,7 +234,7 @@ export const createStripePaymentIntent = onCall({ region: 'us-east1' }, async (r
  * CONFIRM STRIPE PAYMENT
  * Confirms payment was successful and updates records
  */
-export const confirmStripePayment = onCall({ region: 'us-east1' }, async (request) => {
+export const confirmStripePayment = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -278,7 +289,7 @@ export const confirmStripePayment = onCall({ region: 'us-east1' }, async (reques
  * GET STRIPE PAYMENT STATUS
  * Check payment status without modifying
  */
-export const getStripePaymentStatus = onCall({ region: 'us-east1' }, async (request) => {
+export const getStripePaymentStatus = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -326,7 +337,7 @@ export const getStripePaymentStatus = onCall({ region: 'us-east1' }, async (requ
  * REFUND STRIPE PAYMENT
  * Process refund for cancelled carpool
  */
-export const refundStripePayment = onCall({ region: 'us-east1' }, async (request) => {
+export const refundStripePayment = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -391,7 +402,7 @@ export const refundStripePayment = onCall({ region: 'us-east1' }, async (request
  * GET STRIPE PAYMENT METHODS
  * Get saved payment methods for the customer
  */
-export const getStripePaymentMethods = onCall({ region: 'us-east1' }, async (request) => {
+export const getStripePaymentMethods = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -443,7 +454,7 @@ export const getStripePaymentMethods = onCall({ region: 'us-east1' }, async (req
  * REMOVE STRIPE PAYMENT METHOD
  * Detach a payment method from the customer
  */
-export const removeStripePaymentMethod = onCall({ region: 'us-east1' }, async (request) => {
+export const removeStripePaymentMethod = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -483,7 +494,7 @@ export const removeStripePaymentMethod = onCall({ region: 'us-east1' }, async (r
  * Creates a SetupIntent for saving a card without charging
  * Used for in-app card form (CardField component)
  */
-export const createStripeSetupIntent = onCall({ region: 'us-east1' }, async (request) => {
+export const createStripeSetupIntent = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -558,7 +569,7 @@ export const createStripeSetupIntent = onCall({ region: 'us-east1' }, async (req
  * CONFIRM STRIPE SETUP INTENT
  * Confirms that a card was successfully saved
  */
-export const confirmStripeSetupIntent = onCall({ region: 'us-east1' }, async (request) => {
+export const confirmStripeSetupIntent = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -625,7 +636,7 @@ export const confirmStripeSetupIntent = onCall({ region: 'us-east1' }, async (re
  * SET DEFAULT STRIPE PAYMENT METHOD
  * Set a payment method as the customer's default
  */
-export const setDefaultStripePaymentMethod = onCall({ region: 'us-east1' }, async (request) => {
+export const setDefaultStripePaymentMethod = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {
@@ -685,7 +696,7 @@ interface UpdateDriverEarningsRequest {
   tipAmount: number;
 }
 
-export const updateDriverEarnings = onCall({ region: 'us-east1' }, async (request) => {
+export const updateDriverEarnings = onCall(callableOptions, async (request) => {
     try {
       // Verify authentication
       if (!request.auth) {

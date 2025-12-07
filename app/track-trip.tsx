@@ -38,6 +38,16 @@ const db = getFirestore(app, 'main');
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Google Directions API Key
+const GOOGLE_DIRECTIONS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+interface RouteCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
 interface TripLocation {
   latitude: number;
   longitude: number;
@@ -140,6 +150,82 @@ export default function TrackTripScreen() {
   const [distance, setDistance] = useState<number | null>(null);
   const [eta, setEta] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('--');
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
+
+  // Decode Google polyline to coordinates
+  const decodePolyline = (encoded: string): RouteCoordinate[] => {
+    const points: RouteCoordinate[] = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+      let shift = 0;
+      let result = 0;
+      let byte;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+
+    return points;
+  };
+
+  // Fetch route from Google Directions API
+  const fetchRoute = async (
+    origin: { latitude: number; longitude: number },
+    destination: { latitude: number; longitude: number }
+  ) => {
+    if (!GOOGLE_DIRECTIONS_API_KEY) {
+      console.warn('No Google Directions API key available');
+      return;
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const points = decodePolyline(route.overview_polyline.points);
+        setRouteCoordinates(points);
+
+        // Also get accurate distance and ETA from the route
+        const leg = route.legs[0];
+        if (leg) {
+          setDistance(leg.distance.value / 1000); // meters to km
+          setEta(Math.ceil(leg.duration.value / 60)); // seconds to minutes
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch route:', error);
+    }
+  };
 
   // Subscribe to trip updates
   useEffect(() => {
@@ -250,6 +336,19 @@ export default function TrackTripScreen() {
     }
   }, [trip?.driverLocation, trip?.destination]);
 
+  // Fetch actual route when driver location and destination are available
+  useEffect(() => {
+    if (trip?.driverLocation && trip?.destination?.coordinates) {
+      fetchRoute(
+        {
+          latitude: trip.driverLocation.latitude,
+          longitude: trip.driverLocation.longitude,
+        },
+        trip.destination.coordinates
+      );
+    }
+  }, [trip?.driverLocation?.latitude, trip?.driverLocation?.longitude, trip?.destination?.coordinates]);
+
   // Loading state
   if (loading) {
     return (
@@ -349,8 +448,20 @@ export default function TrackTripScreen() {
             </Marker>
           )}
 
-          {/* Route Line */}
-          {trip.driverLocation && trip.destination?.coordinates && (
+          {/* Route Line - actual road route from Google Directions */}
+          {routeCoordinates.length > 1 && (
+            <Polyline
+              coordinates={routeCoordinates}
+              strokeColor="#5d1289"
+              strokeWidth={4}
+              geodesic={true}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
+
+          {/* Fallback: straight line if route not yet loaded */}
+          {routeCoordinates.length === 0 && trip.driverLocation && trip.destination?.coordinates && (
             <Polyline
               coordinates={[
                 {
@@ -361,6 +472,7 @@ export default function TrackTripScreen() {
               ]}
               strokeColor="#5d1289"
               strokeWidth={4}
+              lineDashPattern={[10, 5]}
             />
           )}
         </MapView>

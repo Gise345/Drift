@@ -55,7 +55,9 @@
       "Bash(npx eas:*)",
       "Bash(firebase functions:secrets:access:*)",
       "Bash(npm audit:*)",
-      "Bash(firebase projects:list:*)"
+      "Bash(firebase projects:list:*)",
+      "WebFetch(domain:stackoverflow.com)",
+      "WebFetch(domain:rnfirebase.io)"
     ],
     "deny": [],
     "ask": []

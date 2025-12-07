@@ -12,6 +12,16 @@ import { getFirestore } from 'firebase-admin/firestore';
 const db = getFirestore(admin.app(), 'main');
 const messaging = admin.messaging();
 
+/**
+ * Common options for all callable functions
+ * invoker: 'public' allows any caller to invoke the function at the Cloud Run level
+ * Authentication is still enforced within the function via request.auth
+ */
+const callableOptions = {
+  region: 'us-east1' as const,
+  invoker: 'public' as const,
+};
+
 interface SendMessageNotificationData {
   tripId: string;
   recipientId: string;
@@ -25,7 +35,7 @@ interface SendMessageNotificationData {
  * Send push notification when a new message is sent
  * Called from the mobile app after sending a message
  */
-export const sendMessageNotification = onCall({ region: 'us-east1' }, async (request) => {
+export const sendMessageNotification = onCall(callableOptions, async (request) => {
   // Verify authentication
   if (!request.auth) {
     throw new HttpsError(

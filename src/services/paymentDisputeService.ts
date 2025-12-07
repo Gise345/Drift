@@ -31,7 +31,7 @@ import {
   serverTimestamp,
   FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
-import { getFunctions } from '@react-native-firebase/functions';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
 
 // Get Firebase instances
 const app = getApp();
@@ -431,8 +431,8 @@ async function processStripeRefund(
       return;
     }
 
-    // Call refund function using modular API
-    const refundFunction = firebaseFunctions.httpsCallable('refundStripePayment');
+    // Call refund function using v23+ modular API
+    const refundFunction = httpsCallable(firebaseFunctions, 'refundStripePayment');
     await refundFunction({
       paymentIntentId,
       amount,

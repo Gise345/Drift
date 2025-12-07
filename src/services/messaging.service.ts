@@ -386,9 +386,10 @@ export async function sendMessageNotification(
   try {
     // Import functions from firebase config (already using modular API)
     const { firebaseFunctions } = await import('../config/firebase');
+    const { httpsCallable } = await import('@react-native-firebase/functions');
 
-    // Call Cloud Function to send push notification using modular API
-    const sendNotification = firebaseFunctions.httpsCallable('sendMessageNotification');
+    // Call Cloud Function to send push notification using v23+ modular API
+    const sendNotification = httpsCallable(firebaseFunctions, 'sendMessageNotification');
 
     await sendNotification({
       tripId,

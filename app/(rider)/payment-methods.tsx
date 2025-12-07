@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { StripeService, StripePaymentMethod } from '@/src/services/stripe.service';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { firebaseAuth } from '@/src/config/firebase';
 import Constants from 'expo-constants';
 
 const isExpoGo = Constants.appOwnership === 'expo';
@@ -26,6 +27,15 @@ export default function PaymentMethodsScreen() {
 
   const loadPaymentMethods = async () => {
     if (!user?.id) return;
+
+    // Also verify Firebase auth is ready
+    const currentUser = firebaseAuth.currentUser;
+    if (!currentUser) {
+      console.log('⏳ Waiting for Firebase auth to be ready...');
+      // Firebase auth not ready yet, wait a bit longer
+      setTimeout(loadPaymentMethods, 500);
+      return;
+    }
 
     try {
       setLoading(true);
