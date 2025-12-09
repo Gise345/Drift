@@ -16,6 +16,7 @@ interface DriftInputProps extends TextInputProps {
   isValid?: boolean;
   rightIcon?: React.ReactNode;
   onRightIconPress?: () => void;
+  variant?: 'dark' | 'light'; // dark = white text (for dark bg), light = black text (for white bg)
 }
 
 /**
@@ -29,26 +30,29 @@ export function DriftInput({
   isValid = false,
   rightIcon,
   onRightIconPress,
+  variant = 'dark', // default to dark (white text) for backward compatibility
   style,
   ...props
 }: DriftInputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const isLight = variant === 'light';
 
   return (
     <View style={styles.container}>
-      {label && <Text style={styles.label}>{label}</Text>}
-      
+      {label && <Text style={[styles.label, isLight && styles.labelLight]}>{label}</Text>}
+
       <View style={styles.inputWrapper}>
         <TextInput
           style={[
             styles.input,
+            isLight && styles.inputLight,
             isFocused && styles.inputFocused,
             error && styles.inputError,
             style,
           ]}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholderTextColor={Colors.gray[400]}
+          placeholderTextColor={isLight ? Colors.gray[400] : Colors.gray[400]}
           {...props}
         />
         
@@ -162,19 +166,27 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     fontWeight: '500',
   },
-  
+
+  labelLight: {
+    color: Colors.black,
+  },
+
   inputWrapper: {
     position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
   },
-  
+
   input: {
     flex: 1,
     fontSize: Typography.fontSize.lg,
     color: Colors.white,
     paddingVertical: Spacing.md,
     paddingRight: 40, // Space for icons
+  },
+
+  inputLight: {
+    color: Colors.black,
   },
   
   inputFocused: {

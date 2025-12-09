@@ -4,6 +4,20 @@ const IS_DEV = APP_VARIANT === 'development';
 const IS_PREVIEW = APP_VARIANT === 'preview';
 const IS_PRODUCTION = APP_VARIANT === 'production';
 
+// Google Maps API Key - required for native map rendering
+// For local dev: Create .env.local with EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key
+// For EAS builds: Set via `eas secret:create GOOGLE_MAPS_API_KEY`
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+if (!GOOGLE_MAPS_API_KEY) {
+  console.warn(
+    '\n⚠️  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not set!\n' +
+    '   Maps will not work in this build.\n' +
+    '   For local development: Create .env.local with your API key\n' +
+    '   For EAS builds: Run `eas secret:create GOOGLE_MAPS_API_KEY`\n'
+  );
+}
+
 module.exports = {
   expo: {
     name: IS_PRODUCTION ? "Drift" : IS_PREVIEW ? "Drift (Preview)" : "Drift (Dev)",
@@ -34,8 +48,8 @@ module.exports = {
       bundleIdentifier: "com.drift.app",
       googleServicesFile: "./GoogleService-Info.plist",
       infoPlist: {
-        NSLocationWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
-        NSLocationAlwaysAndWhenInUseUsageDescription: "Drift needs your location to show nearby carpools and provide navigation.",
+        NSLocationWhenInUseUsageDescription: "Drift uses your location to show nearby drivers, calculate routes, provide turn-by-turn navigation, and share your trip with trusted contacts for safety.",
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Drift uses your location in the background during active trips to: share your real-time location with trusted contacts for safety, provide turn-by-turn navigation when your screen is off, and update arrival times for other users. Background location tracking stops automatically when your trip ends.",
         // Deep link URL types for Stripe callbacks
         CFBundleURLTypes: [
           {
@@ -46,7 +60,7 @@ module.exports = {
         LSApplicationQueriesSchemes: ["https", "http"]
       },
       config: {
-        googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+        googleMapsApiKey: GOOGLE_MAPS_API_KEY
       },
       // Deep linking for Universal Links (iOS)
       associatedDomains: [
@@ -74,7 +88,7 @@ module.exports = {
       googleServicesFile: "./google-services.json",
       config: {
         googleMaps: {
-          apiKey: "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk"
+          apiKey: GOOGLE_MAPS_API_KEY
         }
       },
       // Deep linking for app features
@@ -144,8 +158,8 @@ module.exports = {
       [
         "expo-location",
         {
-          locationAlwaysAndWhenInUsePermission: "Drift needs your location to show nearby carpools and provide navigation.",
-          locationWhenInUsePermission: "Drift needs your location to show nearby carpools and provide navigation.",
+          locationAlwaysAndWhenInUsePermission: "Drift uses your location in the background during active trips to share your real-time location with trusted contacts, provide navigation when your screen is off, and update arrival times. Tracking stops when your trip ends.",
+          locationWhenInUsePermission: "Drift uses your location to show nearby drivers, calculate routes, provide turn-by-turn navigation, and share your trip with trusted contacts for safety.",
           isAndroidBackgroundLocationEnabled: true,
           isAndroidForegroundServiceEnabled: true
         }
@@ -166,11 +180,15 @@ module.exports = {
           },
           ios: {
             newArchEnabled: false,
-            deploymentTarget: "15.1"
+            deploymentTarget: "15.1",
+            useFrameworks: "static"  // Required for React Native Firebase
           }
         }
       ],
       "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics",
+      "@react-native-firebase/perf",
+      // Note: @react-native-firebase/analytics doesn't have a plugin - it works via @react-native-firebase/app
       "@react-native-google-signin/google-signin",
       [
         "@stripe/stripe-react-native",

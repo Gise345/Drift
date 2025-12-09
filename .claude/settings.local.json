@@ -57,7 +57,11 @@
       "Bash(npm audit:*)",
       "Bash(firebase projects:list:*)",
       "WebFetch(domain:stackoverflow.com)",
-      "WebFetch(domain:rnfirebase.io)"
+      "WebFetch(domain:rnfirebase.io)",
+      "Bash(eas env:list:*)",
+      "Bash(npm view:*)",
+      "Bash(npx expo config:*)",
+      "Bash(node --version)"
     ],
     "deny": [],
     "ask": []

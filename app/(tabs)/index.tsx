@@ -25,6 +25,8 @@ import DestinationCards from '@/components/ui/DestinationCards';
 import { useUserStore, SavedPlace, RecentSearch as UserRecentSearch } from '@/src/stores/user-store';
 import { useTripStore, Trip } from '@/src/stores/trip-store';
 import { getActiveRiderTrip } from '@/src/services/ride-request.service';
+import { useBackgroundLocationPermission } from '@/src/hooks/useBackgroundLocationPermission';
+import { BackgroundLocationDisclosureModal } from '@/components/location/BackgroundLocationDisclosureModal';
 
 /**
  * DRIFT HOME SCREEN - PROPER IMPLEMENTATION
@@ -125,9 +127,37 @@ const HomeScreen = () => {
   const mapRef = useRef<any>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
+  // Background location permission with prominent disclosure modal
+  const {
+    hasPermission: hasBackgroundPermission,
+    showDisclosureModal,
+    requestPermission: requestBackgroundPermission,
+    onDisclosureAccept,
+    onDisclosureDecline,
+  } = useBackgroundLocationPermission({
+    userType: 'rider',
+    onPermissionGranted: () => {
+      console.log('✅ Background location permission granted via modal disclosure');
+      // Refresh location after permission granted
+      getCurrentLocation();
+    },
+    onPermissionDenied: () => {
+      console.log('⚠️ Background location permission denied - trip sharing may be limited');
+    },
+  });
+
   useEffect(() => {
     initializeScreen();
   }, []);
+
+  // Show background location disclosure modal immediately when app opens
+  // if user hasn't granted permission yet
+  useEffect(() => {
+    if (hasBackgroundPermission === false && !loading) {
+      console.log('🔔 Showing location disclosure modal on app open');
+      requestBackgroundPermission();
+    }
+  }, [hasBackgroundPermission, loading, requestBackgroundPermission]);
 
   // Debounced search for modal
   useEffect(() => {
@@ -225,18 +255,24 @@ const HomeScreen = () => {
 
   /**
    * Get current location
+   * Only CHECKS permission status - doesn't request it
+   * Permission requesting is handled by the disclosure modal flow
    */
   const getCurrentLocation = async () => {
+    // Default Cayman region for fallback
+    const caymanRegion: Region = {
+      latitude: 19.3133,
+      longitude: -81.2546,
+      latitudeDelta: 0.2,
+      longitudeDelta: 0.2,
+    };
+
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      
+      // CHECK permission status (don't request - let disclosure modal handle that)
+      const { status } = await Location.getForegroundPermissionsAsync();
+
       if (status !== 'granted') {
-        const caymanRegion: Region = {
-          latitude: 19.3133,
-          longitude: -81.2546,
-          latitudeDelta: 0.2,
-          longitudeDelta: 0.2,
-        };
+        console.log('📍 No foreground permission yet - using default location');
         setRegion(caymanRegion);
         setLoading(false);
         return;
@@ -247,25 +283,19 @@ const HomeScreen = () => {
       });
 
       setLocation(currentLocation);
-      
+
       const initialRegion: Region = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
         latitudeDelta: 0.0922,
         longitudeDelta: 0.0421,
       };
-      
+
       setRegion(initialRegion);
       setLoading(false);
 
     } catch (error) {
       console.error('Error getting location:', error);
-      const caymanRegion: Region = {
-        latitude: 19.3133,
-        longitude: -81.2546,
-        latitudeDelta: 0.2,
-        longitudeDelta: 0.2,
-      };
       setRegion(caymanRegion);
       setLoading(false);
     }
@@ -808,8 +838,18 @@ const HomeScreen = () => {
 
   /**
    * Open search screen
+   * If no permission, the disclosure modal should already be showing
    */
-  const openSearch = () => {
+  const openSearch = async () => {
+    // Check if we have location permission
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      // Show disclosure modal if not already showing
+      if (!showDisclosureModal) {
+        requestBackgroundPermission();
+      }
+      return;
+    }
     router.push('/(rider)/search-location');
   };
 
@@ -817,17 +857,24 @@ const HomeScreen = () => {
    * Navigate to saved address - FIXED FOR COORDINATES
    */
   const navigateToAddress = async (address: SavedAddress) => {
+    // Check if we have location permission
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      // Show disclosure modal if not already showing
+      if (!showDisclosureModal) {
+        requestBackgroundPermission();
+      }
+      return;
+    }
+
     // Ensure we have current location
     let currentLoc = location;
     if (!currentLoc) {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          currentLoc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          setLocation(currentLoc);
-        }
+        currentLoc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setLocation(currentLoc);
       } catch (error) {
         console.error('Error getting location:', error);
       }
@@ -900,17 +947,24 @@ const HomeScreen = () => {
    * Navigate to tourist destination
    */
   const handleDestinationPress = async (destination: any) => {
+    // Check if we have location permission
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      // Show disclosure modal if not already showing
+      if (!showDisclosureModal) {
+        requestBackgroundPermission();
+      }
+      return;
+    }
+
     // Ensure we have current location
     let currentLoc = location;
     if (!currentLoc) {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          currentLoc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          setLocation(currentLoc);
-        }
+        currentLoc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setLocation(currentLoc);
       } catch (error) {
         console.error('Error getting location:', error);
       }
@@ -949,6 +1003,14 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Background Location Disclosure Modal - Shows BEFORE system permission */}
+      <BackgroundLocationDisclosureModal
+        visible={showDisclosureModal}
+        userType="rider"
+        onAccept={onDisclosureAccept}
+        onDecline={onDisclosureDecline}
+      />
+
       {/* Map View - Full Screen When Active */}
       {showMap && region && (
         <View style={styles.fullScreenMap}>

@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Platform, Linking } from 'react-native';
 import { AutoUpdate } from '@/src/components/AutoUpdate';
+import { initializeMonitoring } from '@/src/services/firebase-monitoring-service';
 
 // Stripe publishable key from environment
 const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -77,6 +78,8 @@ export default function RootLayout() {
   useEffect(() => {
     // Initialize auth on app start
     initialize();
+    // Initialize Firebase monitoring (Analytics, Crashlytics, Performance)
+    initializeMonitoring();
   }, []);
 
   // Handle deep links for tracking

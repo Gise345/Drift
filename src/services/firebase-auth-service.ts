@@ -427,8 +427,20 @@ export async function checkEmailVerification(): Promise<boolean> {
       return false;
     }
 
+    // Reload the user to get fresh data from Firebase servers
     await reload(user);
-    return user.emailVerified;
+
+    // IMPORTANT: Get the fresh user reference AFTER reload
+    // The reload() updates the cached user data, but we need to
+    // re-fetch the currentUser to get the updated emailVerified status
+    const refreshedUser = authInstance.currentUser;
+
+    if (!refreshedUser) {
+      return false;
+    }
+
+    console.log('📧 Email verification status after reload:', refreshedUser.emailVerified);
+    return refreshedUser.emailVerified;
   } catch (error) {
     console.error('❌ Error checking email verification:', error);
     return false;
@@ -471,4 +483,64 @@ export function getCurrentUser(): FirebaseAuthTypes.User | null {
  */
 export function onAuthStateChanged(callback: (user: FirebaseAuthTypes.User | null) => void) {
   return firebaseOnAuthStateChanged(authInstance, callback);
+}
+
+/**
+ * Soft delete user account
+ * - Marks user as deleted in Firestore (preserves data for legal/compliance)
+ * - Deletes Firebase Auth account
+ * - Admin can still see this user's data
+ */
+export async function softDeleteAccount(reason?: string): Promise<void> {
+  try {
+    const user = authInstance.currentUser;
+    if (!user) {
+      throw new Error('No user is currently signed in.');
+    }
+
+    console.log('🗑️ Starting soft delete for user:', user.uid);
+
+    // Step 1: Mark user as deleted in Firestore (preserves all data)
+    const userRef = doc(firestoreInstance, 'users', user.uid);
+    await updateDoc(userRef, {
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+      deletionReason: reason || 'User requested account deletion',
+      deletedByUserId: user.uid, // Self-deletion
+    });
+    console.log('✅ User marked as deleted in Firestore');
+
+    // Step 2: Also mark driver record as deleted if exists
+    const driverRef = doc(firestoreInstance, 'drivers', user.uid);
+    const driverDoc = await getDoc(driverRef);
+    if (documentExists(driverDoc)) {
+      await updateDoc(driverRef, {
+        isDeleted: true,
+        deletedAt: serverTimestamp(),
+        deletionReason: reason || 'User requested account deletion',
+      });
+      console.log('✅ Driver record marked as deleted');
+    }
+
+    // Step 3: Sign out from Google if applicable
+    try {
+      await GoogleSignin.signOut();
+    } catch (e) {
+      // Ignore Google sign out errors
+    }
+
+    // Step 4: Delete Firebase Auth account (this prevents re-login)
+    await user.delete();
+    console.log('✅ Firebase Auth account deleted');
+
+  } catch (error: any) {
+    console.error('❌ Soft delete error:', error);
+
+    // If the error is requires-recent-login, inform the user
+    if (error?.code === 'auth/requires-recent-login') {
+      throw new Error('For security, please sign out and sign back in, then try again.');
+    }
+
+    throw new Error(error?.message || 'Failed to delete account. Please try again.');
+  }
 }

@@ -36,6 +36,8 @@ import {
   initializeDriverNotifications,
   setupDriverNotificationListener,
 } from '@/src/services/driver-notification.service';
+import { useBackgroundLocationPermission } from '@/src/hooks/useBackgroundLocationPermission';
+import { BackgroundLocationDisclosureModal } from '@/components/location/BackgroundLocationDisclosureModal';
 
 export default function DriverHomeScreen() {
   const router = useRouter();
@@ -77,6 +79,23 @@ export default function DriverHomeScreen() {
   const statusCardAnimation = useRef(new Animated.Value(1)).current;
   const minimizedButtonAnimation = useRef(new Animated.Value(0)).current;
   const activeTripCardAnimation = useRef(new Animated.Value(1)).current;
+
+  // Background location permission with prominent disclosure modal
+  const {
+    hasPermission: hasBackgroundPermission,
+    showDisclosureModal,
+    requestPermission: requestBackgroundPermission,
+    onDisclosureAccept,
+    onDisclosureDecline,
+  } = useBackgroundLocationPermission({
+    userType: 'driver',
+    onPermissionGranted: () => {
+      console.log('✅ Background location permission granted via modal disclosure');
+    },
+    onPermissionDenied: () => {
+      console.log('⚠️ Background location permission denied - falling back to foreground');
+    },
+  });
 
   // Load driver profile from Firebase on mount
   useEffect(() => {
@@ -267,6 +286,23 @@ export default function DriverHomeScreen() {
     getCurrentLocation();
   }, []);
 
+  // Refresh location after permission is granted through disclosure flow
+  useEffect(() => {
+    if (hasBackgroundPermission === true) {
+      console.log('🔄 Permission granted - refreshing location');
+      getCurrentLocation();
+    }
+  }, [hasBackgroundPermission]);
+
+  // Show background location disclosure modal when going online
+  useEffect(() => {
+    if (isOnline && driver?.id && hasBackgroundPermission === false) {
+      // Request permission which will show the prominent disclosure modal
+      console.log('🔔 Showing background location disclosure modal');
+      requestBackgroundPermission();
+    }
+  }, [isOnline, driver?.id, hasBackgroundPermission, requestBackgroundPermission]);
+
   // Start listening for ride requests when online and location is available
   // This handles restoration of online status after app restart
   useEffect(() => {
@@ -326,22 +362,21 @@ export default function DriverHomeScreen() {
 
   const getCurrentLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // First CHECK if we already have foreground permission (don't request yet)
+      const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
 
-      if (status !== 'granted') {
-        Alert.alert(
-          'Location Permission',
-          'Please enable location services to use Drift.',
-          [{ text: 'OK' }]
-        );
-        setLoading(false);
-        // Default to George Town, Cayman Islands
-        const defaultLocation = {
-          latitude: 19.2866,
-          longitude: -81.3744,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        };
+      // Default location for Cayman Islands (used when no permission)
+      const defaultLocation = {
+        latitude: 19.2866,
+        longitude: -81.3744,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+
+      if (currentStatus !== 'granted') {
+        // Don't request permission here - let the disclosure modal flow handle it
+        // Just use default location for now
+        console.log('📍 No foreground permission yet - using default location');
         setRegion(defaultLocation);
         updateLocation({
           lat: defaultLocation.latitude,
@@ -349,6 +384,7 @@ export default function DriverHomeScreen() {
           heading: 0,
           speed: 0,
         });
+        setLoading(false);
         return;
       }
 
@@ -529,6 +565,14 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Background Location Disclosure Modal - Shows BEFORE system permission */}
+      <BackgroundLocationDisclosureModal
+        visible={showDisclosureModal}
+        userType="driver"
+        onAccept={onDisclosureAccept}
+        onDecline={onDisclosureDecline}
+      />
+
       {/* Full-screen Map Background using DriftMapView */}
       <DriftMapView
         region={region}

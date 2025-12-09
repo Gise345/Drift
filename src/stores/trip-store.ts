@@ -16,6 +16,7 @@ import {
 } from '@react-native-firebase/firestore';
 import * as Location from 'expo-location';
 import { useUserStore } from './user-store';
+import { requestBackgroundLocationWithDisclosure } from '../utils/backgroundLocationDisclosure';
 
 /**
  * Helper to check if document exists
@@ -375,19 +376,18 @@ export const useTripStore = create<TripStore>((set, get) => ({
   
   startLocationTracking: async (_tripId) => {
     try {
-      // Request location permissions
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      if (foregroundStatus !== 'granted') {
-        console.warn('⚠️ Foreground location permission not granted');
-        // Don't throw - just continue without background tracking
-        return;
-      }
+      // Request location permissions with Google Play-compliant disclosure
+      // Note: This is called for riders sharing their trip
+      const backgroundGranted = await requestBackgroundLocationWithDisclosure('rider');
 
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      if (backgroundStatus !== 'granted') {
-        console.warn('⚠️ Background location permission not granted - tracking only in foreground');
-        // Don't throw - foreground tracking will still work
-        // The hook will handle foreground tracking
+      if (!backgroundGranted) {
+        // Fall back to foreground permission
+        const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+        if (foregroundStatus !== 'granted') {
+          console.warn('⚠️ Foreground location permission not granted');
+          return;
+        }
+        console.warn('⚠️ Background location not granted - tracking in foreground only');
         return;
       }
 

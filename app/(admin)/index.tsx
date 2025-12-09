@@ -33,6 +33,7 @@ export default function AdminDashboard() {
     activeDrivers: 0,
     totalRiders: 0,
     pendingIssues: 0,
+    deletedUsers: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -79,13 +80,24 @@ export default function AdminDashboard() {
         console.log('⚠️ tripIssues collection not found or empty');
       }
 
-      console.log(`✅ Admin stats: ${pendingSnapshot.size} pending, ${activeSnapshot.size} active drivers, ${ridersSnapshot.size} riders`);
+      // Get deleted users count
+      let deletedUsersCount = 0;
+      try {
+        const deletedQuery = query(usersRef, where('isDeleted', '==', true));
+        const deletedSnapshot = await getDocs(deletedQuery);
+        deletedUsersCount = deletedSnapshot.size;
+      } catch (e) {
+        console.log('⚠️ No deleted users found');
+      }
+
+      console.log(`✅ Admin stats: ${pendingSnapshot.size} pending, ${activeSnapshot.size} active drivers, ${ridersSnapshot.size} riders, ${deletedUsersCount} deleted`);
 
       setStats({
         pendingApplications: pendingSnapshot.size,
         activeDrivers: activeSnapshot.size,
         totalRiders: ridersSnapshot.size,
         pendingIssues: pendingIssuesCount,
+        deletedUsers: deletedUsersCount,
       });
     } catch (error) {
       console.error('❌ Error loading admin stats:', error);
@@ -175,6 +187,14 @@ export default function AdminDashboard() {
       subtitle: 'Real-time app activity monitoring',
       route: '/(admin)/activity-logs',
       color: Colors.info,
+    },
+    {
+      icon: 'trash-outline',
+      title: 'Deleted Users',
+      subtitle: 'View deleted user accounts (data preserved)',
+      route: '/(admin)/deleted-users',
+      color: Colors.gray[600],
+      badge: stats.deletedUsers > 0 ? String(stats.deletedUsers) : undefined,
     },
   ];
 

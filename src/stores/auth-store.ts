@@ -12,6 +12,7 @@ import { getAuth, onAuthStateChanged, FirebaseAuthTypes } from '@react-native-fi
 import { getFirestore, doc, getDoc, onSnapshot, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutUser } from '../services/firebase-auth-service';
+import { setMonitoringUser, clearMonitoringUser } from '../services/firebase-monitoring-service';
 
 /**
  * Helper to check if document exists
@@ -281,12 +282,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
                   loading: false,
                   currentMode: initialMode,
                 });
+
+                // Set up monitoring user for Analytics/Crashlytics
+                setMonitoringUser(user.id, initialMode, user.email);
               } else {
                 // For subsequent updates, only update user data (preserve current mode)
                 set({ user });
               }
             },
-            (error) => {
+            (error: any) => {
               console.error('❌ Error in user document listener:', error);
               console.error('Error code:', error?.code);
               console.error('Error message:', error?.message);
@@ -325,6 +329,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       } else {
         // No user signed in
         console.log('👤 No user signed in');
+        // Clear monitoring user
+        clearMonitoringUser();
         set({
           user: null,
           loading: false,

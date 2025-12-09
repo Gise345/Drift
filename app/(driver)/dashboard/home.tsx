@@ -14,6 +14,8 @@ import * as Location from 'expo-location';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
 import { getActiveDriverTrip } from '@/src/services/ride-request.service';
+import { useBackgroundLocationPermission } from '@/src/hooks/useBackgroundLocationPermission';
+import { BackgroundLocationDisclosureModal } from '@/components/location/BackgroundLocationDisclosureModal';
 
 export default function DriverHome() {
   const router = useRouter();
@@ -32,6 +34,23 @@ export default function DriverHome() {
   const [onlineTime, setOnlineTime] = useState(0);
   const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
   const [hasCheckedActiveTrip, setHasCheckedActiveTrip] = useState(false);
+
+  // Background location permission with prominent disclosure modal
+  const {
+    hasPermission: hasBackgroundPermission,
+    showDisclosureModal,
+    requestPermission: requestBackgroundPermission,
+    onDisclosureAccept,
+    onDisclosureDecline,
+  } = useBackgroundLocationPermission({
+    userType: 'driver',
+    onPermissionGranted: () => {
+      console.log('✅ Background location permission granted via modal disclosure');
+    },
+    onPermissionDenied: () => {
+      console.log('⚠️ Background location permission denied - falling back to foreground');
+    },
+  });
 
   // Check for active trip on mount (persists across app restart/logout)
   useEffect(() => {
@@ -147,7 +166,17 @@ export default function DriverHome() {
     return () => clearInterval(interval);
   }, [isOnline]);
 
-  // Track location when online
+  // Show background location disclosure modal when going online
+  // Trigger when hasBackgroundPermission is explicitly false (not null - still checking)
+  useEffect(() => {
+    if (isOnline && driver?.id && hasBackgroundPermission === false) {
+      // Request permission which will show the prominent disclosure modal
+      console.log('🔔 Showing background location disclosure modal');
+      requestBackgroundPermission();
+    }
+  }, [isOnline, driver?.id, hasBackgroundPermission, requestBackgroundPermission]);
+
+  // Track location when online (after permission is handled)
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
 
@@ -156,16 +185,30 @@ export default function DriverHome() {
         return;
       }
 
+      // If still waiting for permission decision (null = checking), don't start yet
+      if (hasBackgroundPermission === null) {
+        console.log('⏳ Waiting for background permission check to complete...');
+        return;
+      }
+
+      // If disclosure modal is showing, wait for user to accept/decline
+      if (showDisclosureModal) {
+        console.log('⏳ Waiting for user to respond to disclosure modal...');
+        return;
+      }
+
       try {
-        // Request location permissions
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          console.error('❌ Location permission denied');
+        // Check if we have at least foreground permission
+        const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
+        if (foregroundStatus !== 'granted') {
+          // Don't request here - let the disclosure flow handle it
+          console.log('⏳ No foreground permission yet - disclosure flow will handle this');
           return;
         }
 
-        // Request background permissions for continuous tracking
-        await Location.requestBackgroundPermissionsAsync();
+        if (!hasBackgroundPermission) {
+          console.warn('⚠️ Background location not granted - tracking in foreground only');
+        }
 
         console.log('📍 Starting location tracking for driver...');
 
@@ -210,7 +253,7 @@ export default function DriverHome() {
         console.log('🛑 Stopped location tracking');
       }
     };
-  }, [isOnline, driver?.id]);
+  }, [isOnline, driver?.id, hasBackgroundPermission, showDisclosureModal]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -220,6 +263,14 @@ export default function DriverHome() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Background Location Disclosure Modal - Shows BEFORE system permission */}
+      <BackgroundLocationDisclosureModal
+        visible={showDisclosureModal}
+        userType="driver"
+        onAccept={onDisclosureAccept}
+        onDecline={onDisclosureDecline}
+      />
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>

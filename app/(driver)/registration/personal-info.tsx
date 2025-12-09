@@ -125,6 +125,7 @@ export default function PersonalInfo() {
           value={firstName}
           onChangeText={setFirstName}
           error={errors.firstName}
+          variant="light"
         />
 
         {/* Last Name */}
@@ -134,6 +135,7 @@ export default function PersonalInfo() {
           value={lastName}
           onChangeText={setLastName}
           error={errors.lastName}
+          variant="light"
         />
 
         {/* Email - Display only (from signup) */}
@@ -154,6 +156,7 @@ export default function PersonalInfo() {
           onChangeText={setPhone}
           keyboardType="phone-pad"
           error={errors.phone}
+          variant="light"
         />
 
         {/* Date of Birth */}
@@ -196,6 +199,7 @@ export default function PersonalInfo() {
           value={street}
           onChangeText={setStreet}
           error={errors.street}
+          variant="light"
         />
 
         <DriftInput
@@ -203,6 +207,7 @@ export default function PersonalInfo() {
           placeholder="George Town"
           value={city}
           onChangeText={setCity}
+          variant="light"
         />
 
         <DriftInput
@@ -211,6 +216,7 @@ export default function PersonalInfo() {
           value={postalCode}
           onChangeText={setPostalCode}
           error={errors.postalCode}
+          variant="light"
         />
 
         <View style={styles.infoCard}>

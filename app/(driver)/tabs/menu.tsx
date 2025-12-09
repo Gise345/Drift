@@ -175,29 +175,29 @@ export default function DriverMenuScreen() {
         },
       ],
     },
-    {
-      title: 'Preferences',
-      items: [
-        {
-          icon: 'time-outline',
-          title: 'Working Hours',
-          subtitle: 'Set your availability',
-          route: '/(driver)/settings/preferences',
-        },
-        {
-          icon: 'location-outline',
-          title: 'Service Area',
-          subtitle: 'Choose your preferred areas',
-          route: '/(driver)/settings/preferences',
-        },
-        {
-          icon: 'car-outline',
-          title: 'Vehicle Preferences',
-          subtitle: 'Manage vehicle settings',
-          route: '/(driver)/dashboard/preferences',
-        },
-      ],
-    },
+    // {
+    //   title: 'Preferences',
+    //   items: [
+    //     {
+    //       icon: 'time-outline',
+    //       title: 'Working Hours',
+    //       subtitle: 'Set your availability',
+    //       route: '/(driver)/settings/preferences',
+    //     },
+    //     {
+    //       icon: 'location-outline',
+    //       title: 'Service Area',
+    //       subtitle: 'Choose your preferred areas',
+    //       route: '/(driver)/settings/preferences',
+    //     },
+    //     {
+    //       icon: 'car-outline',
+    //       title: 'Vehicle Preferences',
+    //       subtitle: 'Manage vehicle settings',
+    //       route: '/(driver)/dashboard/preferences',
+    //     },
+    //   ],
+    // },
     {
       title: 'Feedback & Performance',
       items: [
@@ -646,10 +646,9 @@ const styles = StyleSheet.create({
     ...Shadows.lg,
   },
   adminButtonText: {
-    ...Typography.buttonText,
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
     color: Colors.white,
-    fontWeight: '600',
-    fontSize: 16,
     marginLeft: Spacing.xs,
   },
 

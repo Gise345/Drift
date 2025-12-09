@@ -9,7 +9,9 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     
     <!-- Google Maps API (loaded asynchronously for better performance) -->
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk&libraries=geometry,places&loading=async&callback=onMapsApiLoaded"></script>
+    <!-- This key is restricted to drift-global.web.app and drift-global.firebaseapp.com domains only -->
+    <!-- It can ONLY call the Maps JavaScript API - no other Google APIs -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJ7OKaXVv6mXKS53vOmaLz00B02fgu1ms&libraries=geometry&loading=async&callback=onMapsApiLoaded"></script>
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { addRoleToUser } from '@/src/services/role-service';
+import { softDeleteAccount } from '@/src/services/firebase-auth-service';
 
 /**
  * SETTINGS INDEX SCREEN
@@ -41,6 +42,7 @@ export default function SettingsScreen() {
   const appVersion = '1.0.0';
   const { user, setMode } = useAuthStore();
   const [switching, setSwitching] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSwitchToRider = async () => {
     if (!user) return;
@@ -110,18 +112,43 @@ export default function SettingsScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
+      'Are you sure you want to delete your account? Your data will be preserved for legal purposes but you will no longer be able to access your account.',
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Delete',
+          text: 'Delete Account',
           style: 'destructive',
           onPress: () => {
-            // TODO: Implement account deletion
-            console.log('Delete account');
+            // Second confirmation
+            Alert.alert(
+              'Final Confirmation',
+              'This action cannot be undone. Are you absolutely sure?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsDeleting(true);
+                    try {
+                      await softDeleteAccount('User requested deletion from driver settings');
+                      Alert.alert(
+                        'Account Deleted',
+                        'Your account has been deleted. Thank you for using Drift.',
+                        [{ text: 'OK', onPress: () => router.replace('/(auth)/welcome') }]
+                      );
+                    } catch (error: any) {
+                      Alert.alert('Error', error.message || 'Failed to delete account');
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]
@@ -332,6 +359,12 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {isDeleting && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Deleting account...</Text>
+          </View>
+        )}
         {settingsSections.map((section, index) => (
           <View key={section.title} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -468,5 +501,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],
+  },
+  loadingOverlay: {
+    padding: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.regular,
+    color: Colors.gray[600],
   },
 });

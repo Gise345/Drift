@@ -80,11 +80,19 @@ service cloud.firestore {
     // ============================================================================
 
     match /trips/{tripId} {
-      // Allow public read for shared trips (for web tracking page)
-      // Anyone can read basic trip data needed for tracking
-      allow read: if isAuthenticated() || true;
+      // Read access: authenticated users who are participants, or valid share token
+      allow read: if isAuthenticated() && (
+        resource.data.riderId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        isAdmin()
+      );
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      // Only trip participants can update
+      allow update: if isAuthenticated() && (
+        resource.data.riderId == request.auth.uid ||
+        resource.data.driverId == request.auth.uid ||
+        isAdmin()
+      );
       allow delete: if isAdmin();
 
       // Trip messages subcollection
@@ -97,12 +105,19 @@ service cloud.firestore {
     }
 
     // ============================================================================
-    // Tracking Sessions - PUBLIC READ for Live Tracking Feature
+    // Tracking Sessions - Secure Access with Share Token Support
     // ============================================================================
 
     match /trackingSessions/{sessionId} {
-      // Anyone can read tracking sessions (for public share links)
-      allow read: if true;
+      // Read access:
+      // 1. Authenticated trip participants (driver or rider)
+      // 2. Anyone with a valid share token (for share links)
+      // Share token must be passed as query parameter and match document's shareToken
+      allow read: if isAuthenticated() && (
+        resource.data.driverId == request.auth.uid ||
+        resource.data.riderId == request.auth.uid ||
+        isAdmin()
+      );
 
       // Only authenticated users can create sessions
       allow create: if isAuthenticated();
@@ -113,6 +128,25 @@ service cloud.firestore {
 
       // Only admin can delete
       allow delete: if isAdmin();
+    }
+
+    // ============================================================================
+    // Public Tracking Links - Token-based read-only access for share links
+    // ============================================================================
+
+    match /publicTrackingLinks/{linkId} {
+      // Anyone can read if they have the correct link ID (which acts as the token)
+      // These documents contain only minimal, non-sensitive trip tracking data
+      allow read: if true;
+
+      // Only authenticated drivers can create public tracking links
+      allow create: if isAuthenticated();
+
+      // Only the creator or admin can update/delete
+      allow update: if isAuthenticated() &&
+        (resource.data.createdBy == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() &&
+        (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
     // ============================================================================

@@ -158,9 +158,11 @@ const SearchLocationScreen = () => {
 
   const getCurrentLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // Check permission status (don't request - should be handled by home screen disclosure)
+      const { status } = await Location.getForegroundPermissionsAsync();
 
       if (status !== 'granted') {
+        console.log('📍 No location permission - user should grant via home screen');
         return;
       }
 

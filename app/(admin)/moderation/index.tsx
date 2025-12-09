@@ -131,8 +131,15 @@ export default function ModerationDashboard() {
       );
       const recentStrikes = await getDocs(recentStrikesQuery);
 
-      recentStrikes.docs.forEach(strikeDoc => {
-        const data = strikeDoc.data();
+      recentStrikes.docs.forEach((strikeDoc: any) => {
+        interface StrikeData {
+          driverId?: string;
+          type?: string;
+          issuedAt?: { toDate: () => Date };
+          strikeNumber?: number;
+        }
+        
+        const data = strikeDoc.data() as StrikeData;
         recentItemsList.push({
           id: strikeDoc.id,
           type: 'strike',
@@ -151,8 +158,14 @@ export default function ModerationDashboard() {
       );
       const recentAppeals = await getDocs(recentAppealsQuery);
 
-      recentAppeals.docs.forEach(appealDoc => {
-        const data = appealDoc.data();
+      interface AppealData {
+        driverId?: string;
+        submittedAt?: { toDate: () => Date };
+        status?: string;
+      }
+
+      recentAppeals.docs.forEach((appealDoc: any) => {
+        const data = appealDoc.data() as AppealData;
         recentItemsList.push({
           id: appealDoc.id,
           type: 'appeal',
@@ -171,8 +184,14 @@ export default function ModerationDashboard() {
       );
       const recentEmergencies = await getDocs(recentEmergenciesQuery);
 
-      recentEmergencies.docs.forEach(emergencyDoc => {
-        const data = emergencyDoc.data();
+      interface EmergencyData {
+        tripId?: string;
+        triggeredAt?: { toDate: () => Date };
+        status?: string;
+      }
+
+      recentEmergencies.docs.forEach((emergencyDoc: any) => {
+        const data = emergencyDoc.data() as EmergencyData;
         recentItemsList.push({
           id: emergencyDoc.id,
           type: 'emergency',

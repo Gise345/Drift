@@ -61,7 +61,7 @@ interface VehicleInfo {
 type TrackingStatus = 'active' | 'completed' | 'expired';
 
 /**
- * Complete tracking session document structure
+ * Complete tracking session document structure (private - authenticated access only)
  */
 interface TrackingSession {
   id: string;
@@ -92,6 +92,54 @@ interface TrackingSession {
   updatedAt: admin.firestore.Timestamp;
   expiresAt: admin.firestore.Timestamp;
   shareableUrl: string;
+  publicLinkId: string; // Reference to the public tracking link document
+}
+
+/**
+ * Public tracking link document structure (minimal data for share links)
+ * This is stored in a separate collection with public read access
+ * The document ID itself acts as the secure token (unguessable UUID)
+ */
+interface PublicTrackingLink {
+  // Session reference (not exposed to public)
+  sessionId: string;
+  createdBy: string;
+
+  // Status
+  status: TrackingStatus;
+  tripPhase: TrackingSession['tripPhase'];
+
+  // Minimal location data for tracking display
+  currentLocation: {
+    latitude: number;
+    longitude: number;
+    heading?: number;
+    updatedAt: string; // ISO string for easy JSON serialization
+  } | null;
+
+  // Destination info (no exact addresses, just names)
+  pickupName: string;
+  dropoffName: string;
+  pickupCoords: { latitude: number; longitude: number };
+  dropoffCoords: { latitude: number; longitude: number };
+
+  // Vehicle info for identification
+  vehicle: {
+    color: string;
+    make: string;
+    model: string;
+  };
+
+  // Driver first name only
+  driverFirstName: string;
+
+  // ETA
+  estimatedArrival: string | null; // ISO string
+
+  // Timestamps
+  createdAt: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  expiresAt: admin.firestore.Timestamp;
 }
 
 /**
@@ -149,7 +197,7 @@ interface CompleteSessionRequest {
 // ============================================================================
 
 // Base URL for tracking links - replace with your Firebase Hosting URL
-const HOSTING_BASE_URL = process.env.TRACKING_BASE_URL || 'https://drift-cayman.web.app';
+const HOSTING_BASE_URL = process.env.TRACKING_BASE_URL || 'https://drift-global.web.app';
 
 // Session expires after 4 hours (covers long trips + buffer)
 const SESSION_EXPIRY_HOURS = 4;
@@ -175,10 +223,10 @@ function getExpirationTime(): admin.firestore.Timestamp {
 }
 
 /**
- * Build the shareable tracking URL
+ * Build the shareable tracking URL using the public link ID
  */
-function buildTrackingUrl(token: string): string {
-  return `${HOSTING_BASE_URL}/track/${token}`;
+function buildTrackingUrl(publicLinkId: string): string {
+  return `${HOSTING_BASE_URL}/track/${publicLinkId}`;
 }
 
 // ============================================================================
@@ -238,6 +286,7 @@ export const createTrackingSession = onCall(callableOptions, async (request) => 
       return {
         sessionId: existing.id,
         token: existing.token,
+        publicLinkId: existing.publicLinkId,
         shareableUrl: existing.shareableUrl,
         isExisting: true,
       };
@@ -260,11 +309,13 @@ export const createTrackingSession = onCall(callableOptions, async (request) => 
       throw new HttpsError('permission-denied', 'You are not authorized to create tracking for this trip');
     }
 
-    // Generate unique token and session ID
+    // Generate unique token, session ID, and public link ID
     const token = generateToken();
     const sessionId = `track_${data.tripId}_${Date.now()}`;
-    const shareableUrl = buildTrackingUrl(token);
+    const publicLinkId = generateToken(); // Separate unguessable ID for public access
+    const shareableUrl = buildTrackingUrl(publicLinkId);
     const now = admin.firestore.Timestamp.now();
+    const expiresAt = getExpirationTime();
 
     // Build initial location if provided
     let currentLocation: TrackingLocation | null = null;
@@ -277,7 +328,7 @@ export const createTrackingSession = onCall(callableOptions, async (request) => 
       };
     }
 
-    // Create the tracking session document
+    // Create the tracking session document (private - authenticated access only)
     const session: TrackingSession = {
       id: sessionId,
       token,
@@ -310,22 +361,59 @@ export const createTrackingSession = onCall(callableOptions, async (request) => 
       tripPhase: 'navigating_to_pickup',
       createdAt: now,
       updatedAt: now,
-      expiresAt: getExpirationTime(),
+      expiresAt,
       shareableUrl,
+      publicLinkId,
     };
 
-    // Save to Firestore
-    await db
-      .collection('trackingSessions')
-      .doc(sessionId)
-      .set(session);
+    // Create the public tracking link document (minimal data - public read access)
+    const publicLink: PublicTrackingLink = {
+      sessionId,
+      createdBy: userId,
+      status: 'active',
+      tripPhase: 'navigating_to_pickup',
+      currentLocation: currentLocation ? {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        heading: currentLocation.heading,
+        updatedAt: now.toDate().toISOString(),
+      } : null,
+      pickupName: data.pickup.name || 'Pickup',
+      dropoffName: data.dropoff.name || 'Dropoff',
+      pickupCoords: {
+        latitude: data.pickup.latitude,
+        longitude: data.pickup.longitude,
+      },
+      dropoffCoords: {
+        latitude: data.dropoff.latitude,
+        longitude: data.dropoff.longitude,
+      },
+      vehicle: {
+        color: data.vehicle.color || '',
+        make: data.vehicle.make || '',
+        model: data.vehicle.model || '',
+      },
+      driverFirstName: data.driverFirstName || 'Driver',
+      estimatedArrival: null,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt,
+    };
+
+    // Save both documents in a batch for atomicity
+    const batch = db.batch();
+    batch.set(db.collection('trackingSessions').doc(sessionId), session);
+    batch.set(db.collection('publicTrackingLinks').doc(publicLinkId), publicLink);
+    await batch.commit();
 
     console.log('✅ Created tracking session:', sessionId);
+    console.log('✅ Created public tracking link:', publicLinkId);
     console.log('📎 Shareable URL:', shareableUrl);
 
     return {
       sessionId,
       token,
+      publicLinkId,
       shareableUrl,
       isExisting: false,
     };
@@ -425,8 +513,38 @@ export const updateTrackingLocation = onCall(callableOptions, async (request) =>
       updateData.estimatedArrival = admin.firestore.Timestamp.fromDate(arrivalTime);
     }
 
-    // Update the session
-    await sessionRef.update(updateData);
+    // Prepare public link update data (minimal, non-sensitive)
+    const publicLinkUpdate: Partial<PublicTrackingLink> = {
+      currentLocation: {
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+        heading: data.location.heading,
+        updatedAt: now.toDate().toISOString(),
+      },
+      updatedAt: now,
+    };
+
+    if (data.tripPhase) {
+      publicLinkUpdate.tripPhase = data.tripPhase;
+    }
+
+    if (data.estimatedMinutes !== undefined && data.estimatedMinutes >= 0) {
+      const arrivalTime = new Date();
+      arrivalTime.setMinutes(arrivalTime.getMinutes() + data.estimatedMinutes);
+      publicLinkUpdate.estimatedArrival = arrivalTime.toISOString();
+    }
+
+    // Update both documents in a batch
+    const batch = db.batch();
+    batch.update(sessionRef, updateData);
+
+    // Update public tracking link if it exists
+    if (session.publicLinkId) {
+      const publicLinkRef = db.collection('publicTrackingLinks').doc(session.publicLinkId);
+      batch.update(publicLinkRef, publicLinkUpdate);
+    }
+
+    await batch.commit();
 
     console.log('📍 Updated location for session:', data.sessionId);
 
@@ -517,12 +635,27 @@ export const completeTrackingSession = onCall(callableOptions, async (request) =
       return { success: true, message: 'Session already completed' };
     }
 
-    // Update the session
-    await sessionRef.update({
+    // Update both documents in a batch
+    const now = admin.firestore.Timestamp.now();
+    const batch = db.batch();
+
+    batch.update(sessionRef, {
       status: 'completed',
       tripPhase: 'completed',
-      updatedAt: admin.firestore.Timestamp.now(),
+      updatedAt: now,
     });
+
+    // Update public tracking link if it exists
+    if (session.publicLinkId) {
+      const publicLinkRef = db.collection('publicTrackingLinks').doc(session.publicLinkId);
+      batch.update(publicLinkRef, {
+        status: 'completed',
+        tripPhase: 'completed',
+        updatedAt: now,
+      });
+    }
+
+    await batch.commit();
 
     console.log('✅ Completed tracking session:', session.id);
 
@@ -543,13 +676,17 @@ export const completeTrackingSession = onCall(callableOptions, async (request) =
 });
 
 /**
- * GET TRACKING SESSION BY TOKEN
+ * GET TRACKING SESSION BY PUBLIC LINK ID
  *
- * Retrieves a tracking session by its public token.
+ * Retrieves tracking info from the publicTrackingLinks collection.
  * This is called by the public tracking page to display trip info.
- * No authentication required - the token serves as the access key.
+ * No authentication required - the link ID serves as the access key.
  *
- * @param request.token - The unique tracking token
+ * SECURITY: This reads from publicTrackingLinks which contains ONLY
+ * minimal, non-sensitive data. The full trackingSessions data remains
+ * protected and requires authentication.
+ *
+ * @param request.token - The public link ID (from the share URL)
  */
 export const getTrackingSession = onCall(callableOptions, async (request) => {
   try {
@@ -559,46 +696,92 @@ export const getTrackingSession = onCall(callableOptions, async (request) => {
       throw new HttpsError('invalid-argument', 'Token is required');
     }
 
-    console.log('🔍 Looking up tracking session by token');
+    console.log('🔍 Looking up public tracking link:', token);
 
-    // Find session by token
-    const sessionsQuery = await db
-      .collection('trackingSessions')
-      .where('token', '==', token)
-      .limit(1)
+    // Get the public tracking link document directly by ID
+    const publicLinkDoc = await db
+      .collection('publicTrackingLinks')
+      .doc(token)
       .get();
 
-    if (sessionsQuery.empty) {
-      throw new HttpsError('not-found', 'Tracking session not found');
+    if (!publicLinkDoc.exists) {
+      // Fallback: Try legacy token lookup for backwards compatibility
+      const legacyQuery = await db
+        .collection('trackingSessions')
+        .where('token', '==', token)
+        .limit(1)
+        .get();
+
+      if (legacyQuery.empty) {
+        throw new HttpsError('not-found', 'Tracking session not found');
+      }
+
+      // Return legacy format for old links
+      const session = legacyQuery.docs[0].data() as TrackingSession;
+
+      if (session.expiresAt.toDate() < new Date() && session.status === 'active') {
+        await legacyQuery.docs[0].ref.update({ status: 'expired' });
+        session.status = 'expired';
+      }
+
+      return {
+        status: session.status,
+        driverFirstName: session.driverFirstName,
+        pickupName: session.pickup.name,
+        dropoffName: session.dropoff.name,
+        pickupCoords: { latitude: session.pickup.latitude, longitude: session.pickup.longitude },
+        dropoffCoords: { latitude: session.dropoff.latitude, longitude: session.dropoff.longitude },
+        currentLocation: session.currentLocation ? {
+          latitude: session.currentLocation.latitude,
+          longitude: session.currentLocation.longitude,
+          heading: session.currentLocation.heading,
+          updatedAt: session.currentLocation.timestamp.toDate().toISOString(),
+        } : null,
+        vehicle: {
+          color: session.vehicle.color,
+          make: session.vehicle.make,
+          model: session.vehicle.model,
+        },
+        tripPhase: session.tripPhase,
+        estimatedArrival: session.estimatedArrival?.toDate().toISOString() || null,
+        createdAt: session.createdAt.toDate().toISOString(),
+        updatedAt: session.updatedAt.toDate().toISOString(),
+      };
     }
 
-    const session = sessionsQuery.docs[0].data() as TrackingSession;
+    const publicLink = publicLinkDoc.data() as PublicTrackingLink;
 
     // Check if expired
-    if (session.expiresAt.toDate() < new Date() && session.status === 'active') {
-      // Update status to expired
-      await sessionsQuery.docs[0].ref.update({ status: 'expired' });
-      session.status = 'expired';
+    if (publicLink.expiresAt.toDate() < new Date() && publicLink.status === 'active') {
+      // Update status to expired in both collections
+      const batch = db.batch();
+      batch.update(publicLinkDoc.ref, { status: 'expired', updatedAt: admin.firestore.Timestamp.now() });
+
+      // Also update the main session
+      if (publicLink.sessionId) {
+        batch.update(db.collection('trackingSessions').doc(publicLink.sessionId), {
+          status: 'expired',
+          updatedAt: admin.firestore.Timestamp.now()
+        });
+      }
+      await batch.commit();
+      publicLink.status = 'expired';
     }
 
-    // Return sanitized session data (no internal IDs exposed)
+    // Return the public tracking data (already minimal/sanitized)
     return {
-      status: session.status,
-      driverFirstName: session.driverFirstName,
-      riderFirstName: session.riderFirstName,
-      pickup: session.pickup,
-      dropoff: session.dropoff,
-      currentLocation: session.currentLocation ? {
-        latitude: session.currentLocation.latitude,
-        longitude: session.currentLocation.longitude,
-        heading: session.currentLocation.heading,
-        timestamp: session.currentLocation.timestamp.toDate().toISOString(),
-      } : null,
-      vehicle: session.vehicle,
-      tripPhase: session.tripPhase,
-      estimatedArrival: session.estimatedArrival?.toDate().toISOString() || null,
-      createdAt: session.createdAt.toDate().toISOString(),
-      updatedAt: session.updatedAt.toDate().toISOString(),
+      status: publicLink.status,
+      driverFirstName: publicLink.driverFirstName,
+      pickupName: publicLink.pickupName,
+      dropoffName: publicLink.dropoffName,
+      pickupCoords: publicLink.pickupCoords,
+      dropoffCoords: publicLink.dropoffCoords,
+      currentLocation: publicLink.currentLocation,
+      vehicle: publicLink.vehicle,
+      tripPhase: publicLink.tripPhase,
+      estimatedArrival: publicLink.estimatedArrival,
+      createdAt: publicLink.createdAt.toDate().toISOString(),
+      updatedAt: publicLink.updatedAt.toDate().toISOString(),
     };
   } catch (error: unknown) {
     console.error('❌ Error getting tracking session:', error);
@@ -618,8 +801,9 @@ export const getTrackingSession = onCall(callableOptions, async (request) => {
 /**
  * CLEANUP EXPIRED SESSIONS
  *
- * Scheduled function that runs daily to clean up expired tracking sessions.
- * Marks expired sessions and deletes very old sessions (7+ days).
+ * Scheduled function that runs daily to clean up expired tracking sessions
+ * and public tracking links. Marks expired sessions and deletes very old
+ * sessions (7+ days).
  *
  * Schedule: Every day at 3:00 AM UTC
  */
@@ -629,56 +813,101 @@ export const cleanupExpiredSessions = onSchedule({
   retryCount: 3,
   region: 'us-east1',
 }, async () => {
-  console.log('🧹 Starting cleanup of expired tracking sessions');
+  console.log('🧹 Starting cleanup of expired tracking sessions and public links');
 
   const now = admin.firestore.Timestamp.now();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
 
   try {
-    // 1. Mark expired active sessions
+    // 1. Mark expired active tracking sessions
     const expiredActiveQuery = await db
       .collection('trackingSessions')
       .where('status', '==', 'active')
       .where('expiresAt', '<', now)
       .get();
 
-    let expiredCount = 0;
-    const expireBatch = db.batch();
+    let expiredSessionCount = 0;
+    const expireSessionBatch = db.batch();
 
     expiredActiveQuery.docs.forEach((doc) => {
-      expireBatch.update(doc.ref, {
+      expireSessionBatch.update(doc.ref, {
         status: 'expired',
         updatedAt: now,
       });
-      expiredCount++;
+      expiredSessionCount++;
     });
 
-    if (expiredCount > 0) {
-      await expireBatch.commit();
-      console.log(`✅ Marked ${expiredCount} sessions as expired`);
+    if (expiredSessionCount > 0) {
+      await expireSessionBatch.commit();
+      console.log(`✅ Marked ${expiredSessionCount} tracking sessions as expired`);
     }
 
-    // 2. Delete very old sessions (7+ days old)
-    const oldSessionsQuery = await db
-      .collection('trackingSessions')
-      .where('createdAt', '<', admin.firestore.Timestamp.fromDate(sevenDaysAgo))
+    // 2. Mark expired active public tracking links
+    const expiredPublicLinksQuery = await db
+      .collection('publicTrackingLinks')
+      .where('status', '==', 'active')
+      .where('expiresAt', '<', now)
       .get();
 
-    let deletedCount = 0;
-    const deleteBatch = db.batch();
+    let expiredLinkCount = 0;
+    const expireLinkBatch = db.batch();
 
-    oldSessionsQuery.docs.forEach((doc) => {
-      deleteBatch.delete(doc.ref);
-      deletedCount++;
+    expiredPublicLinksQuery.docs.forEach((doc) => {
+      expireLinkBatch.update(doc.ref, {
+        status: 'expired',
+        updatedAt: now,
+      });
+      expiredLinkCount++;
     });
 
-    if (deletedCount > 0) {
-      await deleteBatch.commit();
-      console.log(`🗑️ Deleted ${deletedCount} old sessions`);
+    if (expiredLinkCount > 0) {
+      await expireLinkBatch.commit();
+      console.log(`✅ Marked ${expiredLinkCount} public tracking links as expired`);
     }
 
-    console.log(`✅ Cleanup completed successfully - expired: ${expiredCount}, deleted: ${deletedCount}`);
+    // 3. Delete very old tracking sessions (7+ days old)
+    const oldSessionsQuery = await db
+      .collection('trackingSessions')
+      .where('createdAt', '<', sevenDaysAgoTimestamp)
+      .get();
+
+    let deletedSessionCount = 0;
+    const deleteSessionBatch = db.batch();
+
+    oldSessionsQuery.docs.forEach((doc) => {
+      deleteSessionBatch.delete(doc.ref);
+      deletedSessionCount++;
+    });
+
+    if (deletedSessionCount > 0) {
+      await deleteSessionBatch.commit();
+      console.log(`🗑️ Deleted ${deletedSessionCount} old tracking sessions`);
+    }
+
+    // 4. Delete very old public tracking links (7+ days old)
+    const oldLinksQuery = await db
+      .collection('publicTrackingLinks')
+      .where('createdAt', '<', sevenDaysAgoTimestamp)
+      .get();
+
+    let deletedLinkCount = 0;
+    const deleteLinkBatch = db.batch();
+
+    oldLinksQuery.docs.forEach((doc) => {
+      deleteLinkBatch.delete(doc.ref);
+      deletedLinkCount++;
+    });
+
+    if (deletedLinkCount > 0) {
+      await deleteLinkBatch.commit();
+      console.log(`🗑️ Deleted ${deletedLinkCount} old public tracking links`);
+    }
+
+    console.log(`✅ Cleanup completed successfully:`);
+    console.log(`   - Sessions expired: ${expiredSessionCount}, deleted: ${deletedSessionCount}`);
+    console.log(`   - Public links expired: ${expiredLinkCount}, deleted: ${deletedLinkCount}`);
   } catch (error) {
     console.error('❌ Error during cleanup:', error);
     throw error;

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 /**
  * LEGAL CONSENT SCREEN
@@ -23,6 +24,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 export default function LegalConsent() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+  const { user } = useAuthStore();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -33,13 +35,18 @@ export default function LegalConsent() {
     }
   };
 
-  // Initialize from saved data
+  // Initialize from saved data OR from user's rider profile gender
   const savedGender = registrationData?.personalInfo?.gender;
+  const userGender = user?.gender; // Gender from rider registration
 
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToPeerToPeer, setAgreedToPeerToPeer] = useState(false);
   const [agreedToInsurance, setAgreedToInsurance] = useState(false);
-  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | null>(savedGender || null);
+  // Use user's gender from rider profile if available (and lock it), otherwise allow selection
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | null>(savedGender || userGender || null);
+
+  // Gender is locked if user already has it set from rider registration
+  const isGenderLocked = !!userGender;
 
   const canContinue = agreedToTerms && agreedToPeerToPeer && agreedToInsurance && selectedGender !== null;
 
@@ -210,7 +217,9 @@ export default function LegalConsent() {
         <View style={styles.genderSection}>
           <Text style={styles.genderTitle}>Gender Assigned at Birth</Text>
           <Text style={styles.genderSubtitle}>
-            This helps us offer safety features like allowing female riders to request female drivers only.
+            {isGenderLocked
+              ? 'This was set during your rider registration and cannot be changed.'
+              : 'This helps us offer safety features like allowing female riders to request female drivers only.'}
           </Text>
 
           <View style={styles.genderOptions}>
@@ -218,9 +227,11 @@ export default function LegalConsent() {
               style={[
                 styles.genderOption,
                 selectedGender === 'female' && styles.genderOptionSelected,
+                isGenderLocked && styles.genderOptionLocked,
               ]}
-              onPress={() => setSelectedGender('female')}
-              activeOpacity={0.7}
+              onPress={() => !isGenderLocked && setSelectedGender('female')}
+              activeOpacity={isGenderLocked ? 1 : 0.7}
+              disabled={isGenderLocked}
             >
               <View style={[
                 styles.genderRadio,
@@ -242,15 +253,20 @@ export default function LegalConsent() {
               ]}>
                 Female
               </Text>
+              {isGenderLocked && selectedGender === 'female' && (
+                <Ionicons name="lock-closed" size={16} color={Colors.gray[400]} style={{ marginLeft: 'auto' }} />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.genderOption,
                 selectedGender === 'male' && styles.genderOptionSelected,
+                isGenderLocked && styles.genderOptionLocked,
               ]}
-              onPress={() => setSelectedGender('male')}
-              activeOpacity={0.7}
+              onPress={() => !isGenderLocked && setSelectedGender('male')}
+              activeOpacity={isGenderLocked ? 1 : 0.7}
+              disabled={isGenderLocked}
             >
               <View style={[
                 styles.genderRadio,
@@ -272,6 +288,9 @@ export default function LegalConsent() {
               ]}>
                 Male
               </Text>
+              {isGenderLocked && selectedGender === 'male' && (
+                <Ionicons name="lock-closed" size={16} color={Colors.gray[400]} style={{ marginLeft: 'auto' }} />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -447,6 +466,9 @@ const styles = StyleSheet.create({
   genderOptionSelected: {
     backgroundColor: Colors.primary + '10',
     borderColor: Colors.primary,
+  },
+  genderOptionLocked: {
+    opacity: 0.8,
   },
   genderRadio: {
     width: 20,

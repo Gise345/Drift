@@ -478,7 +478,6 @@ export default function RiderTermsScreen() {
           <Text style={styles.contactInfo}>Cayman Islands</Text>
           <Text style={styles.contactInfo}>Email: legal@drift-global.com</Text>
           <Text style={styles.contactInfo}>Support: info@drift-global.com</Text>
-          <Text style={styles.contactInfo}>Website: www.drift-global.com</Text>
         </View>
 
         {/* Acknowledgment */}

@@ -526,7 +526,6 @@ Drift in Cayman operates as a lawful technology services platform under the foll
 **Drift in Cayman Ltd.**  
 Legal Department  
 Email: info@drift-global.com  
-Website: www.drift-global.com
 
 **For regulatory questions:**  
 Cayman Islands Department of Commerce & Investment

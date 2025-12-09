@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Account - Drift</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f9fafb;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            background: #5d1289;
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-top: -20px;
+        }
+
+        h2 {
+            color: #5d1289;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #f0e6f5;
+            padding-bottom: 8px;
+        }
+
+        h2:first-of-type {
+            margin-top: 0;
+        }
+
+        h3 {
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        p {
+            margin-bottom: 15px;
+        }
+
+        ul, ol {
+            margin-bottom: 15px;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .highlight-box {
+            background: #f0e6f5;
+            border-left: 4px solid #5d1289;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .warning-box {
+            background: #fef2f2;
+            border-left: 4px solid #ef4444;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .warning-box strong {
+            color: #dc2626;
+        }
+
+        .steps {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-number {
+            background: #5d1289;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-content h4 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .step-content p {
+            margin-bottom: 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .data-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #5d1289;
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-deleted {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .badge-retained {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .contact-section {
+            background: #f0e6f5;
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .contact-section h3 {
+            margin-top: 0;
+            color: #5d1289;
+        }
+
+        .last-updated {
+            color: #666;
+            font-size: 14px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        a {
+            color: #5d1289;
+        }
+
+        .app-links {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .app-link {
+            display: inline-flex;
+            align-items: center;
+            background: #5d1289;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .app-link:hover {
+            background: #4a0e6d;
+        }
+
+        .app-link svg {
+            margin-right: 8px;
+        }
+
+        @media (max-width: 600px) {
+            .content {
+                padding: 25px;
+            }
+
+            .step {
+                flex-direction: column;
+            }
+
+            .step-number {
+                margin-bottom: 10px;
+            }
+
+            .app-links {
+                flex-direction: column;
+            }
+
+            .app-link {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Delete Your Drift Account</h1>
+        <p>We're sorry to see you go</p>
+    </header>
+
+    <div class="container">
+        <div class="content">
+            <h2>How to Delete Your Account</h2>
+            <p>If you wish to delete your Drift account, you can do so directly within the app. Follow the steps below based on whether you're using Drift as a rider or driver.</p>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h4>Open the Drift App</h4>
+                        <p>Launch the Drift app on your mobile device and sign in to your account.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h4>Go to Settings</h4>
+                        <p><strong>For Riders:</strong> Tap the menu icon and select "Settings".<br>
+                        <strong>For Drivers:</strong> Tap the menu icon, then select "Settings" from the menu.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h4>Find Account Section</h4>
+                        <p>Scroll down to the "Account" section in the Settings menu.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h4>Tap "Delete Account"</h4>
+                        <p>Select the "Delete Account" option. You will be asked to confirm your decision twice to prevent accidental deletion.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h4>Confirm Deletion</h4>
+                        <p>After confirming, your account will be immediately deactivated and you will be signed out.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="warning-box">
+                <strong>Important:</strong> Account deletion is permanent. Once deleted, you will not be able to access your account, trip history, or any associated data. You would need to create a new account to use Drift again.
+            </div>
+
+            <h2>What Data is Deleted vs. Retained</h2>
+            <p>When you delete your account, we handle your data as follows:</p>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Data Type</th>
+                        <th>What Happens</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Login Credentials</td>
+                        <td>Permanently deleted - you cannot sign in again</td>
+                        <td><span class="badge badge-deleted">Deleted</span></td>
+                    </tr>
+                    <tr>
+                        <td>Profile Information</td>
+                        <td>Marked as deleted, access revoked</td>
+                        <td><span class="badge badge-deleted">Deleted</span></td>
+                    </tr>
+                    <tr>
+                        <td>Payment Methods</td>
+                        <td>Removed from your account</td>
+                        <td><span class="badge badge-deleted">Deleted</span></td>
+                    </tr>
+                    <tr>
+                        <td>Trip History</td>
+                        <td>Retained for 7 years for legal/tax compliance</td>
+                        <td><span class="badge badge-retained">Retained</span></td>
+                    </tr>
+                    <tr>
+                        <td>Transaction Records</td>
+                        <td>Retained for 7 years for financial/legal compliance</td>
+                        <td><span class="badge badge-retained">Retained</span></td>
+                    </tr>
+                    <tr>
+                        <td>Driver Documents</td>
+                        <td>Retained for 3 years for regulatory compliance</td>
+                        <td><span class="badge badge-retained">Retained</span></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="highlight-box">
+                <strong>Why do we retain some data?</strong><br>
+                Certain data must be retained to comply with Cayman Islands financial regulations, tax requirements, and to resolve any potential disputes. This data is securely stored and not used for any other purpose.
+            </div>
+
+            <h2>Request Data Deletion Without Deleting Account</h2>
+            <p>If you would like to request deletion of specific data while keeping your account active, you can contact us directly. We can delete:</p>
+            <ul>
+                <li>Profile photo</li>
+                <li>Saved addresses</li>
+                <li>Saved payment methods</li>
+                <li>Notification preferences</li>
+            </ul>
+            <p>Note: Some data (like trip history and transaction records) cannot be deleted while maintaining an active account due to our operational and legal requirements.</p>
+
+            <h2>Automatic Data Deletion</h2>
+            <p>Drift automatically deletes certain data over time:</p>
+            <ul>
+                <li><strong>Location data:</strong> Trip location data is anonymized after 90 days</li>
+                <li><strong>Chat messages:</strong> In-app messages are deleted 30 days after trip completion</li>
+                <li><strong>Search history:</strong> Automatically cleared after 30 days</li>
+            </ul>
+
+            <div class="contact-section">
+                <h3>Need Help?</h3>
+                <p>If you're having trouble deleting your account through the app, or if you have questions about your data, please contact us:</p>
+                <ul>
+                    <li>Email: <a href="mailto:support@drift-global.com">support@drift-global.com</a></li>
+                    <li>Privacy inquiries: <a href="mailto:privacy@drift-global.com">privacy@drift-global.com</a></li>
+                </ul>
+                <p>Please include your registered email address in your request so we can locate your account. We will respond within 5 business days.</p>
+            </div>
+
+            <p class="last-updated">
+                <strong>Drift in Cayman Ltd.</strong><br>
+                Cayman Islands<br><br>
+                Last updated: December 8, 2025
+            </p>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2025 Drift in Cayman Ltd. All rights reserved.<br>
+        <a href="/privacy.html">Privacy Policy</a> | <a href="/terms.html">Terms of Service</a>
+    </footer>
+</body>
+</html>

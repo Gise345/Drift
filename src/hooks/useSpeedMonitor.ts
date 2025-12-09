@@ -24,6 +24,7 @@ import {
   getSpeedMonitor,
 } from '@/src/services/speedLimitService';
 import { SpeedAlertLevel, SpeedReading } from '@/src/types/safety.types';
+import { PerformanceTraces, AnalyticsEvents } from '@/src/services/firebase-monitoring-service';
 
 interface SpeedMonitorResult {
   currentSpeed: number; // Smoothed speed in mph
@@ -81,9 +82,11 @@ export function useSpeedMonitor(
       const smoothedSpeed = smoothSpeed(rawSpeedMph);
       setCurrentSpeed(Math.round(smoothedSpeed));
 
-      // Fetch speed limit (cached)
+      // Fetch speed limit (cached) with performance tracing
+      const speedLimitTrace = await PerformanceTraces.speedLimitLookup();
       const limitResponse = await getSpeedLimit(latitude, longitude);
       const limit = limitResponse.speedLimit;
+      await speedLimitTrace.stop(limitResponse.cached || false);
       setSpeedLimit(limit);
 
       if (limit === null) {
@@ -123,6 +126,8 @@ export function useSpeedMonitor(
             await logSpeedViolation(tripId, violation);
             setViolationCount((prev) => prev + 1);
             violationReadingsRef.current = []; // Reset after logging
+            // Log analytics event for speed violation
+            AnalyticsEvents.speedViolation(violation.maxExcess);
           }
         }
       } else {

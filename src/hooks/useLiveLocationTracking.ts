@@ -8,6 +8,7 @@ import {
   onSnapshot,
   serverTimestamp
 } from '@react-native-firebase/firestore';
+import { hasBackgroundLocationPermission } from '@/src/utils/backgroundLocationDisclosure';
 
 // Get Firebase instances
 const app = getApp();
@@ -77,20 +78,22 @@ export const useLiveLocationTracking = ({
 
     const startTracking = async () => {
       try {
-        // Request location permissions
-        const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-        
-        if (foregroundStatus !== 'granted') {
-          setError('Location permission denied');
-          console.error('❌ Location permission denied');
-          return;
-        }
+        // Check if background permission is already granted
+        // NOTE: Background permission should be requested with a prominent disclosure modal
+        // BEFORE starting tracking. Use useBackgroundLocationPermission hook in the parent component.
+        const backgroundGranted = await hasBackgroundLocationPermission();
 
-        // Request background permissions for continuous tracking
-        const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-        
-        if (backgroundStatus !== 'granted') {
-          console.warn('⚠️ Background location permission denied - tracking will only work in foreground');
+        if (!backgroundGranted) {
+          // Fall back to foreground-only permission
+          // NOTE: Don't request permissions here - that should be done by the
+          // disclosure modal flow in the parent component. Just check status.
+          const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
+          if (foregroundStatus !== 'granted') {
+            setError('Location permission not granted - please enable in settings');
+            console.error('❌ Location permission not granted');
+            return;
+          }
+          console.warn('⚠️ Background location not granted - tracking in foreground only');
         }
 
         console.log('✅ Location permissions granted');
