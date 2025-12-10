@@ -6,12 +6,12 @@ import {
   ScrollView,
   SafeAreaView,
   TouchableOpacity,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import { DriftButton } from '@/components/ui/DriftButton';
-import { DriftInput } from '@/components/ui/DriftInput';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
 
@@ -133,13 +133,17 @@ export default function VehicleInfo() {
         </View>
 
         {/* Model */}
-        <DriftInput
-          label="Model *"
-          placeholder="Camry"
-          value={model}
-          onChangeText={setModel}
-          error={errors.model}
-        />
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Model *</Text>
+          <TextInput
+            style={[styles.textInput, errors.model && styles.textInputError]}
+            placeholder="e.g. Camry, Corolla, Civic"
+            placeholderTextColor={Colors.gray[400]}
+            value={model}
+            onChangeText={setModel}
+          />
+          {errors.model && <Text style={styles.errorText}>{errors.model}</Text>}
+        </View>
 
         {/* Year */}
         <View style={styles.inputContainer}>
@@ -178,26 +182,34 @@ export default function VehicleInfo() {
         </View>
 
         {/* License Plate */}
-        <DriftInput
-          label="License Plate Number *"
-          placeholder="ABC 123"
-          value={licensePlate}
-          onChangeText={setLicensePlate}
-          autoCapitalize="characters"
-          error={errors.licensePlate}
-        />
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>License Plate Number *</Text>
+          <TextInput
+            style={[styles.textInput, errors.licensePlate && styles.textInputError]}
+            placeholder="e.g. ABC 1234"
+            placeholderTextColor={Colors.gray[400]}
+            value={licensePlate}
+            onChangeText={setLicensePlate}
+            autoCapitalize="characters"
+          />
+          {errors.licensePlate && <Text style={styles.errorText}>{errors.licensePlate}</Text>}
+        </View>
 
         {/* VIN */}
-        <DriftInput
-          label="Vehicle Identification Number (VIN) *"
-          placeholder="1HGBH41JXMN109186"
-          value={vin}
-          onChangeText={setVin}
-          autoCapitalize="characters"
-          maxLength={17}
-          error={errors.vin}
-          helperText="17-character VIN found on vehicle registration"
-        />
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Vehicle Identification Number (VIN) *</Text>
+          <TextInput
+            style={[styles.textInput, errors.vin && styles.textInputError]}
+            placeholder="e.g. 1HGBH41JXMN109186"
+            placeholderTextColor={Colors.gray[400]}
+            value={vin}
+            onChangeText={setVin}
+            autoCapitalize="characters"
+            maxLength={17}
+          />
+          {errors.vin && <Text style={styles.errorText}>{errors.vin}</Text>}
+          <Text style={styles.helperText}>17-character VIN found on vehicle registration</Text>
+        </View>
 
         {/* Seats */}
         <View style={styles.inputContainer}>
@@ -312,6 +324,20 @@ const styles = StyleSheet.create({
   },
   picker: {
     height: 50,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: Colors.gray[300],
+    borderRadius: 12,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    fontSize: Typography.fontSize.base,
+    color: Colors.black,
+    backgroundColor: Colors.white,
+    height: 50,
+  },
+  textInputError: {
+    borderColor: '#ef4444',
   },
   inputError: {
     borderColor: '#ef4444',

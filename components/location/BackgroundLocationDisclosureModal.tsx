@@ -96,11 +96,6 @@ export function BackgroundLocationDisclosureModal({
 }: BackgroundLocationDisclosureModalProps) {
   const content = DISCLOSURE_CONTENT[userType];
 
-  // Log visibility changes for debugging
-  useEffect(() => {
-    console.log('📱 BackgroundLocationDisclosureModal visible:', visible);
-  }, [visible]);
-
   // Prevent back button from dismissing on Android
   useEffect(() => {
     if (!visible) return;
@@ -209,23 +204,24 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     padding: Spacing.md,
-    paddingBottom: 40, // Extra padding for phone navigation bar
+    paddingTop: 60, // Push modal down from top
+    paddingBottom: 120, // Extra padding for phone navigation bar
   },
   container: {
     backgroundColor: '#1A1A1A',
     borderRadius: BorderRadius.xl,
     width: '100%',
     maxWidth: 420,
-    maxHeight: '85%', // Slightly smaller to ensure it doesn't go behind nav bar
+    maxHeight: '85%',
     borderWidth: 1,
     borderColor: Colors.primary,
   },
   scrollContent: {
     padding: Spacing.xl,
-    paddingBottom: Spacing.xl, // Extra bottom padding inside scroll
+    paddingBottom: Spacing['2xl'], // Extra bottom padding inside scroll for buttons
     alignItems: 'center',
   },
   iconContainer: {

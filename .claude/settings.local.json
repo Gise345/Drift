@@ -61,7 +61,18 @@
       "Bash(eas env:list:*)",
       "Bash(npm view:*)",
       "Bash(npx expo config:*)",
-      "Bash(node --version)"
+      "Bash(node --version)",
+      "Bash(del \"C:\\Drift\\PLAN-document-verification-system.md\")",
+      "Bash(cmd /c del \"C:\\Drift\\PLAN-document-verification-system.md\")",
+      "Bash(cmd /c \"cd /d C:\\Drift\\functions && npm run build\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && firebase deploy --only functions:onDriverDocumentUpdate\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && firebase functions:list\")",
+      "Bash(cmd /c del \"C:\\Drift\\app\\(driver)\\dev-menu.tsx\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\Drift\\functions && npm run build 2>&1\")",
+      "WebFetch(domain:extensions.dev)",
+      "Bash(firebase ext:configure:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

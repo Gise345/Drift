@@ -57,3 +57,14 @@ export {
   onSafetyAlert,
   onRouteDeviation,
 } from './rideNotifications';
+
+// Export Document Verification functions
+export {
+  onDriverDocumentUpdate,
+} from './documentVerification';
+
+// Export Email Test functions
+export {
+  sendTestEmail,
+  sendTestEmailDirect,
+} from './emailTest';

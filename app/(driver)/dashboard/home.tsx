@@ -38,6 +38,8 @@ export default function DriverHome() {
   // Background location permission with prominent disclosure modal
   const {
     hasPermission: hasBackgroundPermission,
+    hasForegroundPermission,
+    isChecking: isCheckingPermission,
     showDisclosureModal,
     requestPermission: requestBackgroundPermission,
     onDisclosureAccept,
@@ -45,10 +47,10 @@ export default function DriverHome() {
   } = useBackgroundLocationPermission({
     userType: 'driver',
     onPermissionGranted: () => {
-      console.log('✅ Background location permission granted via modal disclosure');
+      // Location permission granted
     },
     onPermissionDenied: () => {
-      console.log('⚠️ Background location permission denied - falling back to foreground');
+      // Location permission denied - falling back to foreground
     },
   });
 
@@ -66,11 +68,9 @@ export default function DriverHome() {
     if (!driver?.id) return;
 
     try {
-      console.log('🔍 Checking for active trip for driver:', driver.id);
       const activeTrip = await getActiveDriverTrip(driver.id);
 
       if (activeTrip) {
-        console.log('✅ Found active trip, restoring:', activeTrip.id, 'Status:', activeTrip.status);
 
         // Get rider name from the trip data (stored when trip was created)
         const riderName = (activeTrip as any).riderName || 'Rider';
@@ -110,7 +110,7 @@ export default function DriverHome() {
 
       setHasCheckedActiveTrip(true);
     } catch (error) {
-      console.error('❌ Error checking for active trip:', error);
+      console.error('Error checking for active trip:', error);
       setHasCheckedActiveTrip(true);
     }
   };
@@ -166,17 +166,12 @@ export default function DriverHome() {
     return () => clearInterval(interval);
   }, [isOnline]);
 
-  // Show background location disclosure modal when going online
-  // Trigger when hasBackgroundPermission is explicitly false (not null - still checking)
-  useEffect(() => {
-    if (isOnline && driver?.id && hasBackgroundPermission === false) {
-      // Request permission which will show the prominent disclosure modal
-      console.log('🔔 Showing background location disclosure modal');
-      requestBackgroundPermission();
-    }
-  }, [isOnline, driver?.id, hasBackgroundPermission, requestBackgroundPermission]);
+  // NOTE: The modal now shows automatically from the hook on first app open
+  // No need to manually trigger it here
 
-  // Track location when online (after permission is handled)
+  // Track location when online
+  // NOTE: We start foreground tracking immediately - don't wait for background permission modal
+  // The modal only asks about BACKGROUND permission, foreground tracking should work regardless
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
 
@@ -185,32 +180,16 @@ export default function DriverHome() {
         return;
       }
 
-      // If still waiting for permission decision (null = checking), don't start yet
-      if (hasBackgroundPermission === null) {
-        console.log('⏳ Waiting for background permission check to complete...');
-        return;
-      }
-
-      // If disclosure modal is showing, wait for user to accept/decline
-      if (showDisclosureModal) {
-        console.log('⏳ Waiting for user to respond to disclosure modal...');
-        return;
-      }
-
       try {
         // Check if we have at least foreground permission
         const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
         if (foregroundStatus !== 'granted') {
-          // Don't request here - let the disclosure flow handle it
-          console.log('⏳ No foreground permission yet - disclosure flow will handle this');
-          return;
+          // Request foreground permission if not granted
+          const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+          if (newStatus !== 'granted') {
+            return;
+          }
         }
-
-        if (!hasBackgroundPermission) {
-          console.warn('⚠️ Background location not granted - tracking in foreground only');
-        }
-
-        console.log('📍 Starting location tracking for driver...');
 
         // Watch position
         subscription = await Location.watchPositionAsync(
@@ -227,18 +206,13 @@ export default function DriverHome() {
               speed: location.coords.speed || 0,
             };
 
-            console.log('📍 Location updated:', {
-              lat: locationData.lat.toFixed(6),
-              lng: locationData.lng.toFixed(6),
-            });
-
             updateLocation(locationData);
           }
         );
 
         setLocationSubscription(subscription);
       } catch (error) {
-        console.error('❌ Error starting location tracking:', error);
+        console.error('Error starting location tracking:', error);
       }
     };
 
@@ -250,10 +224,9 @@ export default function DriverHome() {
     return () => {
       if (subscription) {
         subscription.remove();
-        console.log('🛑 Stopped location tracking');
       }
     };
-  }, [isOnline, driver?.id, hasBackgroundPermission, showDisclosureModal]);
+  }, [isOnline, driver?.id, hasBackgroundPermission]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

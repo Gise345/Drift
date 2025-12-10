@@ -130,6 +130,8 @@ const HomeScreen = () => {
   // Background location permission with prominent disclosure modal
   const {
     hasPermission: hasBackgroundPermission,
+    hasForegroundPermission,
+    isChecking: isCheckingPermission,
     showDisclosureModal,
     requestPermission: requestBackgroundPermission,
     onDisclosureAccept,
@@ -137,12 +139,11 @@ const HomeScreen = () => {
   } = useBackgroundLocationPermission({
     userType: 'rider',
     onPermissionGranted: () => {
-      console.log('✅ Background location permission granted via modal disclosure');
       // Refresh location after permission granted
       getCurrentLocation();
     },
     onPermissionDenied: () => {
-      console.log('⚠️ Background location permission denied - trip sharing may be limited');
+      // Location permission denied - trip sharing may be limited
     },
   });
 
@@ -150,14 +151,8 @@ const HomeScreen = () => {
     initializeScreen();
   }, []);
 
-  // Show background location disclosure modal immediately when app opens
-  // if user hasn't granted permission yet
-  useEffect(() => {
-    if (hasBackgroundPermission === false && !loading) {
-      console.log('🔔 Showing location disclosure modal on app open');
-      requestBackgroundPermission();
-    }
-  }, [hasBackgroundPermission, loading, requestBackgroundPermission]);
+  // NOTE: The modal now shows automatically from the hook on first app open
+  // No need to manually trigger it here
 
   // Debounced search for modal
   useEffect(() => {
@@ -208,33 +203,26 @@ const HomeScreen = () => {
     try {
       const currentUser = useUserStore.getState().user;
       if (!currentUser?.id) {
-        console.log('ℹ️ No user logged in, skipping active trip check');
         return;
       }
 
-      console.log('🔍 Checking for active trip for rider:', currentUser.id);
       const activeTrip = await getActiveRiderTrip(currentUser.id);
 
       if (activeTrip) {
-        console.log('🔍 Found trip:', activeTrip.id, 'Status:', activeTrip.status);
-
         // Only restore trips that are IN_PROGRESS (paid and active)
         // Other statuses (REQUESTED, DRIVER_ARRIVING, etc.) are handled by their respective screens
         if (activeTrip.status === 'IN_PROGRESS') {
-          console.log('✅ Restoring IN_PROGRESS trip:', activeTrip.id);
           setCurrentTrip(activeTrip as Trip);
         } else {
-          console.log('ℹ️ Trip found but not IN_PROGRESS, status:', activeTrip.status);
           // Don't show on home screen - user will be on the appropriate screen already
           setCurrentTrip(null);
         }
       } else {
         // No active trip found - clear any stale state
-        console.log('ℹ️ No active trip found for rider');
         setCurrentTrip(null);
       }
     } catch (error) {
-      console.error('❌ Error checking for active trip:', error);
+      console.error('Error checking for active trip:', error);
     }
   };
 
@@ -248,8 +236,6 @@ const HomeScreen = () => {
     // Only navigate for trips that are in progress (paid)
     if (currentTrip.status === 'IN_PROGRESS') {
       router.push('/(rider)/trip-in-progress');
-    } else {
-      console.log('Trip status not navigable from home:', currentTrip.status);
     }
   };
 
@@ -272,7 +258,6 @@ const HomeScreen = () => {
       const { status } = await Location.getForegroundPermissionsAsync();
 
       if (status !== 'granted') {
-        console.log('📍 No foreground permission yet - using default location');
         setRegion(caymanRegion);
         setLoading(false);
         return;
@@ -365,8 +350,6 @@ const HomeScreen = () => {
           // Also update local cache for offline access
           await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_ADDRESSES, JSON.stringify(customAddrs));
         }
-
-        console.log('Loaded saved addresses from Firebase');
       } else {
         // Fallback: Load from AsyncStorage if not logged in or no user data
         const [home, work, custom] = await Promise.all([
@@ -378,8 +361,6 @@ const HomeScreen = () => {
         if (home) setHomeAddress(JSON.parse(home));
         if (work) setWorkAddress(JSON.parse(work));
         if (custom) setCustomAddresses(JSON.parse(custom));
-
-        console.log('Loaded saved addresses from local storage (offline fallback)');
       }
     } catch (error) {
       console.error('Error loading saved addresses:', error);
@@ -404,8 +385,6 @@ const HomeScreen = () => {
 
         // Also update local cache for offline access
         await AsyncStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(searches));
-
-        console.log('Loaded recent searches from Firebase');
       } else {
         // Fallback: Load from AsyncStorage if not logged in or no user data
         const recent = await AsyncStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
@@ -413,7 +392,6 @@ const HomeScreen = () => {
           const searches = JSON.parse(recent);
           searches.sort((a: RecentSearch, b: RecentSearch) => b.timestamp - a.timestamp);
           setRecentSearches(searches.slice(0, 10));
-          console.log('Loaded recent searches from local storage (offline fallback)');
         }
       }
     } catch (error) {
@@ -436,25 +414,19 @@ const HomeScreen = () => {
     }
 
     setSearchLoading(true);
-    console.log('🏠 ADDRESS-FIRST SEARCH: Prioritizing residential addresses');
 
     try {
       const allResults: any[] = [];
 
-      // STEP 1: GEOCODING API (PRIMARY - for addresses) ✅
-      console.log('🔍 Step 1: Geocoding API (Primary - for addresses)...');
+      // STEP 1: GEOCODING API (PRIMARY - for addresses)
       const geocodingQuery = `${query}, Grand Cayman, Cayman Islands`;
       const geocodingUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(geocodingQuery)}&components=country:KY&key=${GOOGLE_PLACES_API_KEY}`;
-      
+
       try {
         const geocodingResponse = await fetch(geocodingUrl);
         const geocodingData = await geocodingResponse.json();
-        
-        console.log('📊 Geocoding API Status:', geocodingData.status);
 
         if (geocodingData.status === 'OK' && geocodingData.results) {
-          console.log(`✅ Geocoding API found ${geocodingData.results.length} addresses`);
-          
           geocodingData.results.forEach((result: any) => {
             const location = result.geometry.location;
             allResults.push({
@@ -470,26 +442,19 @@ const HomeScreen = () => {
               source: 'geocoding',
             });
           });
-        } else {
-          console.log('⚠️ Geocoding API:', geocodingData.status);
         }
       } catch (error) {
         console.error('Geocoding API error:', error);
       }
 
       // STEP 2: PLACES API (SECONDARY - for businesses/landmarks)
-      console.log('🔍 Step 2: Places API (Secondary - for businesses/landmarks)...');
       const placesUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&location=${GRAND_CAYMAN_CENTER.latitude},${GRAND_CAYMAN_CENTER.longitude}&radius=${SEARCH_RADIUS}&components=country:ky&key=${GOOGLE_PLACES_API_KEY}`;
-      
+
       try {
         const placesResponse = await fetch(placesUrl);
         const placesData = await placesResponse.json();
-        
-        console.log('📊 Places API Status:', placesData.status);
 
         if (placesData.status === 'OK' && placesData.predictions) {
-          console.log(`✅ Places API found ${placesData.predictions.length} results`);
-          
           placesData.predictions.forEach((prediction: any) => {
             allResults.push({
               ...prediction,
@@ -497,8 +462,6 @@ const HomeScreen = () => {
               source: 'places',
             });
           });
-        } else {
-          console.log('⚠️ Places API:', placesData.status);
         }
       } catch (error) {
         console.error('Places API error:', error);
@@ -506,12 +469,10 @@ const HomeScreen = () => {
 
       // STEP 3: DEDUPLICATE & SORT (addresses first!)
       const uniqueResults = deduplicateResults(allResults);
-      
+
       // Sort by priority: addresses (1) before businesses (2)
       uniqueResults.sort((a, b) => a.priority - b.priority);
-      
-      console.log(`📍 Final results: ${uniqueResults.length} unique locations (addresses prioritized)`);
-      
+
       setPredictions(uniqueResults.slice(0, 10)); // Limit to 10 results
 
     } catch (error) {
@@ -563,11 +524,9 @@ const HomeScreen = () => {
 
     try {
       const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry,formatted_address&key=${GOOGLE_PLACES_API_KEY}`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
-
-      console.log('Place details response:', data);
 
       if (data.status === 'OK' && data.result) {
         return {
@@ -898,10 +857,6 @@ const HomeScreen = () => {
       latitude: address.latitude,
       longitude: address.longitude,
     };
-
-    console.log('🚗 Navigating from home to destination:');
-    console.log('  Pickup:', pickup);
-    console.log('  Destination:', dest);
 
     // Navigate with params
     router.push({

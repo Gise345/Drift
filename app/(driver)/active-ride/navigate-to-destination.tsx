@@ -91,6 +91,7 @@ export default function NavigateToDestination() {
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState<number>(0); // Speed in m/s
   const lastRouteRecalculation = useRef<number>(0);
+  const hasHandledCancellationRef = useRef(false);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
   // Stop request state
@@ -122,6 +123,11 @@ export default function NavigateToDestination() {
       return;
     }
 
+    // Prevent duplicate handling
+    if (hasHandledCancellationRef.current) {
+      return;
+    }
+
     console.log('📍 NavigateToDestination: Trip update received:', {
       tripId: currentTrip.id,
       activeRideId: activeRide?.id,
@@ -137,7 +143,8 @@ export default function NavigateToDestination() {
 
     // If trip was cancelled by rider
     if (currentTrip.status === 'CANCELLED') {
-      console.log('⚠️ Trip was cancelled by rider during ride');
+      console.log('⚠️ Trip was cancelled - notifying driver');
+      hasHandledCancellationRef.current = true;
 
       // Clear active ride from driver store
       setActiveRide(null);

@@ -73,7 +73,7 @@ module.exports = {
     },
     android: {
       package: "com.drift.global",
-      versionCode: 8,
+      versionCode: 11,
       adaptiveIcon: {
         foregroundImage: "./assets/images/app-icon.png",
         backgroundColor: "#000000"
@@ -176,7 +176,8 @@ module.exports = {
             buildToolsVersion: "35.0.0",
             usesCleartextTraffic: false,
             newArchEnabled: false,
-            minSdkVersion: 24
+            minSdkVersion: 24,
+            support16KBPages: true
           },
           ios: {
             newArchEnabled: false,

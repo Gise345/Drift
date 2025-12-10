@@ -167,8 +167,8 @@ export default function DriverPrivacyScreen() {
           <Text style={styles.bulletPoint}>• Processing cost-sharing contributions and platform fees</Text>
 
           <Text style={styles.subSectionTitle}>3.3 Payment Processing</Text>
-          <Text style={styles.bulletPoint}>• Processing cost-sharing contributions (81% to driver, 19% platform fee)</Text>
-          <Text style={styles.bulletPoint}>• Deducting platform service fees (4% transaction + 15% maintenance)</Text>
+          <Text style={styles.bulletPoint}>• Processing cost-sharing contributions (80% to driver, 20% platform fee)</Text>
+          <Text style={styles.bulletPoint}>• Deducting platform service fees (4% transaction + 16% maintenance)</Text>
           <Text style={styles.bulletPoint}>• Maintaining transaction records</Text>
           <Text style={styles.bulletPoint}>• Detecting and preventing fraud</Text>
 

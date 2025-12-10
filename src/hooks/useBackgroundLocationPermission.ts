@@ -4,24 +4,29 @@
  * Manages the background location permission flow with Google Play-compliant
  * prominent disclosure modal.
  *
+ * Google Play Compliance:
+ * - Shows a prominent in-app disclosure BEFORE requesting background location
+ * - Explains why, what, and when location data is collected
+ * - User must explicitly acknowledge before system permission dialog appears
+ *
  * Flow:
- * 1. Check if permission already granted
- * 2. Request foreground permission first (if needed)
- * 3. Show prominent disclosure modal
- * 4. If user accepts, request background permission
- * 5. Handle denial gracefully
+ * 1. On app open, check if background permission is already granted ("Always Allow")
+ *    → If granted, no modal needed
+ * 2. Check if user has foreground permission ("While using app")
+ *    → If granted, user made their choice, don't show modal
+ * 3. If NO location permission at all (denied or "Ask every time")
+ *    → Show disclosure modal before requesting permission
+ * 4. User can change permission in device settings anytime
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { Alert } from 'react-native';
-import * as Location from 'expo-location';
 import {
   hasBackgroundLocationPermission,
   hasForegroundLocationPermission,
   requestForegroundLocationPermission,
   requestBackgroundLocationPermission,
-  BACKGROUND_LOCATION_DENIED_MESSAGE,
 } from '@/src/utils/backgroundLocationDisclosure';
+
 
 interface UseBackgroundLocationPermissionOptions {
   userType: 'rider' | 'driver';
@@ -31,7 +36,8 @@ interface UseBackgroundLocationPermissionOptions {
 
 interface UseBackgroundLocationPermissionReturn {
   // State
-  hasPermission: boolean | null;
+  hasPermission: boolean | null; // Background permission ("Always Allow")
+  hasForegroundPermission: boolean | null; // Foreground permission ("While using app")
   isChecking: boolean;
   showDisclosureModal: boolean;
 
@@ -48,94 +54,112 @@ export function useBackgroundLocationPermission({
   onPermissionDenied,
 }: UseBackgroundLocationPermissionOptions): UseBackgroundLocationPermissionReturn {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [isChecking, setIsChecking] = useState(false);
+  const [hasForegroundPermission, setHasForegroundPermission] = useState<boolean | null>(null);
+  const [isChecking, setIsChecking] = useState(true);
   const [showDisclosureModal, setShowDisclosureModal] = useState(false);
-  // Track if user has already made a decision this session (to prevent re-showing modal)
-  const [hasUserDecided, setHasUserDecided] = useState(false);
 
-  // Check current permission status
+  // Check permission on app open
+  // Google Play compliance: Show disclosure BEFORE requesting background location
+  // Once user has seen disclosure and made a choice, don't show it again
+  // UNLESS they revoke permission in settings - then we need to re-show
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        // Check if background permission is already granted ("Always Allow")
+        const backgroundGranted = await hasBackgroundLocationPermission();
+        setHasPermission(backgroundGranted);
+
+        if (backgroundGranted) {
+          // Permission already granted ("Always Allow"), no need to show modal
+          setHasForegroundPermission(true); // Background implies foreground
+          setIsChecking(false);
+          return;
+        }
+
+        // Check if user has at least foreground permission ("While using app")
+        // If they have foreground but not background, they made a conscious choice
+        const foregroundGranted = await hasForegroundLocationPermission();
+        setHasForegroundPermission(foregroundGranted);
+
+        if (foregroundGranted) {
+          // User has "While using app" - they made their choice, don't nag
+          setIsChecking(false);
+          return;
+        }
+
+        // No foreground permission means either:
+        // 1. First time user (never granted)
+        // 2. User revoked permission to "Don't Allow" or "Ask every time"
+        // In both cases, we need to show the disclosure before requesting again
+        setShowDisclosureModal(true);
+
+        setIsChecking(false);
+      } catch (error) {
+        console.error('Error initializing permission check:', error);
+        setHasPermission(false);
+        setIsChecking(false);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  // Check current permission status (can be called manually)
   const checkPermission = useCallback(async (): Promise<boolean> => {
-    setIsChecking(true);
     try {
       const granted = await hasBackgroundLocationPermission();
       setHasPermission(granted);
-      // If already granted, mark as user decided (no need to show modal)
-      if (granted) {
-        setHasUserDecided(true);
-      }
       return granted;
-    } finally {
-      setIsChecking(false);
+    } catch (error) {
+      console.error('Error checking permission:', error);
+      return false;
     }
   }, []);
 
-  // Check permission on mount
-  useEffect(() => {
-    checkPermission();
-  }, [checkPermission]);
-
-  // Start the permission request flow
+  // Start the permission request flow (manual trigger)
   const requestPermission = useCallback(async () => {
-    console.log('🔔 requestPermission called - starting disclosure flow');
-
-    // If user has already made a decision this session, don't show modal again
-    if (hasUserDecided) {
-      console.log('🔔 User already made a decision this session - not showing modal again');
-      return;
-    }
-
-    // First check if already granted
+    // Check if already granted
     const alreadyGranted = await hasBackgroundLocationPermission();
-    console.log('🔔 Background permission already granted?', alreadyGranted);
     if (alreadyGranted) {
       setHasPermission(true);
-      setHasUserDecided(true);
       onPermissionGranted?.();
       return;
     }
 
-    // IMPORTANT: Show the disclosure modal FIRST, before any system permission requests
-    // This ensures the user sees our prominent disclosure before the OS dialog
-    console.log('🔔 Showing prominent disclosure modal');
+    // Show the disclosure modal
     setShowDisclosureModal(true);
-  }, [hasUserDecided, onPermissionGranted, onPermissionDenied]);
+  }, [onPermissionGranted]);
 
   // Handle user accepting the disclosure
   const onDisclosureAccept = useCallback(async () => {
-    console.log('✅ User accepted disclosure modal');
     setShowDisclosureModal(false);
-    setHasUserDecided(true); // Mark that user has made a decision
 
     // First, ensure we have foreground permission
     const hasForeground = await hasForegroundLocationPermission();
-    console.log('🔔 Has foreground permission?', hasForeground);
 
     if (!hasForeground) {
-      console.log('🔔 Requesting foreground permission first...');
       const foregroundGranted = await requestForegroundLocationPermission();
       if (!foregroundGranted) {
-        console.log('❌ Foreground permission denied');
         setHasPermission(false);
-        const deniedMessage = BACKGROUND_LOCATION_DENIED_MESSAGE[userType];
-        Alert.alert(deniedMessage.title, deniedMessage.message, [{ text: 'OK' }]);
+        setHasForegroundPermission(false);
         onPermissionDenied?.();
         return;
       }
+      // Foreground permission was just granted
+      setHasForegroundPermission(true);
     }
 
     // Now request the actual background system permission
-    console.log('🔔 Requesting background location permission...');
     const granted = await requestBackgroundLocationPermission();
     setHasPermission(granted);
 
     if (granted) {
-      console.log('✅ Background location permission granted after disclosure');
+      setHasForegroundPermission(true); // Background implies foreground
       onPermissionGranted?.();
     } else {
-      console.log('⚠️ User granted foreground but not background - proceeding with limited functionality');
-      // Don't show error alert - user made their choice, app will work with foreground permission
-      // Just call the denied callback so the parent knows
-      onPermissionDenied?.();
+      // User chose "While using app" - still has foreground permission
+      // Call onPermissionGranted since they can still use the app with foreground location
+      onPermissionGranted?.();
     }
   }, [userType, onPermissionGranted, onPermissionDenied]);
 
@@ -143,19 +167,15 @@ export function useBackgroundLocationPermission({
   const onDisclosureDecline = useCallback(() => {
     setShowDisclosureModal(false);
     setHasPermission(false);
-    setHasUserDecided(true); // Mark that user has made a decision
 
-    console.log('❌ User declined background location disclosure');
-
-    // Show graceful degradation message
-    const deniedMessage = BACKGROUND_LOCATION_DENIED_MESSAGE[userType];
-    Alert.alert(deniedMessage.title, deniedMessage.message, [{ text: 'OK' }]);
-
+    // Don't show an alert - just let them continue with the app
+    // Modal will show again next time if they still have no location permission
     onPermissionDenied?.();
-  }, [userType, onPermissionDenied]);
+  }, [onPermissionDenied]);
 
   return {
     hasPermission,
+    hasForegroundPermission,
     isChecking,
     showDisclosureModal,
     checkPermission,

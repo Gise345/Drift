@@ -106,7 +106,7 @@ export default function Approved() {
           <View style={styles.subscriptionContent}>
             <Text style={styles.subscriptionTitle}>How You Earn</Text>
             <Text style={styles.subscriptionText}>
-              You receive 81% of each rider's contribution. The 19% platform fee covers transaction processing (4%) and platform maintenance (15%).
+              You receive 80% of each rider's contribution. The 20% platform fee covers transaction processing (4%) and platform maintenance (16%).
             </Text>
           </View>
         </View>

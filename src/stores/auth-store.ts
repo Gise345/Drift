@@ -14,6 +14,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutUser } from '../services/firebase-auth-service';
 import { setMonitoringUser, clearMonitoringUser } from '../services/firebase-monitoring-service';
 
+// ============================================================================
+// AsyncStorage keys that need to be cleared on logout (user-specific data)
+// ============================================================================
+const USER_SPECIFIC_STORAGE_KEYS = [
+  '@drift_home_address',
+  '@drift_work_address',
+  '@drift_custom_addresses',
+  '@drift_recent_searches',
+  '@drift_last_mode',
+];
+
 /**
  * Helper to check if document exists
  * React Native Firebase can return exists as either a boolean or function depending on version
@@ -114,14 +125,98 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   /**
-   * Sign out user
+   * Sign out user and clear ALL user-specific data
+   * This ensures no data leaks between different users on the same device
    */
   signOut: async () => {
     try {
       console.log('👋 Signing out...');
+
+      // Step 1: Sign out from Firebase Auth
       await signOutUser();
+
+      // Step 2: Clear all user-specific AsyncStorage data
+      console.log('🧹 Clearing user-specific AsyncStorage data...');
+      try {
+        await AsyncStorage.multiRemove(USER_SPECIFIC_STORAGE_KEYS);
+        console.log('✅ AsyncStorage user data cleared');
+      } catch (storageError) {
+        console.warn('⚠️ Failed to clear some AsyncStorage data:', storageError);
+      }
+
+      // Step 3: Reset all Zustand stores to prevent data leakage
+      console.log('🧹 Resetting all stores...');
+
+      // Reset user store
+      try {
+        const { useUserStore } = require('./user-store');
+        useUserStore.getState().resetStore();
+        console.log('✅ User store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset user store:', e);
+      }
+
+      // Reset trip store
+      try {
+        const { useTripStore } = require('./trip-store');
+        await useTripStore.getState().resetStore();
+        console.log('✅ Trip store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset trip store:', e);
+      }
+
+      // Reset driver store
+      try {
+        const { useDriverStore } = require('./driver-store');
+        useDriverStore.getState().resetStore();
+        console.log('✅ Driver store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset driver store:', e);
+      }
+
+      // Reset location store
+      try {
+        const { useLocationStore } = require('./location-store');
+        useLocationStore.getState().reset();
+        console.log('✅ Location store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset location store:', e);
+      }
+
+      // Reset safety store
+      try {
+        const { useSafetyStore } = require('./safety-store');
+        useSafetyStore.getState().reset();
+        console.log('✅ Safety store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset safety store:', e);
+      }
+
+      // Reset messaging store
+      try {
+        const { useMessagingStore } = require('./messaging-store');
+        useMessagingStore.getState().clearMessages();
+        console.log('✅ Messaging store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset messaging store:', e);
+      }
+
+      // Reset carpool store
+      try {
+        const { useCarpoolStore } = require('./carpool-store');
+        useCarpoolStore.getState().reset();
+        console.log('✅ Carpool store reset');
+      } catch (e) {
+        console.warn('⚠️ Failed to reset carpool store:', e);
+      }
+
+      // Step 4: Clear monitoring user
+      clearMonitoringUser();
+
+      // Step 5: Reset auth store state
       set({ user: null, currentMode: 'RIDER' });
-      console.log('✅ Signed out successfully');
+
+      console.log('✅ Signed out successfully - all user data cleared');
     } catch (error) {
       console.error('❌ Sign out error:', error);
       throw error;

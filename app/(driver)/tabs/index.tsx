@@ -83,6 +83,8 @@ export default function DriverHomeScreen() {
   // Background location permission with prominent disclosure modal
   const {
     hasPermission: hasBackgroundPermission,
+    hasForegroundPermission,
+    isChecking: isCheckingPermission,
     showDisclosureModal,
     requestPermission: requestBackgroundPermission,
     onDisclosureAccept,
@@ -90,10 +92,11 @@ export default function DriverHomeScreen() {
   } = useBackgroundLocationPermission({
     userType: 'driver',
     onPermissionGranted: () => {
-      console.log('✅ Background location permission granted via modal disclosure');
+      // Refresh location immediately when permission is granted
+      getCurrentLocation();
     },
     onPermissionDenied: () => {
-      console.log('⚠️ Background location permission denied - falling back to foreground');
+      // Location permission denied
     },
   });
 
@@ -112,7 +115,6 @@ export default function DriverHomeScreen() {
     const subscription = setupDriverNotificationListener(
       // On Accept from notification
       async (requestId) => {
-        console.log('📲 Accept from notification:', requestId);
         try {
           await acceptRequest(requestId);
           router.push('/(driver)/active-ride/navigate-to-pickup');
@@ -122,7 +124,6 @@ export default function DriverHomeScreen() {
       },
       // On Decline from notification
       async (requestId) => {
-        console.log('📲 Decline from notification:', requestId);
         try {
           await declineRequest(requestId, 'Declined from notification');
         } catch (error) {
@@ -141,11 +142,9 @@ export default function DriverHomeScreen() {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       // When app comes back to foreground and driver is online
       if (nextAppState === 'active' && isOnline && !activeRide) {
-        console.log('📱 App came to foreground - checking listener status');
         // Restart listening if we're online but not currently listening
         const state = useDriverStore.getState();
         if (!state.rideRequestListener && state.currentLocation) {
-          console.log('🔄 Restarting ride request listener...');
           state.startListeningForRequests();
         }
       }
@@ -172,12 +171,9 @@ export default function DriverHomeScreen() {
     if (!driver?.id) return;
 
     try {
-      console.log('🔍 Checking for active trip for driver:', driver.id);
       const activeTrip = await getActiveDriverTrip(driver.id);
 
       if (activeTrip) {
-        console.log('🔍 Found trip:', activeTrip.id, 'Status:', activeTrip.status);
-
         // Only restore trips that are genuinely active:
         // 1. IN_PROGRESS trips should always be restored (driver is mid-ride)
         // 2. For other statuses (DRIVER_ARRIVING, DRIVER_ARRIVED), only restore if recently accepted (within 30 min)
@@ -187,12 +183,9 @@ export default function DriverHomeScreen() {
         const isRecentlyAccepted = acceptedAt && new Date(acceptedAt) > thirtyMinutesAgo;
 
         if (!isInProgress && !isRecentlyAccepted) {
-          console.log('⏭️ Skipping stale trip (not in progress and older than 30 min):', activeTrip.id);
           setHasCheckedActiveTrip(true);
           return;
         }
-
-        console.log('✅ Restoring active trip:', activeTrip.id, 'Status:', activeTrip.status);
 
         // Get rider info from the trip data
         const riderName = (activeTrip as any).riderName || 'Rider';
@@ -230,13 +223,12 @@ export default function DriverHomeScreen() {
         setActiveRide(restoredRide);
       } else {
         // No active trip found - clear any stale activeRide state
-        console.log('ℹ️ No active trip found for driver');
         setActiveRide(null);
       }
 
       setHasCheckedActiveTrip(true);
     } catch (error) {
-      console.error('❌ Error checking for active trip:', error);
+      console.error('Error checking for active trip:', error);
       setHasCheckedActiveTrip(true);
     }
   };
@@ -287,28 +279,21 @@ export default function DriverHomeScreen() {
   }, []);
 
   // Refresh location after permission is granted through disclosure flow
+  // This triggers when either background OR foreground permission is granted
   useEffect(() => {
-    if (hasBackgroundPermission === true) {
-      console.log('🔄 Permission granted - refreshing location');
+    if (hasForegroundPermission === true) {
       getCurrentLocation();
     }
-  }, [hasBackgroundPermission]);
+  }, [hasForegroundPermission]);
 
-  // Show background location disclosure modal when going online
-  useEffect(() => {
-    if (isOnline && driver?.id && hasBackgroundPermission === false) {
-      // Request permission which will show the prominent disclosure modal
-      console.log('🔔 Showing background location disclosure modal');
-      requestBackgroundPermission();
-    }
-  }, [isOnline, driver?.id, hasBackgroundPermission, requestBackgroundPermission]);
+  // NOTE: The modal now shows automatically from the hook on first app open
+  // No need to manually trigger it here
 
   // Start listening for ride requests when online and location is available
   // This handles restoration of online status after app restart
   useEffect(() => {
     const state = useDriverStore.getState();
     if (isOnline && state.currentLocation && !state.rideRequestListener && !activeRide) {
-      console.log('🔄 Online status restored - starting ride request listener');
       startListeningForRequests();
     }
   }, [isOnline, region]);
@@ -322,7 +307,6 @@ export default function DriverHomeScreen() {
       acceptedRequestId.current = null;
       // Clear shown request IDs so old requests can be shown again if they're still available
       shownRequestIds.current.clear();
-      console.log('🔄 Reset ride request tracking - driver is online');
     }
   }, [isOnline]);
 
@@ -348,11 +332,9 @@ export default function DriverHomeScreen() {
           shownRequestIds.current.add(newestRequest.id);
           setCurrentRequest(newestRequest);
           setShowRequestModal(true);
-          console.log('🔔 Showing ride request modal for:', newestRequest.id);
         } else if (currentRequest && currentRequest.id !== newestRequest.id) {
           // Modal is open but showing a different (older) request
           // Update to show the newer request
-          console.log('🔄 Updating modal to show newer request:', newestRequest.id, '(was:', currentRequest.id, ')');
           shownRequestIds.current.add(newestRequest.id);
           setCurrentRequest(newestRequest);
         }
@@ -376,7 +358,6 @@ export default function DriverHomeScreen() {
       if (currentStatus !== 'granted') {
         // Don't request permission here - let the disclosure modal flow handle it
         // Just use default location for now
-        console.log('📍 No foreground permission yet - using default location');
         setRegion(defaultLocation);
         updateLocation({
           lat: defaultLocation.latitude,
@@ -495,7 +476,6 @@ export default function DriverHomeScreen() {
     // Verify the request is still valid in incomingRequests
     const requestStillValid = incomingRequests.some(r => r.id === currentRequest.id);
     if (!requestStillValid) {
-      console.log('⚠️ Request no longer valid:', currentRequest.id);
       Alert.alert(
         'Request Unavailable',
         'This ride request is no longer available. It may have been cancelled or taken by another driver.',
@@ -506,15 +486,12 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    console.log('🚗 Accepting ride request:', currentRequest.id);
     isAccepting.current = true;
     acceptedRequestId.current = currentRequest.id;
 
     try {
       // Accept the request in Firebase (this updates status to DRIVER_ARRIVING)
       await acceptRequest(currentRequest.id);
-
-      console.log('✅ Ride accepted successfully');
 
       // Close modal and clear state
       setShowRequestModal(false);
@@ -523,7 +500,7 @@ export default function DriverHomeScreen() {
       // Navigate directly to navigate-to-pickup screen
       router.push('/(driver)/active-ride/navigate-to-pickup');
     } catch (error) {
-      console.error('❌ Failed to accept ride:', error);
+      console.error('Failed to accept ride:', error);
 
       // Reset flags on error so driver can try again with a different request
       isAccepting.current = false;
@@ -544,7 +521,6 @@ export default function DriverHomeScreen() {
 
     try {
       await declineRequest(currentRequest.id, 'Driver declined');
-      console.log('🚫 Ride declined:', currentRequest.id);
     } catch (error) {
       console.error('Failed to decline request:', error);
     }

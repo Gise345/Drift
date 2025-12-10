@@ -56,6 +56,7 @@ export default function ArrivedAtPickup() {
 
   // Animation for pulsing effect
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const hasHandledCancellationRef = useRef(false);
 
   // Subscribe to trip updates to detect rider cancellation
   useEffect(() => {
@@ -70,6 +71,11 @@ export default function ArrivedAtPickup() {
   useEffect(() => {
     if (!currentTrip) {
       console.log('📍 ArrivedAtPickup: No currentTrip yet');
+      return;
+    }
+
+    // Prevent duplicate handling
+    if (hasHandledCancellationRef.current) {
       return;
     }
 
@@ -88,7 +94,8 @@ export default function ArrivedAtPickup() {
 
     // If trip was cancelled by rider
     if (currentTrip.status === 'CANCELLED') {
-      console.log('⚠️ Trip was cancelled by rider while waiting at pickup');
+      console.log('⚠️ Trip was cancelled - notifying driver');
+      hasHandledCancellationRef.current = true;
 
       // Clear active ride from driver store
       setActiveRide(null);

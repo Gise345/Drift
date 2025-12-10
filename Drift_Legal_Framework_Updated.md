@@ -141,12 +141,12 @@ When users choose to process cost-sharing payments through Drift's platform, a 1
 
 **Example Transaction:**
 - Rider and Driver agree on CI$20 cost contribution
-- Driver receives: CI$16.20 (81%)
-- Platform service fee: CI$3.80 (19%)
+- Driver receives: CI$16.00 (80%)
+- Platform service fee: CI$4.00 (20%)
 
 **Breakdown of the CI$3.80 fee:**
 - Payment processing: ~CI$0.80 (4% of CI$20 - covers Stripe fees, transaction security)
-- Platform maintenance: ~CI$3.00 (15% of CI$20 - covers engineers, servers, APIs, compliance, safety, customer service)
+- Platform maintenance: ~CI$3.00 (16% of CI$20 - covers engineers, servers, APIs, compliance, safety, customer service)
 
 ### 3.3 MANDATORY IN-APP PAYMENT (SAFETY PROTECTION):
 

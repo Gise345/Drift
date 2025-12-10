@@ -36,7 +36,7 @@ import { doc, onSnapshot, getDoc } from '@react-native-firebase/firestore';
 export default function CompleteRide() {
   const router = useRouter();
   const { activeRide, completeRide: completeRideInStore, setActiveRide } = useDriverStore();
-  const { stopLocationTracking } = useTripStore();
+  const { stopLocationTracking, resetPrivacyTracking } = useTripStore();
   const [completing, setCompleting] = useState(false);
   const [waitingForTip, setWaitingForTip] = useState(false);
   const [tipReceived, setTipReceived] = useState<number | null>(null);
@@ -58,10 +58,9 @@ export default function CompleteRide() {
           // Use estimatedCost from Firebase which includes any added stop costs
           const updatedFare = data?.estimatedCost || activeRide?.estimatedEarnings || 0;
           setCurrentFare(updatedFare);
-          console.log('📊 Updated fare from Firebase:', updatedFare, '(includes stops)');
         }
       } catch (error) {
-        console.warn('Could not fetch updated fare:', error);
+        console.error('Could not fetch updated fare:', error);
       }
     };
 
@@ -89,13 +88,10 @@ export default function CompleteRide() {
   useEffect(() => {
     if (!activeRide?.id || !waitingForTip) return;
 
-    console.log('🔔 Subscribing to trip updates for tip:', activeRide.id);
-
     const tripRef = doc(firebaseDb, 'trips', activeRide.id);
     const unsubscribe = onSnapshot(tripRef, (docSnapshot) => {
       if (docSnapshot.exists) {
         const data = docSnapshot.data();
-        console.log('📍 Trip update:', data?.status, 'Tip:', data?.tip);
 
         // Check if trip was completed (rider added tip or skipped)
         if (data?.status === 'COMPLETED') {
@@ -164,8 +160,6 @@ export default function CompleteRide() {
       // Show waiting for tip state
       setWaitingForTip(true);
       setCompleting(false);
-
-      console.log('✅ Trip marked as AWAITING_TIP, waiting for rider response...');
     } catch (error) {
       console.error('Failed to complete ride:', error);
       Alert.alert('Error', 'Failed to complete ride. Please try again.');
@@ -183,9 +177,10 @@ export default function CompleteRide() {
       try {
         await stopLocationTracking();
         await Notifications.dismissAllNotificationsAsync();
-        console.log('✅ Location tracking stopped and notifications dismissed');
+        // Reset privacy tracking state for next ride
+        resetPrivacyTracking();
       } catch (trackingError) {
-        console.warn('Could not stop location tracking:', trackingError);
+        console.error('Could not stop location tracking:', trackingError);
       }
 
       // If not yet finalized, finalize now

@@ -241,9 +241,12 @@ export default function FindingDriverScreen() {
         clearInterval(timerRef.current);
       }
 
-      Alert.alert('Trip Cancelled', 'The trip has been cancelled.');
       clearBookingFlow();
-      router.back();
+      Alert.alert(
+        'Trip Cancelled',
+        'The trip has been cancelled.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
     }
   }, [currentTrip?.status]);
 

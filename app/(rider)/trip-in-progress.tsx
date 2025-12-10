@@ -108,7 +108,7 @@ export default function TripInProgressScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
-  const { currentTrip, subscribeToTrip } = useTripStore();
+  const { currentTrip, subscribeToTrip, updateTrip } = useTripStore();
   const {
     startMonitoring,
     stopMonitoring,
@@ -171,7 +171,6 @@ export default function TripInProgressScreen() {
 
     // When trip is awaiting tip, navigate to add-tip screen
     if (currentTrip.status === 'AWAITING_TIP') {
-      console.log('Trip completed! Driver is waiting for tip. Navigating to add-tip...');
       hasNavigatedRef.current = true;
       router.replace('/(rider)/add-tip');
       return;
@@ -180,7 +179,6 @@ export default function TripInProgressScreen() {
     // When trip is fully completed - still let rider add tip/rating
     // Driver may have clicked "Finish Without Waiting", but rider should still be able to tip
     if (currentTrip.status === 'COMPLETED') {
-      console.log('Trip completed! Navigating to add-tip so rider can still tip/rate...');
       hasNavigatedRef.current = true;
       router.replace('/(rider)/add-tip');
       return;
@@ -188,10 +186,14 @@ export default function TripInProgressScreen() {
 
     // If trip was cancelled
     if (currentTrip.status === 'CANCELLED') {
-      console.log('Trip was cancelled');
       hasNavigatedRef.current = true;
-      Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
-      router.replace('/(rider)');
+      Alert.alert(
+        'Ride Cancelled',
+        (currentTrip as any).cancelledBy === 'DRIVER'
+          ? 'Your driver has cancelled this trip.'
+          : 'The ride has been cancelled.',
+        [{ text: 'OK', onPress: () => router.replace('/(rider)') }]
+      );
       return;
     }
   }, [currentTrip?.status]);
@@ -307,7 +309,6 @@ export default function TripInProgressScreen() {
   // Re-fetch route when stops are added/removed
   useEffect(() => {
     if (currentTrip?.driverLocation && currentTrip?.destination && currentTrip?.stops) {
-      console.log('📍 Stops changed, re-fetching route with', currentTrip.stops.length, 'stops');
       fetchRoute(
         {
           latitude: currentTrip.driverLocation.latitude,
@@ -329,7 +330,6 @@ export default function TripInProgressScreen() {
       currentTrip?.destination?.coordinates &&
       !safetyInitializedRef.current
     ) {
-      console.log('Starting safety monitoring for trip:', currentTrip.id);
       safetyInitializedRef.current = true;
 
       startMonitoring(
@@ -344,7 +344,6 @@ export default function TripInProgressScreen() {
     // Cleanup when trip ends
     return () => {
       if (safetyInitializedRef.current) {
-        console.log('Stopping safety monitoring');
         stopMonitoring();
         safetyInitializedRef.current = false;
       }
@@ -433,7 +432,7 @@ export default function TripInProgressScreen() {
           return;
         }
       } catch (error) {
-        console.warn('Failed to fetch ETA from Google Directions:', error);
+        // Failed to fetch ETA from Google Directions
       }
     }
 

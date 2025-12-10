@@ -47,6 +47,118 @@ export interface TripLocation {
   heading?: number;
 }
 
+/**
+ * Privacy-aware driver location tracking
+ *
+ * To protect driver privacy (e.g., home location), we don't broadcast
+ * driver location to the rider immediately when they accept a ride.
+ *
+ * Location is only shared after:
+ * 1. The driver has been driving for at least LOCATION_BROADCAST_DELAY_MS (60 seconds), OR
+ * 2. The driver is already at or near the rider's pickup location
+ *
+ * This prevents riders from knowing where drivers live if they happen to
+ * accept rides from their home.
+ */
+const LOCATION_BROADCAST_DELAY_MS = 60 * 1000; // 1 minute
+const SAME_LOCATION_THRESHOLD_METERS = 200; // Consider "same location" if within 200m
+
+// Track when driver accepted ride to calculate broadcast eligibility
+let rideAcceptedTimestamp: number | null = null;
+let initialDriverLocation: { latitude: number; longitude: number } | null = null;
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @returns Distance in meters
+ */
+const calculateDistanceMeters = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/**
+ * Check if driver location should be broadcast to rider
+ * Returns true if:
+ * - Enough time has passed since ride was accepted (privacy delay), OR
+ * - Driver is already at/near the pickup location (same location exception)
+ */
+const shouldBroadcastDriverLocation = (
+  driverLocation: TripLocation,
+  pickupCoordinates: { latitude: number; longitude: number }
+): boolean => {
+  // If ride acceptance time not set, initialize it
+  if (!rideAcceptedTimestamp) {
+    rideAcceptedTimestamp = Date.now();
+    initialDriverLocation = {
+      latitude: driverLocation.latitude,
+      longitude: driverLocation.longitude,
+    };
+    console.log('🔒 Privacy: Initialized ride acceptance timestamp');
+  }
+
+  // Check if driver is at or near the pickup location
+  const distanceToPickup = calculateDistanceMeters(
+    driverLocation.latitude,
+    driverLocation.longitude,
+    pickupCoordinates.latitude,
+    pickupCoordinates.longitude
+  );
+
+  if (distanceToPickup <= SAME_LOCATION_THRESHOLD_METERS) {
+    console.log('📍 Privacy: Driver near pickup, broadcasting location');
+    return true;
+  }
+
+  // Check if enough time has passed
+  const elapsedTime = Date.now() - rideAcceptedTimestamp;
+  if (elapsedTime >= LOCATION_BROADCAST_DELAY_MS) {
+    console.log('⏱️ Privacy: Delay period passed, broadcasting location');
+    return true;
+  }
+
+  // Check if driver has moved significantly from initial location (indicates they're driving, not at home)
+  if (initialDriverLocation) {
+    const distanceFromStart = calculateDistanceMeters(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      initialDriverLocation.latitude,
+      initialDriverLocation.longitude
+    );
+
+    // If driver has moved more than 100 meters, start broadcasting
+    if (distanceFromStart > 100) {
+      console.log('🚗 Privacy: Driver has moved, broadcasting location');
+      return true;
+    }
+  }
+
+  console.log(`🔒 Privacy: Waiting before broadcasting. Elapsed: ${Math.round(elapsedTime / 1000)}s, Distance to pickup: ${Math.round(distanceToPickup)}m`);
+  return false;
+};
+
+/**
+ * Reset privacy tracking state (call when ride is completed/cancelled)
+ */
+const resetPrivacyTrackingState = () => {
+  rideAcceptedTimestamp = null;
+  initialDriverLocation = null;
+  console.log('🔓 Privacy: Reset tracking state');
+};
+
 export interface Trip {
   id: string;
   riderId: string;
@@ -154,8 +266,9 @@ interface TripStore {
   // Real-time tracking
   startLocationTracking: (tripId: string) => Promise<void>;
   stopLocationTracking: () => Promise<void>;
-  updateDriverLocation: (tripId: string, location: TripLocation) => Promise<void>;
+  updateDriverLocation: (tripId: string, location: TripLocation, pickupCoordinates?: { latitude: number; longitude: number }) => Promise<void>;
   subscribeToTrip: (tripId: string) => () => void;
+  resetPrivacyTracking: () => void;
   
   // Ride sharing
   shareTrip: (tripId: string, contacts: Array<{ name: string; phone: string; email?: string }>) => Promise<void>;
@@ -164,6 +277,9 @@ interface TripStore {
   // State management
   setCurrentTrip: (trip: Trip | null) => void;
   setLoading: (loading: boolean) => void;
+
+  // Reset store (for logout)
+  resetStore: () => Promise<void>;
 }
 
 // Define background location task
@@ -432,9 +548,23 @@ export const useTripStore = create<TripStore>((set, get) => ({
     }
   },
   
-  updateDriverLocation: async (tripId, location) => {
+  updateDriverLocation: async (tripId, location, pickupCoordinates?: { latitude: number; longitude: number }) => {
     try {
       const tripRef = doc(firebaseDb, 'trips', tripId);
+
+      // If pickup coordinates are provided, check privacy before broadcasting
+      if (pickupCoordinates) {
+        if (!shouldBroadcastDriverLocation(location, pickupCoordinates)) {
+          // Don't broadcast location yet - privacy delay in effect
+          // Just update the timestamp so rider knows driver is active
+          await updateDoc(tripRef, {
+            updatedAt: serverTimestamp(),
+          });
+          return;
+        }
+      }
+
+      // Broadcast location - either privacy delay passed or no pickup coordinates to check
       await updateDoc(tripRef, {
         driverLocation: location,
         updatedAt: serverTimestamp(),
@@ -442,6 +572,13 @@ export const useTripStore = create<TripStore>((set, get) => ({
     } catch (error) {
       console.error('Failed to update driver location:', error);
     }
+  },
+
+  /**
+   * Reset privacy tracking state - call when ride is completed or cancelled
+   */
+  resetPrivacyTracking: () => {
+    resetPrivacyTrackingState();
   },
   
   subscribeToTrip: (tripId) => {
@@ -475,12 +612,14 @@ export const useTripStore = create<TripStore>((set, get) => ({
 
           // Check if trip is completed or cancelled - clear from store after delay
           if (tripData.status === 'CANCELLED') {
-            console.log('🏁 Trip cancelled');
-            // Clear the current trip after a short delay to allow UI to show cancellation
+            console.log('🏁 Trip cancelled - updating store with cancelled trip data');
+            // IMPORTANT: First update the store so UI screens can detect the cancellation
+            set({ currentTrip: tripData });
+            // Then clear after delay to allow UI to show cancellation alert
             setTimeout(() => {
               set({ currentTrip: null });
               console.log('✅ Current trip cleared from store');
-            }, 2000);
+            }, 3000);
           } else if (tripData.status === 'COMPLETED') {
             console.log('🏁 Trip completed');
             // Don't clear immediately - let the UI screens handle navigation
@@ -552,6 +691,37 @@ export const useTripStore = create<TripStore>((set, get) => ({
   
   setCurrentTrip: (trip) => set({ currentTrip: trip }),
   setLoading: (loading) => set({ loading }),
+
+  /**
+   * Reset entire store - call on logout to prevent data leakage between users
+   */
+  resetStore: async () => {
+    console.log('🧹 Resetting trip store...');
+
+    // Stop any active location tracking
+    try {
+      const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TRACKING);
+      if (isTracking) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TRACKING);
+      }
+    } catch (e) {
+      // Ignore errors - tracking might not be active
+    }
+
+    // Reset privacy tracking state
+    resetPrivacyTrackingState();
+
+    // Reset all state
+    set({
+      currentTrip: null,
+      pastTrips: [],
+      upcomingTrips: [],
+      loading: false,
+      trackingEnabled: false,
+    });
+
+    console.log('✅ Trip store reset complete');
+  },
 }));
 
 // Helper functions

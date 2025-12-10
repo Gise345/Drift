@@ -204,17 +204,17 @@ export default function DriverTermsScreen() {
             <Text style={styles.bold}>4.1 Fee Structure</Text>
           </Text>
           <Text style={styles.paragraph}>
-            A 19% platform service fee is applied to all cost-sharing contributions processed through the Platform. You receive 81% of each rider's contribution.
+            A 20% platform service fee is applied to all cost-sharing contributions processed through the Platform. You receive 80% of each rider's contribution.
           </Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>4.2 Fee Breakdown</Text>
           </Text>
           <Text style={styles.paragraph}>
-            The 19% platform service fee covers:
+            The 20% platform service fee covers:
           </Text>
           <Text style={styles.bulletPoint}>• Payment Processing (~4%): Stripe fees, transaction security, fraud prevention, PCI compliance</Text>
-          <Text style={styles.bulletPoint}>• Platform Maintenance (~15%): Software engineering, server hosting, Google Maps API, database maintenance, customer support, safety features</Text>
+          <Text style={styles.bulletPoint}>• Platform Maintenance (~16%): Software engineering, server hosting, Google Maps API, database maintenance, customer support, safety features</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>4.3 Example Transaction</Text>
@@ -222,14 +222,14 @@ export default function DriverTermsScreen() {
           <Text style={styles.paragraph}>
             For a CI$20 cost-sharing contribution:
           </Text>
-          <Text style={styles.bulletPoint}>• Driver receives: CI$16.20 (81%)</Text>
-          <Text style={styles.bulletPoint}>• Platform service fee: CI$3.80 (19%)</Text>
+          <Text style={styles.bulletPoint}>• Driver receives: CI$16.00 (80%)</Text>
+          <Text style={styles.bulletPoint}>• Platform service fee: CI$4.00 (20%)</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>4.4 Transparent Deduction</Text>
           </Text>
           <Text style={styles.paragraph}>
-            The platform service fee is automatically deducted from each transaction. You will see your net earnings (81% of rider contribution) in your earnings dashboard.
+            The platform service fee is automatically deducted from each transaction. You will see your net earnings (80% of rider contribution) in your earnings dashboard.
           </Text>
         </View>
 
@@ -276,8 +276,8 @@ export default function DriverTermsScreen() {
           </Text>
           <Text style={styles.bulletPoint}>• Are processed by Stripe (third-party processor)</Text>
           <Text style={styles.bulletPoint}>• Have 19% platform service fee automatically deducted</Text>
-          <Text style={styles.bulletPoint}>• Net amount (81%) is transferred to your Stripe account</Text>
-          <Text style={styles.bulletPoint}>• Typically arrive within 1-3 business days</Text>
+          <Text style={styles.bulletPoint}>• Net amount (80%) is transferred to your Wise bank account</Text>
+          <Text style={styles.bulletPoint}>• Arrive within 1-2 business days</Text>
 
           <Text style={styles.paragraph}>
             <Text style={styles.bold}>5.5 Tax Responsibilities</Text>

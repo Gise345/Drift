@@ -70,7 +70,7 @@ export const driverFAQs: FAQItem[] = [
   {
     id: 'earn-3',
     question: 'How is the cost-sharing contribution calculated?',
-    answer: 'The platform suggests cost-sharing contributions based on: (1) Distance traveled, (2) Estimated time, (3) Current fuel costs. A 19% platform service fee is deducted (4% for transaction processing + 15% for platform maintenance), so you receive 81% of each contribution. Tips go 100% to you.',
+    answer: 'The platform suggests cost-sharing contributions based on: (1) Distance traveled, (2) Estimated time, (3) Current fuel costs. A 20% platform service fee is deducted (4% for transaction processing + 16% for platform maintenance), so you receive 80% of each contribution. Tips go 100% to you.',
     category: 'Earnings',
     keywords: ['fare', 'calculate', 'pricing', 'rate', 'commission'],
   },

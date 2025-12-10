@@ -121,13 +121,28 @@ interface UserStore {
 
   // Sync local storage with Firebase (for migration)
   syncLocalDataToFirebase: () => Promise<void>;
+
+  // Reset store (for logout)
+  resetStore: () => void;
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   loading: false,
-  
+
   setUser: (user) => set({ user }),
+
+  /**
+   * Reset entire store - call on logout to prevent data leakage
+   */
+  resetStore: () => {
+    console.log('🧹 Resetting user store...');
+    set({
+      user: null,
+      loading: false,
+    });
+    console.log('✅ User store reset complete');
+  },
   
   updateUser: async (updates) => {
     try {

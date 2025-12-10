@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "drift-cayman"
+  },
+  "targets": {},
+  "etags": {
+    "drift-global": {
+      "extensionInstances": {
+        "firestore-send-email": "2360a1c0eec8f5a715cc74a64e471309603a4c2988aa399c5a27f4c0eba1bdf1"
+      }
+    }
   }
 }

@@ -82,6 +82,7 @@ export default function NavigateToPickup() {
   const [showChatModal, setShowChatModal] = useState(false);
   const lastRouteRecalculation = useRef<number>(0);
   const messagingInitializedRef = useRef(false);
+  const hasHandledCancellationRef = useRef(false);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
 
   // Animation
@@ -101,26 +102,22 @@ export default function NavigateToPickup() {
 
   useEffect(() => {
     if (!currentTrip) {
-      console.log('📍 NavigateToPickup: No currentTrip yet');
       return;
     }
 
-    console.log('📍 NavigateToPickup: Trip update received:', {
-      tripId: currentTrip.id,
-      activeRideId: activeRide?.id,
-      status: currentTrip.status,
-      cancelledBy: (currentTrip as any).cancelledBy,
-    });
+    // Prevent duplicate handling
+    if (hasHandledCancellationRef.current) {
+      return;
+    }
 
     // Only process if this trip matches our active ride
     if (activeRide?.id && currentTrip.id !== activeRide.id) {
-      console.log('⚠️ Trip ID mismatch, ignoring update');
       return;
     }
 
     // If trip was cancelled by rider
     if (currentTrip.status === 'CANCELLED') {
-      console.log('⚠️ Trip was cancelled by rider');
+      hasHandledCancellationRef.current = true;
 
       // Clear active ride from driver store
       setActiveRide(null);
@@ -163,7 +160,6 @@ export default function NavigateToPickup() {
 
     // Only recalculate if significantly off route (more than 100 meters)
     if (distanceFromRoute > 100 && currentLocation && activeRide && !isRecalculatingRoute) {
-      console.log(`🔄 Driver deviated ${distanceFromRoute.toFixed(0)}m from route, recalculating...`);
       lastRouteRecalculation.current = now;
       setIsRecalculatingRoute(true);
 
@@ -186,7 +182,6 @@ export default function NavigateToPickup() {
     destination: RouteCoordinate
   ) => {
     if (!GOOGLE_DIRECTIONS_API_KEY) {
-      console.error('❌ Google Directions API key not configured');
       return;
     }
 
@@ -230,11 +225,9 @@ export default function NavigateToPickup() {
             }
           );
         }
-      } else {
-        console.error('❌ Directions API error:', data.status);
       }
     } catch (error) {
-      console.error('❌ Failed to fetch route:', error);
+      console.error('Failed to fetch route:', error);
     } finally {
       setIsLoading(false);
     }
@@ -336,16 +329,24 @@ export default function NavigateToPickup() {
               speed: speed || 0,
             });
 
-            // Update Firebase
+            // Update Firebase with privacy-aware broadcasting
+            // Pass pickup coordinates so the store can check if privacy delay should apply
             if (activeRide.id) {
-              updateDriverLocation(activeRide.id, {
-                latitude,
-                longitude,
-                timestamp: new Date(),
-                accuracy: loc.coords.accuracy,
-                speed: speed || 0,
-                heading: heading || 0,
-              });
+              updateDriverLocation(
+                activeRide.id,
+                {
+                  latitude,
+                  longitude,
+                  timestamp: new Date(),
+                  accuracy: loc.coords.accuracy,
+                  speed: speed || 0,
+                  heading: heading || 0,
+                },
+                {
+                  latitude: activeRide.pickup.lat,
+                  longitude: activeRide.pickup.lng,
+                }
+              );
             }
 
             // Recalculate distance (straight line for display)
@@ -376,7 +377,6 @@ export default function NavigateToPickup() {
                 }
               } catch (error) {
                 // Fallback to simple calculation if API fails
-                console.warn('Failed to fetch directions, using fallback ETA');
                 const avgSpeed = 30; // km/h fallback
                 const newEta = (distanceToPickup / avgSpeed) * 60;
                 setEta(Math.ceil(newEta));

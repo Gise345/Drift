@@ -66,8 +66,13 @@ export default function PickupPointScreen() {
     if (currentTrip.status === 'CANCELLED') {
       console.log('❌ Trip was cancelled');
       hasNavigatedRef.current = true;
-      Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
-      router.replace('/(rider)');
+      Alert.alert(
+        'Ride Cancelled',
+        (currentTrip as any).cancelledBy === 'DRIVER'
+          ? 'Your driver has cancelled this trip.'
+          : 'The ride has been cancelled.',
+        [{ text: 'OK', onPress: () => router.replace('/(rider)') }]
+      );
       return;
     }
   }, [currentTrip?.status]);

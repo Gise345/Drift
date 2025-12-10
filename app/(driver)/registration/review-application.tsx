@@ -15,11 +15,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function ReviewApplication() {
   const router = useRouter();
   const { registrationData, submitRegistration, setRegistrationStep } = useDriverStore();
+  const { user, setMode } = useAuthStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Check if user has RIDER role
+  const hasRiderRole = user?.roles?.includes('RIDER') ?? false;
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -33,22 +38,6 @@ export default function ReviewApplication() {
   const vehicle = registrationData.vehicle;
   const bankDetails = registrationData.bankDetails;
   const documents = registrationData.documents;
-
-  // Debug log to see what documents we have on mount and when they change
-  useEffect(() => {
-    console.log('📋 Review screen mounted - Full registration data:', JSON.stringify({
-      hasPersonalInfo: !!personalInfo,
-      hasVehicle: !!vehicle,
-      hasBankDetails: !!bankDetails,
-      hasDocuments: !!documents,
-      documents: {
-        license: documents?.license,
-        insurance: documents?.insurance,
-        registration: documents?.registration,
-        inspection: documents?.inspection,
-      },
-    }, null, 2));
-  }, [documents]);
 
   const handleEdit = (section: string) => {
     // Navigate back to specific section
@@ -80,7 +69,7 @@ export default function ReviewApplication() {
               setRegistrationStep(12);
               router.push('/(driver)/registration/pending-approval');
             } catch (error: any) {
-              console.error('❌ Error submitting registration:', error);
+              console.error('Error submitting registration:', error);
 
               // Show specific error message
               const errorMessage = error?.message || 'Failed to submit application. Please try again.';
@@ -294,6 +283,57 @@ export default function ReviewApplication() {
         <Text style={styles.footerText}>
           By submitting, you agree to Drift's Terms of Service and Privacy Policy
         </Text>
+
+        {/* Rider Mode Section */}
+        <View style={styles.riderSection}>
+          <View style={styles.riderSectionHeader}>
+            <Ionicons name="car-outline" size={24} color={Colors.primary} />
+            <Text style={styles.riderSectionTitle}>Need a Ride?</Text>
+          </View>
+
+          {hasRiderRole ? (
+            // User has rider account - show button to switch to rider mode
+            <View>
+              <Text style={styles.riderSectionText}>
+                While waiting for your driver application to be reviewed, you can use Drift as a rider.
+              </Text>
+              <TouchableOpacity
+                style={styles.riderButton}
+                onPress={async () => {
+                  await setMode('RIDER');
+                  router.replace('/(tabs)');
+                }}
+              >
+                <Ionicons name="swap-horizontal" size={20} color={Colors.white} />
+                <Text style={styles.riderButtonText}>Switch to Rider Mode</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // User doesn't have rider account - show sign up instructions
+            <View>
+              <Text style={styles.riderSectionText}>
+                You don't have a rider account yet. Sign up as a rider to request rides while your driver application is being reviewed.
+              </Text>
+              <TouchableOpacity
+                style={styles.riderButton}
+                onPress={() => router.push('/(auth)/sign-up')}
+              >
+                <Ionicons name="person-add" size={20} color={Colors.white} />
+                <Text style={styles.riderButtonText}>Sign Up as Rider</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Navigation Instructions */}
+          <View style={styles.navigationInstructions}>
+            <Ionicons name="information-circle-outline" size={18} color={Colors.gray[500]} />
+            <Text style={styles.navigationInstructionsText}>
+              To return to this driver application screen later: Go to your{' '}
+              <Text style={styles.boldText}>Profile tab</Text>, scroll down, and select{' '}
+              <Text style={styles.boldText}>"Become a Driver"</Text>.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
 
       {/* Uploading Modal */}
@@ -308,7 +348,7 @@ export default function ReviewApplication() {
             <ActivityIndicator size="large" color={Colors.primary} />
             <Text style={styles.modalTitle}>Uploading Your Application</Text>
             <Text style={styles.modalMessage}>
-              Please wait while we upload your documents and information to Firebase.
+              Please wait while we upload your documents and information to our database.
               This may take 1-2 minutes.
             </Text>
             <View style={styles.modalWarning}>
@@ -468,6 +508,65 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.lg,
     lineHeight: 18,
+  },
+  riderSection: {
+    marginTop: Spacing['2xl'],
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.gray[200],
+  },
+  riderSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  riderSectionTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  riderSectionText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    lineHeight: 22,
+    marginBottom: Spacing.md,
+  },
+  riderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  riderButtonText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  navigationInstructions: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: Colors.gray[100],
+    borderRadius: 8,
+    padding: Spacing.md,
+    marginTop: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  navigationInstructionsText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[600],
+    lineHeight: 18,
+  },
+  boldText: {
+    fontWeight: '700',
+    color: Colors.black,
   },
   warningCard: {
     flexDirection: 'row',

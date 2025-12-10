@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,15 +21,30 @@ import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 
+// Google Directions API Key
+const GOOGLE_DIRECTIONS_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+interface RouteCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
 export default function DriverArrivingScreen() {
   const { currentTrip, subscribeToTrip, startLocationTracking } = useTripStore();
   const { clearBookingFlow } = useCarpoolStore();
   const { user } = useUserStore();
+  const mapRef = useRef<MapView>(null);
   const [eta, setEta] = useState(5); // minutes
+  const [distance, setDistance] = useState<number | null>(null);
+  const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const hasNavigatedRef = React.useRef(false);
+  const lastRouteFetch = useRef<number>(0);
+  const ROUTE_FETCH_INTERVAL = 15000; // Fetch new route every 15 seconds
 
   // If no current trip, redirect back
   if (!currentTrip) {
@@ -61,7 +76,6 @@ export default function DriverArrivingScreen() {
 
     // When driver has arrived at pickup, navigate to pickup-point
     if (currentTrip.status === 'DRIVER_ARRIVED') {
-      console.log('🚗 Driver has arrived! Navigating to pickup-point...');
       hasNavigatedRef.current = true;
       router.replace('/(rider)/pickup-point');
       return;
@@ -69,7 +83,6 @@ export default function DriverArrivingScreen() {
 
     // When driver starts the ride (skipping pickup-point), go directly to trip-in-progress
     if (currentTrip.status === 'IN_PROGRESS') {
-      console.log('🚗 Trip started! Navigating to trip-in-progress...');
       hasNavigatedRef.current = true;
       router.replace('/(rider)/trip-in-progress');
       return;
@@ -77,11 +90,15 @@ export default function DriverArrivingScreen() {
 
     // If trip was cancelled
     if (currentTrip.status === 'CANCELLED') {
-      console.log('❌ Trip was cancelled');
       hasNavigatedRef.current = true;
       clearBookingFlow();
-      Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
-      router.replace('/(rider)');
+      Alert.alert(
+        'Ride Cancelled',
+        (currentTrip as any).cancelledBy === 'DRIVER'
+          ? 'Your driver has cancelled this trip.'
+          : 'The ride has been cancelled.',
+        [{ text: 'OK', onPress: () => router.replace('/(rider)') }]
+      );
       return;
     }
   }, [currentTrip?.status]);
@@ -95,36 +112,140 @@ export default function DriverArrivingScreen() {
     // Note: Don't auto-navigate based on ETA anymore - let status change handle it
   }, [eta]);
 
+  // Fetch route and update ETA when driver location changes
   useEffect(() => {
-    // Update ETA based on driver location changes
     if (currentTrip?.driverLocation && currentTrip?.pickup) {
-      // Calculate real ETA using distance and speed
-      calculateETA(currentTrip.driverLocation, currentTrip.pickup.coordinates);
+      // Fetch route from Google Directions API periodically
+      const now = Date.now();
+      if (now - lastRouteFetch.current >= ROUTE_FETCH_INTERVAL) {
+        lastRouteFetch.current = now;
+        fetchRouteFromDriverToPickup(
+          {
+            latitude: currentTrip.driverLocation.latitude,
+            longitude: currentTrip.driverLocation.longitude,
+          },
+          currentTrip.pickup.coordinates
+        );
+      }
+
+      // Fallback: calculate ETA using Haversine if no route yet
+      if (routeCoordinates.length === 0) {
+        calculateFallbackETA(currentTrip.driverLocation, currentTrip.pickup.coordinates);
+      }
     }
   }, [currentTrip?.driverLocation]);
 
-  const calculateETA = (
+  // Initial route fetch when component mounts with driver location
+  useEffect(() => {
+    if (currentTrip?.driverLocation && currentTrip?.pickup && routeCoordinates.length === 0) {
+      fetchRouteFromDriverToPickup(
+        {
+          latitude: currentTrip.driverLocation.latitude,
+          longitude: currentTrip.driverLocation.longitude,
+        },
+        currentTrip.pickup.coordinates
+      );
+    }
+  }, [currentTrip?.id]);
+
+  // Decode Google polyline
+  const decodePolyline = (encoded: string): RouteCoordinate[] => {
+    const points: RouteCoordinate[] = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+      let shift = 0;
+      let result = 0;
+      let byte;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+
+    return points;
+  };
+
+  // Fetch route from Google Directions API
+  const fetchRouteFromDriverToPickup = async (
+    driverLocation: RouteCoordinate,
+    pickupLocation: RouteCoordinate
+  ) => {
+    if (!GOOGLE_DIRECTIONS_API_KEY) {
+      return;
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${pickupLocation.latitude},${pickupLocation.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes.length > 0) {
+        const route = data.routes[0];
+        const leg = route.legs[0];
+
+        // Decode and set route coordinates for polyline
+        const points = decodePolyline(route.overview_polyline.points);
+        setRouteCoordinates(points);
+
+        // Set accurate ETA and distance from Google
+        setEta(Math.ceil(leg.duration.value / 60)); // seconds to minutes
+        setDistance(leg.distance.value / 1000); // meters to km
+      }
+    } catch (error) {
+      console.error('Failed to fetch route:', error);
+    }
+  };
+
+  // Fallback ETA calculation using Haversine formula
+  const calculateFallbackETA = (
     driverLocation: TripLocation,
     pickupLocation: { latitude: number; longitude: number }
   ) => {
-    // Calculate distance using Haversine formula
     const R = 6371; // Earth's radius in km
     const dLat = toRad(pickupLocation.latitude - driverLocation.latitude);
     const dLon = toRad(pickupLocation.longitude - driverLocation.longitude);
-    
+
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(toRad(driverLocation.latitude)) *
         Math.cos(toRad(pickupLocation.latitude)) *
         Math.sin(dLon / 2) *
         Math.sin(dLon / 2);
-    
+
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c;
+    const dist = R * c;
+
+    setDistance(dist);
 
     // Estimate ETA based on average speed (assuming 40 km/h in city)
     const avgSpeed = driverLocation.speed || 40 / 3.6; // m/s
-    const timeInSeconds = (distance * 1000) / avgSpeed;
+    const timeInSeconds = (dist * 1000) / avgSpeed;
     const timeInMinutes = Math.ceil(timeInSeconds / 60);
 
     setEta(Math.max(1, timeInMinutes));
@@ -153,12 +274,11 @@ export default function DriverArrivingScreen() {
             try {
               if (currentTrip?.id) {
                 await cancelTrip(currentTrip.id, 'RIDER', 'Rider cancelled after driver accepted');
-                console.log('✅ Trip cancelled in Firebase');
               }
               clearBookingFlow();
               router.replace('/(rider)');
             } catch (error) {
-              console.error('❌ Failed to cancel trip:', error);
+              console.error('Failed to cancel trip:', error);
               Alert.alert('Error', 'Failed to cancel trip. Please try again.');
             }
           }
@@ -197,6 +317,7 @@ export default function DriverArrivingScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Map */}
       <MapView
+        ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={mapRegion}
@@ -230,12 +351,12 @@ export default function DriverArrivingScreen() {
           </Marker>
         )}
 
-        {/* Route Line with Progress Tracking */}
-        {currentTrip?.route && currentTrip.route.length > 0 && (
+        {/* Route Line with Progress Tracking - Use fetched route or trip.route as fallback */}
+        {(routeCoordinates.length > 0 || (currentTrip?.route && currentTrip.route.length > 0)) && (
           <ProgressivePolyline
-            routeCoordinates={currentTrip.route}
+            routeCoordinates={routeCoordinates.length > 0 ? routeCoordinates : currentTrip?.route || []}
             currentLocation={
-              currentTrip.driverLocation
+              currentTrip?.driverLocation
                 ? {
                     latitude: currentTrip.driverLocation.latitude,
                     longitude: currentTrip.driverLocation.longitude,
@@ -263,8 +384,21 @@ export default function DriverArrivingScreen() {
       {/* ETA Banner */}
       <View style={styles.etaBanner}>
         <View style={styles.etaContent}>
-          <Text style={styles.etaLabel}>Arriving in</Text>
-          <Text style={styles.etaTime}>{eta} min</Text>
+          {currentTrip?.driverLocation ? (
+            <>
+              <Text style={styles.etaLabel}>Arriving in</Text>
+              <Text style={styles.etaTime}>{eta} min</Text>
+              {distance !== null && (
+                <Text style={styles.distanceText}>{distance.toFixed(1)} km away</Text>
+              )}
+            </>
+          ) : (
+            <>
+              <Ionicons name="car" size={24} color="#5d1289" style={{ marginBottom: 4 }} />
+              <Text style={styles.etaLabel}>Locating driver...</Text>
+              <Text style={styles.locatingSubtext}>Your driver is on the way</Text>
+            </>
+          )}
         </View>
         {currentTrip?.sharedWith && currentTrip.sharedWith.length > 0 && (
           <View style={styles.sharingBadge}>
@@ -453,6 +587,16 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#5d1289',
+  },
+  distanceText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  locatingSubtext: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
   },
   sharingBadge: {
     flexDirection: 'row',
