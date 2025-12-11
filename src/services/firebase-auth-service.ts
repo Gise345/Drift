@@ -111,11 +111,31 @@ function getErrorMessage(error: any): string {
 // Configure Google Sign-In
 // ============================================================================
 
+let googleSignInConfigured = false;
+
 export function configureGoogleSignIn() {
-  GoogleSignin.configure({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
-    offlineAccess: true,
-  });
+  if (googleSignInConfigured) return;
+
+  try {
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+
+    const config: any = {
+      scopes: ['email', 'profile'],
+    };
+
+    // Only add webClientId and offlineAccess if webClientId exists
+    // offlineAccess requires a valid webClientId
+    if (webClientId) {
+      config.webClientId = webClientId;
+      config.offlineAccess = true;
+    }
+
+    GoogleSignin.configure(config);
+    googleSignInConfigured = true;
+    console.log('✅ Google Sign-In configured (firebase-auth-service)');
+  } catch (error) {
+    console.error('❌ Failed to configure Google Sign-In:', error);
+  }
 }
 
 // ============================================================================
@@ -452,8 +472,23 @@ export async function checkEmailVerification(): Promise<boolean> {
  */
 export async function signOutUser(): Promise<void> {
   try {
+    // Sign out from Firebase Auth first
     await signOut(authInstance);
-    await GoogleSignin.signOut();
+
+    // Only sign out from Google if there was a previous Google sign-in
+    // This prevents errors when user signed in with email only
+    try {
+      // Must configure before calling any GoogleSignin methods
+      configureGoogleSignIn();
+      const isSignedInWithGoogle = GoogleSignin.hasPreviousSignIn();
+      if (isSignedInWithGoogle) {
+        await GoogleSignin.signOut();
+        console.log('✅ Signed out from Google');
+      }
+    } catch (googleError) {
+      // Ignore Google sign-out errors - user may not have signed in with Google
+      console.log('ℹ️ Google sign-out skipped (not signed in with Google)');
+    }
   } catch (error: any) {
     throw new Error(getErrorMessage(error));
   }
@@ -524,7 +559,10 @@ export async function softDeleteAccount(reason?: string): Promise<void> {
 
     // Step 3: Sign out from Google if applicable
     try {
-      await GoogleSignin.signOut();
+      configureGoogleSignIn();
+      if (GoogleSignin.hasPreviousSignIn()) {
+        await GoogleSignin.signOut();
+      }
     } catch (e) {
       // Ignore Google sign out errors
     }

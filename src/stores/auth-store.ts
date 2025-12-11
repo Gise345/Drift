@@ -132,8 +132,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       console.log('👋 Signing out...');
 
-      // Step 1: Sign out from Firebase Auth
-      await signOutUser();
+      // Step 1: Sign out from Firebase Auth (wrapped in try-catch to prevent crashes)
+      try {
+        await signOutUser();
+        console.log('✅ Firebase Auth signed out');
+      } catch (authError) {
+        console.warn('⚠️ Firebase sign out error (continuing anyway):', authError);
+        // Continue with cleanup even if Firebase sign out fails
+      }
 
       // Step 2: Clear all user-specific AsyncStorage data
       console.log('🧹 Clearing user-specific AsyncStorage data...');
@@ -219,7 +225,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       console.log('✅ Signed out successfully - all user data cleared');
     } catch (error) {
       console.error('❌ Sign out error:', error);
-      throw error;
+      // Don't throw - always complete sign out to prevent app getting stuck
+      // Just reset the state to ensure clean state
+      set({ user: null, currentMode: 'RIDER' });
+      console.log('⚠️ Sign out completed with errors - state reset');
     }
   },
 
@@ -326,11 +335,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
               }
 
               // Convert Firestore timestamps to Date objects
+              // Ensure both photoURL and profilePhoto are synced from either field
+              const photoUrl = userData.photoURL || userData.profilePhoto || '';
               const user: User = {
                 id: snapshot.id,
                 ...userData,
                 // Map both photoURL and profilePhoto fields for consistency
-                photoURL: userData.photoURL || userData.profilePhoto || '',
+                photoURL: photoUrl,
+                profilePhoto: photoUrl,
                 createdAt: userData.createdAt?.toDate?.() || new Date(),
                 lastLoginAt: userData.lastLoginAt?.toDate?.() || new Date(),
               } as User;

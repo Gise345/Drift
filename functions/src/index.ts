@@ -16,6 +16,7 @@ export {
   createStripeSetupIntent,
   confirmStripeSetupIntent,
   updateDriverEarnings,
+  stripeWebhook,
 } from './stripe';
 
 // Export Safety functions

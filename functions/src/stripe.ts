@@ -10,7 +10,7 @@
  * Updated: 2025-12-05 - Fixed ephemeral key API version for stripe-react-native compatibility
  */
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
@@ -20,6 +20,7 @@ const db = getFirestore(admin.app(), 'main');
 
 // Initialize Stripe with secret key from environment (.env file)
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 // Lazy initialization of Stripe client
 let stripeClient: Stripe | null = null;
@@ -146,13 +147,22 @@ export const createStripePaymentIntent = onCall(callableOptions, async (request)
 
       const userId = request.auth.uid;
 
-      console.log('Creating Stripe payment intent:', { amount, currency, description });
+      console.log('Creating Stripe payment intent:', { amount, currency, description, userId });
 
       // Get or create customer
       const userDoc = await db.collection('users').doc(userId).get();
-      let customerId = userDoc.data()?.stripeCustomerId;
+      const paymentUserData = userDoc.data();
+      let customerId = paymentUserData?.stripeCustomerId;
+
+      console.log('createStripePaymentIntent - userData:', JSON.stringify({
+        exists: userDoc.exists,
+        hasStripeCustomerId: !!customerId,
+        stripeCustomerId: customerId || 'NOT SET',
+        email: paymentUserData?.email || 'NO EMAIL',
+      }));
 
       if (!customerId) {
+        console.log('createStripePaymentIntent - Creating new Stripe customer');
         // Create new customer
         const customer = await stripe.customers.create({
           email: request.auth.token.email || undefined,
@@ -412,11 +422,22 @@ export const getStripePaymentMethods = onCall(callableOptions, async (request) =
       const stripe = getStripe();
       const userId = request.auth.uid;
 
+      console.log('getStripePaymentMethods - userId:', userId);
+
       // Get customer ID
       const userDoc = await db.collection('users').doc(userId).get();
-      const customerId = userDoc.data()?.stripeCustomerId;
+      const userData = userDoc.data();
+      const customerId = userData?.stripeCustomerId;
+
+      console.log('getStripePaymentMethods - userData:', JSON.stringify({
+        exists: userDoc.exists,
+        hasStripeCustomerId: !!customerId,
+        stripeCustomerId: customerId || 'NOT SET',
+        email: userData?.email || 'NO EMAIL',
+      }));
 
       if (!customerId) {
+        console.log('getStripePaymentMethods - No customer ID, returning empty array');
         return [];
       }
 
@@ -787,6 +808,169 @@ export const updateDriverEarnings = onCall(callableOptions, async (request) => {
 
       const message = error instanceof Error ? error.message : 'Failed to update driver earnings';
       throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * STRIPE WEBHOOK HANDLER
+ * Handles events from Stripe for payment status updates
+ *
+ * Events handled:
+ * - payment_intent.succeeded: Payment completed successfully
+ * - payment_intent.payment_failed: Payment failed
+ * - charge.refunded: Refund processed
+ * - charge.dispute.created: Customer disputed a charge
+ */
+export const stripeWebhook = onRequest(
+  {
+    region: 'us-east1',
+    invoker: 'public', // Stripe needs to call this endpoint
+  },
+  async (req, res) => {
+    const stripe = getStripe();
+    const sig = req.headers['stripe-signature'];
+
+    if (!sig) {
+      console.error('No Stripe signature found');
+      res.status(400).send('No signature');
+      return;
+    }
+
+    if (!stripeWebhookSecret) {
+      console.error('Webhook secret not configured');
+      res.status(500).send('Webhook secret not configured');
+      return;
+    }
+
+    let event: Stripe.Event;
+
+    try {
+      // Verify webhook signature
+      event = stripe.webhooks.constructEvent(
+        req.rawBody,
+        sig,
+        stripeWebhookSecret
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Webhook signature verification failed:', message);
+      res.status(400).send(`Webhook Error: ${message}`);
+      return;
+    }
+
+    console.log('Stripe webhook received:', event.type);
+
+    try {
+      switch (event.type) {
+        case 'payment_intent.succeeded': {
+          const paymentIntent = event.data.object as Stripe.PaymentIntent;
+          console.log('Payment succeeded:', paymentIntent.id);
+
+          // Update payment record in Firestore
+          await db.collection('stripe_payments').doc(paymentIntent.id).update({
+            status: 'succeeded',
+            webhookConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // If there's a trip associated, update it
+          const tripId = paymentIntent.metadata?.tripId;
+          if (tripId) {
+            await db.collection('trips').doc(tripId).update({
+              paymentStatus: 'paid',
+              paymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          break;
+        }
+
+        case 'payment_intent.payment_failed': {
+          const paymentIntent = event.data.object as Stripe.PaymentIntent;
+          console.log('Payment failed:', paymentIntent.id);
+
+          const failureMessage = paymentIntent.last_payment_error?.message || 'Payment failed';
+
+          // Update payment record in Firestore
+          await db.collection('stripe_payments').doc(paymentIntent.id).update({
+            status: 'failed',
+            failureMessage,
+            webhookUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // If there's a trip associated, update it
+          const tripId = paymentIntent.metadata?.tripId;
+          if (tripId) {
+            await db.collection('trips').doc(tripId).update({
+              paymentStatus: 'failed',
+              paymentFailureReason: failureMessage,
+            });
+          }
+          break;
+        }
+
+        case 'charge.refunded': {
+          const charge = event.data.object as Stripe.Charge;
+          console.log('Charge refunded:', charge.id);
+
+          // Find payment by charge's payment_intent
+          if (charge.payment_intent) {
+            const paymentIntentId = typeof charge.payment_intent === 'string'
+              ? charge.payment_intent
+              : charge.payment_intent.id;
+
+            await db.collection('stripe_payments').doc(paymentIntentId).update({
+              status: 'refunded',
+              refundedAmount: charge.amount_refunded / 100,
+              webhookRefundedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          break;
+        }
+
+        case 'charge.dispute.created': {
+          const dispute = event.data.object as Stripe.Dispute;
+          console.log('Dispute created:', dispute.id);
+
+          // Find the payment intent from the charge
+          if (dispute.payment_intent) {
+            const paymentIntentId = typeof dispute.payment_intent === 'string'
+              ? dispute.payment_intent
+              : dispute.payment_intent.id;
+
+            await db.collection('stripe_payments').doc(paymentIntentId).update({
+              disputeId: dispute.id,
+              disputeStatus: dispute.status,
+              disputeReason: dispute.reason,
+              disputeAmount: dispute.amount / 100,
+              disputeCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            // Log dispute for admin review
+            await db.collection('stripe_disputes').doc(dispute.id).set({
+              disputeId: dispute.id,
+              paymentIntentId,
+              status: dispute.status,
+              reason: dispute.reason,
+              amount: dispute.amount / 100,
+              currency: dispute.currency,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          break;
+        }
+
+        default:
+          console.log('Unhandled event type:', event.type);
+      }
+
+      res.status(200).json({ received: true });
+    } catch (error) {
+      console.error('Error processing webhook:', error);
+      res.status(500).send('Webhook processing error');
     }
   }
 );

@@ -129,7 +129,7 @@ export async function loadDriverProfile(userId: string): Promise<{
       phone: data?.phone || '',
       firstName: data?.firstName || '',
       lastName: data?.lastName || '',
-      photoUrl: data?.profilePhotoUrl,
+      photoUrl: data?.profilePhotoUrl || data?.photoUrl || '',
       dateOfBirth: data?.dateOfBirth || '',
       gender: data?.gender || 'male',
       address: {

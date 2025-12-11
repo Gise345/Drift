@@ -126,7 +126,7 @@ export function BackgroundLocationDisclosureModal({
           >
             {/* Header Icon */}
             <View style={styles.iconContainer}>
-              <Ionicons name={content.icon} size={48} color={Colors.primary} />
+              <Ionicons name={content.icon} size={32} color={Colors.primary} />
             </View>
 
             {/* Title */}
@@ -135,7 +135,7 @@ export function BackgroundLocationDisclosureModal({
 
             {/* Google Play Required Disclosure Text */}
             <View style={styles.disclosureBox}>
-              <Ionicons name="information-circle" size={20} color="#FFA500" />
+              <Ionicons name="information-circle" size={16} color="#FFA500" />
               <Text style={styles.disclosureText}>{content.keywords}</Text>
             </View>
 
@@ -145,7 +145,7 @@ export function BackgroundLocationDisclosureModal({
               {content.reasons.map((reason, index) => (
                 <View key={index} style={styles.reasonItem}>
                   <View style={styles.reasonIcon}>
-                    <Ionicons name={reason.icon} size={24} color={Colors.primary} />
+                    <Ionicons name={reason.icon} size={20} color={Colors.primary} />
                   </View>
                   <View style={styles.reasonText}>
                     <Text style={styles.reasonTitle}>{reason.title}</Text>
@@ -163,7 +163,7 @@ export function BackgroundLocationDisclosureModal({
 
             {/* Privacy Assurance */}
             <View style={styles.privacyBox}>
-              <Ionicons name="lock-closed" size={18} color="#10B981" />
+              <Ionicons name="lock-closed" size={14} color="#10B981" />
               <Text style={styles.privacyText}>
                 Your location is never sold or shared with advertisers.
               </Text>
@@ -176,7 +176,7 @@ export function BackgroundLocationDisclosureModal({
                 onPress={onAccept}
                 activeOpacity={0.8}
               >
-                <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
+                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
                 <Text style={styles.acceptButtonText}>Allow Background Location</Text>
               </TouchableOpacity>
 
@@ -204,161 +204,159 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.md,
-    paddingTop: 60, // Push modal down from top
-    paddingBottom: 120, // Extra padding for phone navigation bar
+    padding: Spacing.sm,
   },
   container: {
     backgroundColor: '#1A1A1A',
     borderRadius: BorderRadius.xl,
     width: '100%',
-    maxWidth: 420,
-    maxHeight: '85%',
+    maxWidth: 400,
+    maxHeight: '92%',
     borderWidth: 1,
     borderColor: Colors.primary,
   },
   scrollContent: {
-    padding: Spacing.xl,
-    paddingBottom: Spacing['2xl'], // Extra bottom padding inside scroll for buttons
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xl,
     alignItems: 'center',
   },
   iconContainer: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: `${Colors.primary}20`,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
     borderWidth: 2,
     borderColor: Colors.primary,
   },
   title: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: Spacing.xs,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#999999',
     textAlign: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   disclosureBox: {
     backgroundColor: 'rgba(255, 165, 0, 0.15)',
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    padding: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
     borderWidth: 1,
     borderColor: 'rgba(255, 165, 0, 0.3)',
   },
   disclosureText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: '#FFA500',
-    lineHeight: 20,
+    lineHeight: 18,
     fontWeight: '500',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     alignSelf: 'flex-start',
   },
   reasonsContainer: {
     width: '100%',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   reasonItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   reasonIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: `${Colors.primary}15`,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: Spacing.md,
+    marginRight: Spacing.sm,
   },
   reasonText: {
     flex: 1,
   },
   reasonTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   reasonDescription: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#AAAAAA',
-    lineHeight: 18,
+    lineHeight: 16,
   },
   dataBox: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    padding: Spacing.sm,
     width: '100%',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   dataTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: Spacing.xs,
+    marginBottom: 4,
   },
   dataText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#CCCCCC',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   privacyBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.sm,
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.xs,
   },
   privacyText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#10B981',
     fontWeight: '500',
   },
   buttonContainer: {
     width: '100%',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   acceptButton: {
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md + 4,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   acceptButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   declineButton: {
     backgroundColor: 'transparent',
     borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -366,14 +364,14 @@ const styles = StyleSheet.create({
   },
   declineButtonText: {
     color: '#999999',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
   },
   footerNote: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#666666',
     textAlign: 'center',
-    marginTop: Spacing.lg,
+    marginTop: Spacing.sm,
   },
 });
 

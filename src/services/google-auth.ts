@@ -35,12 +35,43 @@ const firestoreInstance = getFirestore(app, 'main');
 // Configuration
 // ============================================================================
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID!,
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-  scopes: ['email', 'profile'],
-  offlineAccess: true,
-});
+// Track if Google Sign-In has been configured
+let isGoogleSignInConfigured = false;
+
+/**
+ * Configure Google Sign-In (lazy initialization)
+ * Called before any Google Sign-In operation to ensure it's configured
+ */
+function ensureGoogleSignInConfigured(): void {
+  if (isGoogleSignInConfigured) return;
+
+  try {
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+
+    // Only enable offlineAccess if webClientId is present (it's required for offline access)
+    const config: any = {
+      scopes: ['email', 'profile'],
+    };
+
+    // Only add webClientId and offlineAccess if webClientId exists
+    if (webClientId) {
+      config.webClientId = webClientId;
+      config.offlineAccess = true;
+    }
+
+    // Add iOS client ID if present
+    if (process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID) {
+      config.iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+    }
+
+    GoogleSignin.configure(config);
+    isGoogleSignInConfigured = true;
+    console.log('✅ Google Sign-In configured successfully', { hasWebClientId: !!webClientId });
+  } catch (error) {
+    console.error('❌ Failed to configure Google Sign-In:', error);
+    // Don't throw - let the actual sign-in attempt handle the error
+  }
+}
 
 // ============================================================================
 // Types
@@ -73,6 +104,10 @@ export interface GoogleSignInResult {
 export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
   try {
     console.log('🚀 Starting Google Sign-In...');
+
+    // Ensure Google Sign-In is configured before attempting sign-in
+    ensureGoogleSignInConfigured();
+
     console.log('📋 Web Client ID:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
     console.log('📋 iOS Client ID:', process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
     console.log('📋 Platform:', Platform.OS);
@@ -247,8 +282,17 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
 
 export const signOutGoogle = async (): Promise<void> => {
   try {
-    // Sign out from Google
-    await GoogleSignin.signOut();
+    // Ensure configured before sign out
+    ensureGoogleSignInConfigured();
+
+    // Only sign out from Google if there was a previous sign-in
+    try {
+      if (GoogleSignin.hasPreviousSignIn()) {
+        await GoogleSignin.signOut();
+      }
+    } catch (googleError) {
+      console.log('ℹ️ Google sign-out skipped');
+    }
 
     // Sign out from Firebase using modular API
     await signOut(authInstance);
@@ -264,6 +308,7 @@ export const signOutGoogle = async (): Promise<void> => {
 
 export const getCurrentGoogleUser = async () => {
   try {
+    ensureGoogleSignInConfigured();
     const currentUser = await GoogleSignin.getCurrentUser();
     return currentUser;
   } catch (error) {
@@ -278,6 +323,8 @@ export const getCurrentGoogleUser = async () => {
 
 export const isSignedInWithGoogle = (): boolean => {
   try {
+    // Ensure configured before checking
+    ensureGoogleSignInConfigured();
     return GoogleSignin.hasPreviousSignIn();
   } catch (error) {
     console.error('❌ Check Sign-In Status Error:', error);
@@ -291,7 +338,17 @@ export const isSignedInWithGoogle = (): boolean => {
 
 export const revokeGoogleAccess = async (): Promise<void> => {
   try {
-    await GoogleSignin.revokeAccess();
+    ensureGoogleSignInConfigured();
+
+    // Only revoke if there was a previous sign-in
+    try {
+      if (GoogleSignin.hasPreviousSignIn()) {
+        await GoogleSignin.revokeAccess();
+      }
+    } catch (revokeError) {
+      console.log('ℹ️ Google revoke skipped');
+    }
+
     await signOut(authInstance);
   } catch (error) {
     console.error('❌ Revoke Access Error:', error);

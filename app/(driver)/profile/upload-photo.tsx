@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Alert, Image, ActivityIndicator, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -9,6 +9,27 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { firebaseDb } from '@/src/config/firebase';
 import { doc, updateDoc, serverTimestamp } from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
+
+// Helper function to upload image that works across platforms
+async function uploadImageToStorage(uri: string, storagePath: string): Promise<string> {
+  const storageRef = storage().ref(storagePath);
+
+  // Try putFile first (works best on Android)
+  if (Platform.OS === 'android') {
+    try {
+      await storageRef.putFile(uri);
+      return await storageRef.getDownloadURL();
+    } catch (error) {
+      console.log('putFile failed, trying blob method:', error);
+    }
+  }
+
+  // Use fetch + blob method (works reliably on iOS and as fallback)
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  await storageRef.put(blob);
+  return await storageRef.getDownloadURL();
+}
 
 export default function UploadPhotoScreen() {
   const { user, setUser } = useAuthStore();
@@ -69,15 +90,12 @@ export default function UploadPhotoScreen() {
     try {
       setUploading(true);
 
-      // Create a unique filename
+      // Create a unique filename and path
       const filename = `driver_profile_${user.id}_${Date.now()}.jpg`;
-      const storageRef = storage().ref(`profile-photos/${filename}`);
+      const storagePath = `profile-photos/${filename}`;
 
-      // Upload file
-      await storageRef.putFile(imageUri);
-
-      // Get download URL
-      const downloadURL = await storageRef.getDownloadURL();
+      // Upload file using cross-platform helper
+      const downloadURL = await uploadImageToStorage(imageUri, storagePath);
 
       // Update user document in Firestore
       const userRef = doc(firebaseDb, 'users', user.id);
@@ -92,6 +110,7 @@ export default function UploadPhotoScreen() {
         const driverRef = doc(firebaseDb, 'drivers', user.id);
         await updateDoc(driverRef, {
           photoUrl: downloadURL,
+          profilePhotoUrl: downloadURL,
           updatedAt: serverTimestamp(),
         });
 
@@ -134,6 +153,8 @@ export default function UploadPhotoScreen() {
         <View style={styles.photoContainer}>
           {imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.photo} />
+          ) : (driver?.photoUrl || user?.photoURL || user?.profilePhoto) ? (
+            <Image source={{ uri: driver?.photoUrl || user?.photoURL || user?.profilePhoto }} style={styles.photo} />
           ) : (
             <View style={styles.photoPlaceholder}>
               <Ionicons name="person" size={80} color={Colors.gray[400]} />

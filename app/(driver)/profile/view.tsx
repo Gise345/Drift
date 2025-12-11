@@ -131,8 +131,8 @@ export default function ProfileViewScreen() {
             style={styles.photoContainer}
             onPress={() => router.push('/(driver)/profile/upload-photo')}
           >
-            {driver.photoUrl ? (
-            <Image source={{ uri: driver.photoUrl }} style={styles.profilePhotoImage} />
+            {(driver.photoUrl || user?.photoURL || user?.profilePhoto) ? (
+            <Image source={{ uri: driver.photoUrl || user?.photoURL || user?.profilePhoto }} style={styles.profilePhotoImage} />
           ) : (
             <View style={styles.profilePhotoPlaceholder}>
               <Text style={styles.profilePhotoText}>

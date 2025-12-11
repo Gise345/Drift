@@ -23,19 +23,15 @@ module.exports = {
     name: IS_PRODUCTION ? "Drift" : IS_PREVIEW ? "Drift (Preview)" : "Drift (Dev)",
     slug: "drift",
     version: "1.0.0",
-    orientation: "portrait",
+    orientation: "default",
     icon: "./assets/images/app-icon.png",
     userInterfaceStyle: "automatic",
-    // Android navigation bar configuration
-    androidNavigationBar: {
-      visible: "sticky-immersive",
-      backgroundColor: "#ffffff"
-    },
-    // Status bar configuration
+    newArchEnabled: false,
+    // Android navigation bar - edge-to-edge support (visible property deprecated in API 30+)
+    // Status bar configuration - edge-to-edge support
     androidStatusBar: {
-      backgroundColor: "#ffffff",
       barStyle: "dark-content",
-      translucent: false
+      translucent: true
     },
     splash: {
       image: "./assets/images/drift-logo.png",
@@ -73,7 +69,7 @@ module.exports = {
     },
     android: {
       package: "com.drift.global",
-      versionCode: 11,
+      versionCode: 12,
       adaptiveIcon: {
         foregroundImage: "./assets/images/app-icon.png",
         backgroundColor: "#000000"
@@ -175,12 +171,10 @@ module.exports = {
             targetSdkVersion: 35,
             buildToolsVersion: "35.0.0",
             usesCleartextTraffic: false,
-            newArchEnabled: false,
             minSdkVersion: 24,
             support16KBPages: true
           },
           ios: {
-            newArchEnabled: false,
             deploymentTarget: "15.1",
             useFrameworks: "static"  // Required for React Native Firebase
           }
