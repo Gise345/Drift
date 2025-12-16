@@ -8,13 +8,31 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import * as ExpoLocation from 'expo-location';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Region, LatLng } from 'react-native-maps';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
+import { Location } from '@/src/types/carpool';
 import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
+import { calculateTripPricing } from '@/src/utils/pricing/drift-pricing-engine';
+
+// Helper to check if current time has a pricing surcharge
+const getTimePricingInfo = (): { isActive: boolean; message: string } => {
+  const hour = new Date().getHours();
+  // Late night: 10 PM (22) to 6 AM
+  if (hour >= 22 || hour < 6) {
+    return { isActive: true, message: 'Late night pricing (+25%) applied' };
+  }
+  // Early morning: 5 AM to 7 AM (but 5-6 AM is covered by late night above)
+  if (hour >= 6 && hour < 7) {
+    return { isActive: true, message: 'Early morning pricing (+15%) applied' };
+  }
+  return { isActive: false, message: '' };
+};
 
 /**
  * SELECT DESTINATION SCREEN - ULTIMATE FIX v2
@@ -53,7 +71,10 @@ const SelectDestinationScreen = () => {
   const [durationMinutes, setDurationMinutes] = useState(0);
   const [region, setRegion] = useState<Region | null>(null);
   const [showPolyline, setShowPolyline] = useState(false); // Control polyline visibility
-  
+  const [estimatedCostMin, setEstimatedCostMin] = useState<number | null>(null);
+  const [estimatedCostMax, setEstimatedCostMax] = useState<number | null>(null);
+
+
   const mapRef = useRef<MapView>(null);
   const requestIdRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -68,6 +89,86 @@ const SelectDestinationScreen = () => {
       }
     };
   }, []);
+
+  /**
+   * Reverse geocode coordinates to get address
+   */
+  const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
+    if (!GOOGLE_DIRECTIONS_API_KEY) {
+      return 'Pinned Location';
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        // Get the first result's formatted address
+        return data.results[0].formatted_address;
+      }
+      return 'Pinned Location';
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return 'Pinned Location';
+    }
+  };
+
+
+  /**
+   * Use current location as destination
+   * Useful when booking a trip for someone else to come to your location
+   */
+  const useMyLocationAsDestination = async () => {
+    try {
+      setLoading(true);
+
+      // Request location permissions
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to use this feature.');
+        setLoading(false);
+        return;
+      }
+
+      // Get current location
+      const location = await ExpoLocation.getCurrentPositionAsync({
+        accuracy: ExpoLocation.Accuracy.Balanced,
+      });
+
+      const { latitude, longitude } = location.coords;
+
+      // Reverse geocode to get address
+      const address = await reverseGeocode(latitude, longitude);
+
+      // Set as destination
+      const newDestination: Location = {
+        name: address || 'My Location',
+        address: address || 'My Location',
+        latitude,
+        longitude,
+      };
+
+      setDestination(newDestination);
+      console.log('📍 Destination set to current location:', newDestination);
+
+      // Pan map to show new destination
+      if (mapRef.current) {
+        mapRef.current.animateToRegion({
+          latitude,
+          longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }, 500);
+      }
+
+    } catch (error) {
+      console.error('Error getting current location:', error);
+      Alert.alert('Error', 'Unable to get your current location. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Parse params and set in store - ONLY RUN ONCE
   useEffect(() => {
@@ -324,8 +425,8 @@ const SelectDestinationScreen = () => {
           stops: stops || [],
         });
 
-        // Detect zones for pricing
-        detectZonesForPricing();
+        // Detect zones for pricing - pass values directly to avoid stale state
+        detectZonesForPricing(totalDistanceMiles, totalDurationMinutes);
 
         // Fit map after state update
         setTimeout(() => {
@@ -424,8 +525,8 @@ const SelectDestinationScreen = () => {
       stops: stops || [],
     });
 
-    // Detect zones for pricing
-    detectZonesForPricing();
+    // Detect zones for pricing - pass values directly to avoid stale state
+    detectZonesForPricing(distanceMiles, durationMin);
 
     setTimeout(() => {
       fitMapToRoute(straightLine);
@@ -439,9 +540,11 @@ const SelectDestinationScreen = () => {
   };
 
   /**
-   * Detect zones for pricing
+   * Detect zones and calculate pricing
+   * @param miles - Trip distance in miles (passed directly to avoid stale state)
+   * @param minutes - Trip duration in minutes (passed directly to avoid stale state)
    */
-  const detectZonesForPricing = () => {
+  const detectZonesForPricing = (miles: number, minutes: number) => {
     if (!pickupLocation || !destination) return;
 
     const pickupZone = detectZone(pickupLocation.latitude, pickupLocation.longitude);
@@ -452,6 +555,28 @@ const SelectDestinationScreen = () => {
         pickup: pickupZone.displayName,
         destination: destZone.displayName,
       });
+      console.log('📏 Using distance:', miles.toFixed(2), 'miles, duration:', Math.round(minutes), 'min');
+
+      // Calculate actual pricing
+      try {
+        const pricingResult = calculateTripPricing({
+          pickupLat: pickupLocation.latitude,
+          pickupLng: pickupLocation.longitude,
+          destinationLat: destination.latitude,
+          destinationLng: destination.longitude,
+          distanceMiles: miles,
+          durationMinutes: minutes,
+          requestTime: new Date(),
+        });
+
+        setEstimatedCostMin(pricingResult.minContribution);
+        setEstimatedCostMax(pricingResult.maxContribution);
+        console.log('💰 Estimated cost range:', pricingResult.minContribution, '-', pricingResult.maxContribution, 'KYD');
+      } catch (error) {
+        console.error('❌ Pricing calculation error:', error);
+        setEstimatedCostMin(null);
+        setEstimatedCostMax(null);
+      }
     } else {
       console.warn('⚠️ One or more locations outside service area');
       if (!pickupZone) {
@@ -460,6 +585,8 @@ const SelectDestinationScreen = () => {
       if (!destZone) {
         console.warn('  Destination not in any zone');
       }
+      setEstimatedCostMin(null);
+      setEstimatedCostMax(null);
     }
   };
 
@@ -526,24 +653,29 @@ const SelectDestinationScreen = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Header with Gradient */}
+      <LinearGradient
+        colors={['#d8d3ec', '#FFFFFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.header}
+      >
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color="#5d1289" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Destination</Text>
-        <TouchableOpacity 
-          style={styles.addStopButton} 
+        <Text style={styles.headerTitle}>Plan Your Trip</Text>
+        <TouchableOpacity
+          style={styles.addStopButton}
           onPress={addStop}
           disabled={stops && stops.length >= 2}
         >
-          <Ionicons 
-            name="add-circle" 
-            size={24} 
-            color={stops && stops.length >= 2 ? '#ccc' : '#5d1289'} 
+          <Ionicons
+            name="add-circle"
+            size={24}
+            color={stops && stops.length >= 2 ? '#ccc' : '#5d1289'}
           />
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Map */}
       <MapView
@@ -641,29 +773,29 @@ const SelectDestinationScreen = () => {
   
           
           return (
-            <>
-              <Polyline
-                key="shadow-polyline"
-                coordinates={normalizedCoords}
-                strokeColor="rgba(202, 110, 255, 0.3)"
-                strokeWidth={8}
-                geodesic={true}
-                lineCap="round"
-                lineJoin="round"
-              />
-              <Polyline
-                key="main-polyline"
-                coordinates={normalizedCoords}
-                strokeColor="#7820acff"
-                strokeWidth={4}
-                geodesic={true}
-                lineCap="round"
-                lineJoin="round"
-              />
-            </>
+            <Polyline
+              key="main-polyline"
+              coordinates={normalizedCoords}
+              strokeColor="#5d1289"
+              strokeWidth={3}
+              geodesic={true}
+              lineCap="round"
+              lineJoin="round"
+            />
           );
         })()}
       </MapView>
+
+      {/* My Location Button - Use current location as destination */}
+      <View style={styles.myLocationButtonContainer}>
+        <TouchableOpacity
+          style={styles.myLocationButton}
+          onPress={useMyLocationAsDestination}
+        >
+          <Ionicons name="locate" size={20} color="#10B981" />
+          <Text style={styles.myLocationButtonText}>My Location</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Loading Overlay */}
       {loading && (
@@ -740,8 +872,16 @@ const SelectDestinationScreen = () => {
           <View style={styles.costEstimate}>
             <Text style={styles.costLabel}>Estimated Cost Share:</Text>
             <Text style={styles.costValue}>
-              ${(distanceMiles * 1.5).toFixed(2)} - ${(distanceMiles * 2.5).toFixed(2)}
+              {estimatedCostMin !== null && estimatedCostMax !== null
+                ? `$${estimatedCostMin.toFixed(2)} - $${estimatedCostMax.toFixed(2)} KYD`
+                : 'Calculating...'}
             </Text>
+            {/* Late night/early morning pricing note */}
+            {getTimePricingInfo().isActive && (
+              <Text style={styles.pricingNote}>
+                <Ionicons name="moon" size={12} color="#6B7280" /> {getTimePricingInfo().message}
+              </Text>
+            )}
           </View>
         </View>
       )}
@@ -794,18 +934,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    paddingVertical: 16,
+    paddingTop: 8,
   },
   backButton: {
     padding: 8,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#5d1289',
   },
   addStopButton: {
     padding: 8,
@@ -918,9 +1056,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   costEstimate: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 4,
   },
   costLabel: {
     fontSize: 14,
@@ -930,6 +1067,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#5d1289',
+    marginTop: 2,
+  },
+  pricingNote: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   markerContainer: {
     alignItems: 'center',
@@ -1035,6 +1179,34 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#92400E',
     lineHeight: 16,
+  },
+  // My Location button styles
+  myLocationButtonContainer: {
+    position: 'absolute',
+    top: 130,
+    right: 16,
+    zIndex: 100,
+  },
+  myLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  myLocationButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
   },
 });
 

@@ -205,6 +205,48 @@ export default function NavigateToDestination() {
     }
   }, [(currentTrip as any)?.pendingStopRequest]);
 
+  // Track if driver has been notified of declined stop to prevent repeated alerts
+  const hasNotifiedDeclinedStop = useRef(false);
+
+  // Listen for driver-initiated stop request being declined by rider
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    const tripData = currentTrip as any;
+    const stopRequest = tripData.pendingStopRequest;
+
+    // Check if this is a driver-initiated stop that was declined by the rider
+    if (
+      stopRequest?.requestedBy === 'driver' &&
+      stopRequest?.status === 'declined' &&
+      !hasNotifiedDeclinedStop.current
+    ) {
+      hasNotifiedDeclinedStop.current = true;
+      console.log('❌ Rider declined driver stop request:', stopRequest.address);
+
+      Alert.alert(
+        'Stop Request Declined',
+        `The rider has declined your request to add a stop at ${stopRequest.placeName || stopRequest.address}.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Reset the notification flag after some time to allow future notifications
+              setTimeout(() => {
+                hasNotifiedDeclinedStop.current = false;
+              }, 5000);
+            },
+          },
+        ]
+      );
+    }
+
+    // Reset notification flag when there's no pending stop request or it's a new request
+    if (!stopRequest || stopRequest.status === 'pending') {
+      hasNotifiedDeclinedStop.current = false;
+    }
+  }, [(currentTrip as any)?.pendingStopRequest?.status]);
+
   // Handle route deviation - trigger recalculation when hook signals it
   useEffect(() => {
     if (routeDeviation.shouldRecalculateRoute && currentLocation && activeRide && !isRecalculatingRoute) {
@@ -714,7 +756,7 @@ export default function NavigateToDestination() {
             currentLocation={currentLocation}
             remainingColor={Colors.primary}
             traveledColor={Colors.gray[400]}
-            strokeWidth={5}
+            strokeWidth={3}
             onRouteDeviation={handleRouteDeviation}
             deviationThreshold={100}
           />
@@ -1192,6 +1234,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
+    paddingBottom: 8, // Extra padding for button to be above nav bar
   },
   destinationIconSmall: {
     width: 44,
@@ -1232,6 +1275,7 @@ const styles = StyleSheet.create({
   // Expanded Content
   expandedContent: {
     paddingHorizontal: 20,
+    paddingBottom: 16, // Extra padding for action buttons to be above nav bar
   },
 
   // Trip Progress

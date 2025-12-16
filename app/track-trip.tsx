@@ -453,7 +453,7 @@ export default function TrackTripScreen() {
             <Polyline
               coordinates={routeCoordinates}
               strokeColor="#5d1289"
-              strokeWidth={4}
+              strokeWidth={3}
               geodesic={true}
               lineCap="round"
               lineJoin="round"
@@ -471,7 +471,7 @@ export default function TrackTripScreen() {
                 trip.destination.coordinates,
               ]}
               strokeColor="#5d1289"
-              strokeWidth={4}
+              strokeWidth={3}
               lineDashPattern={[10, 5]}
             />
           )}

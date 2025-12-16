@@ -3,7 +3,7 @@
  * Functions to determine which zone a coordinate belongs to
  */
 
-import { CAYMAN_ZONES, Zone } from './drift-zones-config';
+import { CAYMAN_ZONES, Zone, getParentZoneId } from './drift-zones-config';
 
 /**
  * Point-in-Polygon algorithm (Ray Casting)
@@ -32,6 +32,7 @@ function isPointInPolygon(
 
 /**
  * Detect which zone a coordinate belongs to
+ * Priority: Airport > Sub-zones > Main zones > General fallback
  * @param latitude - Latitude coordinate
  * @param longitude - Longitude coordinate
  * @returns Zone object or null if not in any zone
@@ -42,31 +43,34 @@ export function detectZone(
 ): Zone | null {
   const point: [number, number] = [longitude, latitude];
 
-  console.log(`🔍 detectZone called with lat=${latitude}, lng=${longitude}`);
-  console.log(`   Point array: [${longitude}, ${latitude}]`);
-
-  // Check airport zone first (priority)
-  const airportZone = CAYMAN_ZONES.find(z => z.id === 'zone_airport');
+  // Check airport zone first (highest priority)
+  const airportZone = CAYMAN_ZONES.find(z => z.id === 'zone_3a');
   if (airportZone && isPointInPolygon(point, airportZone.boundaryCoordinates)) {
-    console.log(`   ✅ Found in airport zone`);
     return airportZone;
   }
 
-  // Check other zones
-  for (const zone of CAYMAN_ZONES) {
-    if (zone.id === 'zone_airport') continue; // Already checked
-
-    const inZone = isPointInPolygon(point, zone.boundaryCoordinates);
-    console.log(`   Checking ${zone.displayName}: ${inZone ? 'YES ✅' : 'no'}`);
-
-    if (inZone) {
-      console.log(`   ✅ Found in zone: ${zone.displayName}`);
+  // Check sub-zones next (more specific areas)
+  const subZones = CAYMAN_ZONES.filter(z => z.isSubZone && z.id !== 'zone_3a');
+  for (const zone of subZones) {
+    if (isPointInPolygon(point, zone.boundaryCoordinates)) {
       return zone;
     }
   }
 
-  console.log(`   ❌ NOT IN ANY ZONE`);
-  console.log(`   Checked ${CAYMAN_ZONES.length} zones`);
+  // Check main zones
+  const mainZones = CAYMAN_ZONES.filter(z => !z.isSubZone && z.id !== 'zone_general');
+  for (const zone of mainZones) {
+    if (isPointInPolygon(point, zone.boundaryCoordinates)) {
+      return zone;
+    }
+  }
+
+  // Fallback to general zone if within Grand Cayman bounds
+  const generalZone = CAYMAN_ZONES.find(z => z.id === 'zone_general');
+  if (generalZone && isPointInPolygon(point, generalZone.boundaryCoordinates)) {
+    return generalZone;
+  }
+
   return null;
 }
 
@@ -86,17 +90,41 @@ export function getZoneDisplayName(zoneId: string): string {
 }
 
 /**
+ * Get all zones in a zone family (parent + all sub-zones)
+ */
+export function getZoneFamily(zoneId: string): Zone[] {
+  const parentId = getParentZoneId(zoneId);
+  return CAYMAN_ZONES.filter(z => {
+    return z.id === parentId || z.parentZone === parentId;
+  });
+}
+
+/**
+ * Get all main zones (not sub-zones)
+ */
+export function getMainZones(): Zone[] {
+  return CAYMAN_ZONES.filter(z => !z.isSubZone && z.id !== 'zone_general');
+}
+
+/**
+ * Get all sub-zones for a parent zone
+ */
+export function getSubZones(parentZoneId: string): Zone[] {
+  return CAYMAN_ZONES.filter(z => z.parentZone === parentZoneId);
+}
+
+/**
  * Check if a coordinate is within Grand Cayman bounds
  */
 export function isWithinCaymanBounds(
   latitude: number,
   longitude: number
 ): boolean {
-  // Grand Cayman approximate bounds
+  // Grand Cayman approximate bounds (expanded for all zones)
   const bounds = {
-    north: 19.37,
-    south: 19.26,
-    east: -81.16,
+    north: 19.40,
+    south: 19.25,
+    east: -81.08,
     west: -81.43,
   };
 
@@ -151,4 +179,50 @@ export function getZoneCenter(zoneId: string): [number, number] | null {
   const sumLat = coords.reduce((sum, [, lat]) => sum + lat, 0);
 
   return [sumLng / coords.length, sumLat / coords.length];
+}
+
+/**
+ * Get all zone centers for map display
+ */
+export function getAllZoneCenters(): { zoneId: string; center: [number, number]; displayName: string }[] {
+  return CAYMAN_ZONES
+    .filter(z => z.id !== 'zone_general')
+    .map(zone => {
+      const center = getZoneCenter(zone.id);
+      return {
+        zoneId: zone.id,
+        center: center || [0, 0],
+        displayName: zone.displayName,
+      };
+    });
+}
+
+/**
+ * Determine trip type based on pickup and destination zones
+ */
+export function determineTripType(
+  pickupZoneId: string,
+  destZoneId: string
+): 'within' | 'subzone' | 'crosszone' | 'airport' {
+  // Airport trip
+  if (pickupZoneId === 'zone_3a' || destZoneId === 'zone_3a') {
+    return 'airport';
+  }
+
+  // Same zone
+  if (pickupZoneId === destZoneId) {
+    return 'within';
+  }
+
+  // Check if same zone family
+  const pickupParent = getParentZoneId(pickupZoneId);
+  const destParent = getParentZoneId(destZoneId);
+
+  if (pickupParent === destParent ||
+      pickupParent === destZoneId ||
+      destParent === pickupZoneId) {
+    return 'subzone';
+  }
+
+  return 'crosszone';
 }

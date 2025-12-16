@@ -23,6 +23,20 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/consta
 // KYD to USD conversion rate (fixed rate for Cayman Islands)
 const KYD_TO_USD_RATE = 1.20; // 1 KYD = 1.20 USD approximately
 
+// Helper to check if current time has a pricing surcharge
+const getTimePricingInfo = (): { isActive: boolean; message: string } => {
+  const hour = new Date().getHours();
+  // Late night: 10 PM (22) to 6 AM
+  if (hour >= 22 || hour < 6) {
+    return { isActive: true, message: 'Late night pricing (+25%) applied' };
+  }
+  // Early morning: 5 AM to 7 AM (but 5-6 AM is covered by late night above)
+  if (hour >= 6 && hour < 7) {
+    return { isActive: true, message: 'Early morning pricing (+15%) applied' };
+  }
+  return { isActive: false, message: '' };
+};
+
 interface VehicleOption {
   id: string;
   name: string;
@@ -346,33 +360,16 @@ export default function VehicleSelectionScreen() {
                 <Text style={styles.priceRangeText}>
                   Base range: {formatKYD(pricing.minContribution)} - {formatKYD(pricing.maxContribution)}
                 </Text>
+                {/* Late night/early morning pricing note */}
+                {getTimePricingInfo().isActive && (
+                  <View style={styles.pricingNoteContainer}>
+                    <Ionicons name="moon" size={12} color="#6B7280" />
+                    <Text style={styles.pricingNoteText}>{getTimePricingInfo().message}</Text>
+                  </View>
+                )}
               </View>
 
-              {/* Breakdown for cross-zone trips */}
-              {!pricing.isWithinZone && !pricing.isAirportTrip && (
-                <View style={styles.breakdownContainer}>
-                  <Text style={styles.breakdownTitle}>Cost Breakdown</Text>
-                  {pricing.breakdown.baseZoneFee !== undefined && (
-                    <View style={styles.breakdownRow}>
-                      <Text style={styles.breakdownLabel}>Base zone exit</Text>
-                      <Text style={styles.breakdownValue}>{formatKYD(pricing.breakdown.baseZoneFee)}</Text>
-                    </View>
-                  )}
-                  {pricing.breakdown.distanceCost !== undefined && (
-                    <View style={styles.breakdownRow}>
-                      <Text style={styles.breakdownLabel}>Distance</Text>
-                      <Text style={styles.breakdownValue}>{formatKYD(pricing.breakdown.distanceCost)}</Text>
-                    </View>
-                  )}
-                  {pricing.breakdown.timeCost !== undefined && (
-                    <View style={styles.breakdownRow}>
-                      <Text style={styles.breakdownLabel}>Time</Text>
-                      <Text style={styles.breakdownValue}>{formatKYD(pricing.breakdown.timeCost)}</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
+                          </View>
           ) : null}
 
           {/* Vehicle Options */}
@@ -747,31 +744,16 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],
   },
-  breakdownContainer: {
-    backgroundColor: Colors.gray[50],
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-  },
-  breakdownTitle: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.bold,
-    color: Colors.gray[700],
-    marginBottom: Spacing.sm,
-  },
-  breakdownRow: {
+  pricingNoteContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.xs,
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
   },
-  breakdownLabel: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.regular,
-    color: Colors.gray[600],
-  },
-  breakdownValue: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.medium,
-    color: Colors.gray[700],
+  pricingNoteText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontStyle: 'italic',
   },
   vehiclesSection: {
     paddingHorizontal: Spacing.lg,

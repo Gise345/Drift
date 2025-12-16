@@ -741,12 +741,30 @@ export default function TripDetailScreen() {
           <View style={styles.cancellationCard}>
             <View style={styles.cancellationHeader}>
               <Ionicons
-                name={trip.cancellation.wasDriverFault ? 'checkmark-circle' : 'close-circle'}
+                name={
+                  trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE'
+                    ? 'car-outline'
+                    : trip.cancellation.wasDriverFault || trip.cancellation.fee === 0
+                      ? 'checkmark-circle'
+                      : 'close-circle'
+                }
                 size={24}
-                color={trip.cancellation.wasDriverFault ? '#10B981' : '#EF4444'}
+                color={
+                  trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE'
+                    ? '#F59E0B'
+                    : trip.cancellation.wasDriverFault || trip.cancellation.fee === 0
+                      ? '#10B981'
+                      : '#EF4444'
+                }
               />
               <Text style={styles.cancellationTitle}>
-                {trip.cancellation.wasDriverFault ? 'Trip Cancelled - Full Refund' : 'Trip Cancelled'}
+                {trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE'
+                  ? 'No Drivers Available'
+                  : trip.cancellation.wasDriverFault
+                    ? 'Trip Cancelled - Full Refund'
+                    : trip.cancellation.fee === 0
+                      ? 'Trip Cancelled - Not Charged'
+                      : 'Trip Cancelled'}
               </Text>
             </View>
 
@@ -754,13 +772,23 @@ export default function TripDetailScreen() {
             <View style={styles.cancellationRow}>
               <Text style={styles.cancellationLabel}>Cancelled by</Text>
               <Text style={styles.cancellationValue}>
-                {trip.cancellation.cancelledBy === 'DRIVER' ? 'Driver' : 'You'}
+                {trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE'
+                  ? 'System'
+                  : trip.cancellation.cancelledBy === 'DRIVER'
+                    ? 'Driver'
+                    : 'You'}
               </Text>
             </View>
 
             <View style={styles.cancellationRow}>
               <Text style={styles.cancellationLabel}>Reason</Text>
-              <Text style={styles.cancellationValue}>{trip.cancellation.reason}</Text>
+              <Text style={styles.cancellationValue}>
+                {trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE'
+                  ? 'No drivers were available to accept your ride request'
+                  : trip.cancellation.reasonType === 'RIDER_CANCELLED_WHILE_SEARCHING'
+                    ? 'Cancelled before driver was assigned'
+                    : trip.cancellation.reason}
+              </Text>
             </View>
 
             {/* Fee breakdown */}
@@ -781,8 +809,28 @@ export default function TripDetailScreen() {
               </View>
             )}
 
-            {/* Full refund notice */}
-            {trip.cancellation.wasDriverFault && (
+            {/* No drivers available notice */}
+            {trip.cancellation.reasonType === 'NO_DRIVERS_AVAILABLE' && (
+              <View style={[styles.refundNotice, { backgroundColor: '#FEF9C3' }]}>
+                <Ionicons name="information-circle" size={18} color="#F59E0B" />
+                <Text style={[styles.refundNoticeText, { color: '#92400E' }]}>
+                  We couldn't find any drivers for your trip. The payment authorization has been cancelled and your funds will be returned shortly.
+                </Text>
+              </View>
+            )}
+
+            {/* Cancelled while searching notice */}
+            {trip.cancellation.reasonType === 'RIDER_CANCELLED_WHILE_SEARCHING' && (
+              <View style={styles.refundNotice}>
+                <Ionicons name="information-circle" size={18} color="#10B981" />
+                <Text style={styles.refundNoticeText}>
+                  You cancelled before a driver was assigned. The payment authorization has been cancelled and your funds will be returned shortly.
+                </Text>
+              </View>
+            )}
+
+            {/* Full refund notice - driver cancelled */}
+            {trip.cancellation.wasDriverFault && trip.cancellation.reasonType !== 'NO_DRIVERS_AVAILABLE' && (
               <View style={styles.refundNotice}>
                 <Ionicons name="information-circle" size={18} color="#10B981" />
                 <Text style={styles.refundNoticeText}>

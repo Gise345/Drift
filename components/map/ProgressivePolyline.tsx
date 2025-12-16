@@ -158,7 +158,7 @@ export const ProgressivePolyline: React.FC<ProgressivePolylineProps> = ({
   currentLocation,
   remainingColor = Colors.primary,
   traveledColor = Colors.gray[400],
-  strokeWidth = 5,
+  strokeWidth = 3, // Thinner, cleaner line
   onRouteDeviation,
   deviationThreshold = 50, // 50 meters default
 }) => {

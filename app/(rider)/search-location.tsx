@@ -13,16 +13,24 @@ import {
   KeyboardAvoidingView,
   Animated,
   Dimensions,
+  PanResponder,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUserStore } from '@/src/stores/user-store';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Bottom sheet positions
+const SHEET_MIN_HEIGHT = SCREEN_HEIGHT * 0.75; // 75% of screen - shows 25% map
+const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.92; // Almost full screen
+const SHEET_COLLAPSED_HEIGHT = SCREEN_HEIGHT * 0.4; // 40% - shows 60% map for pin drop
 
 // Google Places API Key
 const GOOGLE_PLACES_API_KEY =
@@ -90,6 +98,7 @@ interface RouteLocation {
 
 const SearchLocationScreen = () => {
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const {
     setPickupLocation,
     setDestination,
@@ -124,6 +133,23 @@ const SearchLocationScreen = () => {
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
+  // Map and region state
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: GRAND_CAYMAN_CENTER.latitude,
+    longitude: GRAND_CAYMAN_CENTER.longitude,
+    latitudeDelta: 0.1,
+    longitudeDelta: 0.1,
+  });
+
+  // Pin drop mode state
+  const [pinMode, setPinMode] = useState<'off' | 'pickup' | 'destination'>('off');
+  const [pinAddress, setPinAddress] = useState<string>('');
+  const [pinLoading, setPinLoading] = useState(false);
+
+  // Bottom sheet animation
+  const sheetHeight = useRef(new Animated.Value(SHEET_MIN_HEIGHT)).current;
+  const lastGestureDy = useRef(0);
+
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -131,6 +157,74 @@ const SearchLocationScreen = () => {
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const pickupInputRef = useRef<TextInput>(null);
   const destinationInputRef = useRef<TextInput>(null);
+  const mapRef = useRef<MapView>(null);
+
+  // Track the current sheet height for pan calculations
+  const currentSheetHeight = useRef(SHEET_MIN_HEIGHT);
+
+  // Pan responder for draggable bottom sheet - SIMPLE AND WORKING
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderGrant: () => {
+        // Store starting height
+        // @ts-ignore
+        currentSheetHeight.current = sheetHeight._value;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Dragging down = positive dy = decrease height
+        // Dragging up = negative dy = increase height
+        const newHeight = currentSheetHeight.current - gestureState.dy;
+
+        // Clamp between min and max
+        const clampedHeight = Math.max(
+          SHEET_COLLAPSED_HEIGHT,
+          Math.min(SHEET_MAX_HEIGHT, newHeight)
+        );
+
+        sheetHeight.setValue(clampedHeight);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // @ts-ignore
+        const finalHeight = sheetHeight._value;
+        const velocity = gestureState.vy;
+
+        let snapTo = finalHeight;
+
+        // Snap based on velocity or position
+        if (velocity > 0.5) {
+          // Fast swipe down - collapse
+          snapTo = SHEET_COLLAPSED_HEIGHT;
+        } else if (velocity < -0.5) {
+          // Fast swipe up - expand
+          snapTo = SHEET_MAX_HEIGHT;
+        } else {
+          // Slow drag - snap to nearest third
+          const midPoint = (SHEET_MIN_HEIGHT + SHEET_COLLAPSED_HEIGHT) / 2;
+          if (finalHeight < midPoint) {
+            snapTo = SHEET_COLLAPSED_HEIGHT;
+          } else if (finalHeight < SHEET_MIN_HEIGHT + 50) {
+            snapTo = SHEET_MIN_HEIGHT;
+          } else {
+            snapTo = SHEET_MAX_HEIGHT;
+          }
+        }
+
+        // Update ref for next gesture
+        currentSheetHeight.current = snapTo;
+
+        Animated.spring(sheetHeight, {
+          toValue: snapTo,
+          useNativeDriver: false,
+          tension: 65,
+          friction: 11,
+        }).start();
+      },
+    })
+  ).current;
   const stopInputRefs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
@@ -172,6 +266,21 @@ const SearchLocationScreen = () => {
 
       setCurrentLocation(location.coords);
 
+      const userRegion = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      };
+
+      // Update state for pin mode tracking
+      setMapRegion(userRegion);
+
+      // Animate map to user's location
+      if (mapRef.current) {
+        mapRef.current.animateToRegion(userRegion, 500);
+      }
+
       // Auto-fill pickup with current location if not in add-stop mode
       if (!addStopMode) {
         const address = await reverseGeocode(location.coords.latitude, location.coords.longitude);
@@ -205,6 +314,119 @@ const SearchLocationScreen = () => {
       console.error('Reverse geocode error:', error);
       return null;
     }
+  };
+
+  // Ref to track current pin mode (avoids stale closure issues)
+  const pinModeRef = useRef<'off' | 'pickup' | 'destination'>('off');
+  const geocodeTimeoutRef = useRef<NodeJS.Timeout>();
+
+  /**
+   * Start pin drop mode
+   */
+  const startPinMode = (mode: 'pickup' | 'destination') => {
+    // Update both state and ref
+    setPinMode(mode);
+    pinModeRef.current = mode;
+    setPinAddress('');
+    setPinLoading(true);
+
+    // Collapse bottom sheet to show more map
+    currentSheetHeight.current = SHEET_COLLAPSED_HEIGHT;
+    Animated.spring(sheetHeight, {
+      toValue: SHEET_COLLAPSED_HEIGHT,
+      useNativeDriver: false,
+      tension: 65,
+      friction: 11,
+    }).start();
+
+    // Get address for current map center after a brief delay
+    setTimeout(async () => {
+      const address = await reverseGeocode(mapRegion.latitude, mapRegion.longitude);
+      setPinAddress(address || 'Move map to select location');
+      setPinLoading(false);
+    }, 100);
+  };
+
+  /**
+   * Handle map region change during pin drop mode
+   * Debounced to prevent excessive API calls and glitches
+   */
+  const handleMapRegionChange = (region: Region) => {
+    setMapRegion(region);
+
+    // Only process if in pin mode (use ref to avoid stale closure)
+    if (pinModeRef.current === 'off') return;
+
+    // Clear previous timeout
+    if (geocodeTimeoutRef.current) {
+      clearTimeout(geocodeTimeoutRef.current);
+    }
+
+    setPinLoading(true);
+
+    // Debounce geocoding to prevent glitches during fast pan
+    geocodeTimeoutRef.current = setTimeout(async () => {
+      try {
+        const address = await reverseGeocode(region.latitude, region.longitude);
+        setPinAddress(address || 'Unknown location');
+      } catch (error) {
+        setPinAddress('Unknown location');
+      } finally {
+        setPinLoading(false);
+      }
+    }, 300); // 300ms debounce
+  };
+
+  /**
+   * Confirm the pinned location - PROPERLY UPDATES INPUT FIELDS
+   */
+  const confirmPinLocation = () => {
+    if (!pinAddress || pinModeRef.current === 'off') return;
+
+    const location: RouteLocation = {
+      name: pinAddress.split(',')[0]?.trim() || 'Pinned Location',
+      address: pinAddress,
+      latitude: mapRegion.latitude,
+      longitude: mapRegion.longitude,
+    };
+
+    if (pinModeRef.current === 'pickup') {
+      // Clear existing pickup and set new one
+      setPickupLocationState(location);
+      setPickupQuery(location.name); // Update the input field text
+      console.log('📍 Pickup set via pin:', location.name);
+    } else if (pinModeRef.current === 'destination') {
+      // Clear existing destination and set new one
+      setDestinationLocationState(location);
+      setDestinationQuery(location.name); // Update the input field text
+      console.log('📍 Destination set via pin:', location.name);
+    }
+
+    cancelPinMode();
+  };
+
+  /**
+   * Cancel pin drop mode
+   */
+  const cancelPinMode = () => {
+    // Clear any pending geocode
+    if (geocodeTimeoutRef.current) {
+      clearTimeout(geocodeTimeoutRef.current);
+    }
+
+    setPinMode('off');
+    pinModeRef.current = 'off';
+    setPinAddress('');
+    setPinLoading(false);
+
+    // Expand bottom sheet back
+    currentSheetHeight.current = SHEET_MIN_HEIGHT;
+    Animated.spring(sheetHeight, {
+      toValue: SHEET_MIN_HEIGHT,
+      useNativeDriver: false,
+      tension: 65,
+      friction: 11,
+    }).start();
   };
 
   const loadSavedAddresses = async () => {
@@ -630,25 +852,137 @@ const SearchLocationScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <View style={styles.container}>
+      {/* Background Map */}
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        initialRegion={mapRegion}
+        onRegionChangeComplete={handleMapRegionChange}
+        showsUserLocation={true}
+        showsMyLocationButton={true}
+        followsUserLocation={false}
+        loadingEnabled={true}
+        loadingIndicatorColor="#5d1289"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        {/* Show markers for selected locations when not in pin mode */}
+        {pinMode === 'off' && pickupLocation && (
+          <Marker
+            coordinate={{
+              latitude: pickupLocation.latitude,
+              longitude: pickupLocation.longitude,
+            }}
+            title="Pickup"
           >
-            <Ionicons name="arrow-back" size={24} color="#1a1a1a" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {addStopMode ? 'Add Stop' : 'Plan your trip'}
-          </Text>
-          <View style={styles.headerRight} />
+            <View style={styles.mapMarker}>
+              <Ionicons name="location" size={24} color="#10B981" />
+            </View>
+          </Marker>
+        )}
+        {pinMode === 'off' && destinationLocation && (
+          <Marker
+            coordinate={{
+              latitude: destinationLocation.latitude,
+              longitude: destinationLocation.longitude,
+            }}
+            title="Destination"
+          >
+            <View style={styles.mapMarker}>
+              <Ionicons name="flag" size={24} color="#EF4444" />
+            </View>
+          </Marker>
+        )}
+      </MapView>
+
+      {/* Floating Center Pin - Sleek Needle Style (Uber-like) */}
+      {pinMode !== 'off' && (
+        <View style={styles.centerPinContainer} pointerEvents="none">
+          <View style={styles.needlePin}>
+            <View style={[
+              styles.needlePinHead,
+              { backgroundColor: pinMode === 'pickup' ? '#10B981' : '#EF4444' }
+            ]}>
+              <View style={styles.needlePinDot} />
+            </View>
+            <View style={[
+              styles.needlePinStem,
+              { backgroundColor: pinMode === 'pickup' ? '#10B981' : '#EF4444' }
+            ]} />
+          </View>
+          <View style={styles.pinShadow} />
         </View>
+      )}
+
+      {/* Pin Mode Control Panel - Shows at top when in pin mode */}
+      {pinMode !== 'off' && (
+        <SafeAreaView style={styles.pinModeHeader} edges={['top']}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0.98)', 'rgba(255,255,255,0.9)']}
+            style={styles.pinModeHeaderContent}
+          >
+            <TouchableOpacity onPress={cancelPinMode} style={styles.pinModeBackButton}>
+              <Ionicons name="close" size={24} color="#1a1a1a" />
+            </TouchableOpacity>
+            <View style={styles.pinModeInfo}>
+              <Text style={styles.pinModeTitle}>
+                {pinMode === 'pickup' ? 'Set Pickup' : 'Set Destination'}
+              </Text>
+              <View style={styles.pinAddressRow}>
+                {pinLoading ? (
+                  <ActivityIndicator size="small" color="#5d1289" />
+                ) : (
+                  <Text style={styles.pinAddressText} numberOfLines={1}>
+                    {pinAddress || 'Move map to select location'}
+                  </Text>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.pinConfirmButton,
+                { backgroundColor: pinMode === 'pickup' ? '#10B981' : '#EF4444' },
+                (!pinAddress || pinLoading) && styles.pinConfirmButtonDisabled
+              ]}
+              onPress={confirmPinLocation}
+              disabled={!pinAddress || pinLoading}
+            >
+              <Ionicons name="checkmark" size={20} color="#fff" />
+            </TouchableOpacity>
+          </LinearGradient>
+        </SafeAreaView>
+      )}
+
+      {/* Draggable Bottom Sheet */}
+      <Animated.View
+        style={[
+          styles.bottomSheet,
+          { height: sheetHeight }
+        ]}
+      >
+        {/* Drag Handle */}
+        <View {...panResponder.panHandlers} style={styles.dragHandleContainer}>
+          <View style={styles.dragHandle} />
+        </View>
+
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#1a1a1a" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>
+              {addStopMode ? 'Add Stop' : 'Plan your trip'}
+            </Text>
+            <View style={styles.headerRight} />
+          </View>
 
         <Animated.View
           style={[
@@ -661,6 +995,7 @@ const SearchLocationScreen = () => {
         >
           {/* Search Card */}
           {!addStopMode && (
+            <>
             <View style={styles.searchCard}>
               {/* Route line visualization */}
               <View style={styles.routeLineWrapper}>
@@ -776,6 +1111,25 @@ const SearchLocationScreen = () => {
                 </View>
               </View>
             </View>
+
+            {/* Pin Drop Buttons */}
+            <View style={styles.pinDropButtonRow}>
+              <TouchableOpacity
+                style={styles.pinDropChip}
+                onPress={() => startPinMode('pickup')}
+              >
+                <Ionicons name="location" size={16} color="#10B981" />
+                <Text style={styles.pinDropChipText}>Pin Pickup</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.pinDropChip}
+                onPress={() => startPinMode('destination')}
+              >
+                <Ionicons name="flag" size={16} color="#EF4444" />
+                <Text style={styles.pinDropChipText}>Pin Destination</Text>
+              </TouchableOpacity>
+            </View>
+            </>
           )}
 
           {/* Add Stop Mode - Single Input */}
@@ -968,8 +1322,9 @@ const SearchLocationScreen = () => {
             </TouchableOpacity>
           </View>
         )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </Animated.View>
+    </View>
   );
 };
 
@@ -977,6 +1332,163 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  // Map styles
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapMarker: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  // Bottom sheet styles
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  dragHandleContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#d1d5db',
+    borderRadius: 2,
+  },
+  // Center pin styles (Uber-like needle)
+  centerPinContainer: {
+    position: 'absolute',
+    top: '35%',
+    left: '50%',
+    marginLeft: -20,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  needlePin: {
+    alignItems: 'center',
+  },
+  needlePinHead: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  needlePinDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+  },
+  needlePinStem: {
+    width: 3,
+    height: 20,
+    marginTop: -2,
+  },
+  pinShadow: {
+    width: 16,
+    height: 6,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  // Pin mode header styles
+  pinModeHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1001,
+  },
+  pinModeHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: 8,
+  },
+  pinModeBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pinModeInfo: {
+    flex: 1,
+    marginHorizontal: 12,
+  },
+  pinModeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  pinAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  pinAddressText: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
+  },
+  pinConfirmButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pinConfirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  // Pin drop button styles
+  pinDropButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+    marginHorizontal: 16,
+  },
+  pinDropChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  pinDropChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#4b5563',
   },
   keyboardView: {
     flex: 1,

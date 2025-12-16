@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { Platform, Linking } from 'react-native';
+import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import { AutoUpdate } from '@/src/components/AutoUpdate';
 import { initializeMonitoring } from '@/src/services/firebase-monitoring-service';
 
@@ -71,9 +71,16 @@ function parseTrackingUrl(url: string): string | null {
   }
 }
 
+// Time threshold for reinitializing auth after background (5 minutes)
+const BACKGROUND_THRESHOLD_MS = 5 * 60 * 1000;
+
 export default function RootLayout() {
   const { initialize } = useAuthStore();
   const router = useRouter();
+
+  // Track when app goes to background for stale connection handling
+  const appState = useRef(AppState.currentState);
+  const backgroundTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
     // Initialize auth on app start
@@ -81,6 +88,46 @@ export default function RootLayout() {
     // Initialize Firebase monitoring (Analytics, Crashlytics, Performance)
     initializeMonitoring();
   }, []);
+
+  // Handle app state changes to prevent crashes after long background periods
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      // App going to background
+      if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+        backgroundTimestamp.current = Date.now();
+        console.log('📱 App going to background');
+      }
+
+      // App coming back to foreground
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        const wasInBackground = backgroundTimestamp.current;
+        const timeInBackground = wasInBackground ? Date.now() - wasInBackground : 0;
+
+        console.log(`📱 App returning to foreground after ${Math.round(timeInBackground / 1000)}s`);
+
+        // If app was in background for more than threshold, reinitialize auth
+        // This refreshes Firebase connections and prevents stale state crashes
+        if (timeInBackground > BACKGROUND_THRESHOLD_MS) {
+          console.log('🔄 Reinitializing auth after long background period...');
+          try {
+            initialize();
+          } catch (error) {
+            console.error('Error reinitializing auth:', error);
+          }
+        }
+
+        backgroundTimestamp.current = null;
+      }
+
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [initialize]);
 
   // Handle deep links for tracking
   useEffect(() => {
@@ -147,6 +194,9 @@ export default function RootLayout() {
       />
     </Stack>
   );
+
+  // Check if we're using Stripe test keys
+  const isStripeTestMode = STRIPE_PUBLISHABLE_KEY.startsWith('pk_test_');
 
   // Wrap with StripeProvider only if available (not in Expo Go)
   const content = StripeProvider ? (

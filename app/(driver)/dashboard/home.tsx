@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
 import { getActiveDriverTrip } from '@/src/services/ride-request.service';
@@ -235,17 +236,22 @@ export default function DriverHome() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Background Location Disclosure Modal - Shows BEFORE system permission */}
-      <BackgroundLocationDisclosureModal
-        visible={showDisclosureModal}
-        userType="driver"
-        onAccept={onDisclosureAccept}
-        onDecline={onDisclosureDecline}
-      />
+    <LinearGradient
+      colors={[Colors.purpleLight, '#FFFFFF', '#FFFFFF']}
+      locations={[0, 0.3, 1]}
+      style={styles.gradientContainer}
+    >
+      <SafeAreaView style={styles.container}>
+        {/* Background Location Disclosure Modal - Shows BEFORE system permission */}
+        <BackgroundLocationDisclosureModal
+          visible={showDisclosureModal}
+          userType="driver"
+          onAccept={onDisclosureAccept}
+          onDecline={onDisclosureDecline}
+        />
 
-      {/* Header */}
-      <View style={styles.header}>
+        {/* Header */}
+        <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.greeting}>Hello,</Text>
           <Text style={styles.driverName}>{driver?.firstName || 'Driver'}!</Text>
@@ -451,14 +457,18 @@ export default function DriverHome() {
           <Text style={styles.sosText}>Emergency SOS</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradientContainer: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',

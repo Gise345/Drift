@@ -36,6 +36,7 @@ import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
 import { RiderSpeedingAlertContainer } from '@/components/rider/RiderSpeedingAlert';
+import { chargeAdditionalAmount } from '@/src/services/stripe.service';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.38;
@@ -306,17 +307,71 @@ export default function TripInProgressScreen() {
     }
   }, [currentTrip?.pickup, currentTrip?.destination]);
 
-  // Re-fetch route when stops are added/removed
+  // Re-fetch route and update original route when stops are added/removed
   useEffect(() => {
-    if (currentTrip?.driverLocation && currentTrip?.destination && currentTrip?.stops) {
-      fetchRoute(
-        {
-          latitude: currentTrip.driverLocation.latitude,
-          longitude: currentTrip.driverLocation.longitude,
-        },
-        currentTrip.destination.coordinates,
-        currentTrip.stops
-      );
+    if (currentTrip?.driverLocation && currentTrip?.destination && currentTrip?.stops && currentTrip.stops.length > 0) {
+      console.log('📍 Stops changed, refetching route and updating safety monitoring');
+
+      // Fetch the new route with stops
+      const fetchNewRoute = async () => {
+        if (!GOOGLE_DIRECTIONS_API_KEY) return;
+
+        try {
+          const origin = {
+            latitude: currentTrip.driverLocation!.latitude,
+            longitude: currentTrip.driverLocation!.longitude,
+          };
+          const destination = currentTrip.destination!.coordinates;
+          const stops = currentTrip.stops;
+
+          let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+
+          // Add waypoints for stops
+          if (stops && stops.length > 0) {
+            const waypointsStr = stops
+              .filter((stop: any) => !stop.completed)
+              .map((stop: any) => `${stop.coordinates.latitude},${stop.coordinates.longitude}`)
+              .join('|');
+            if (waypointsStr) {
+              url += `&waypoints=${waypointsStr}`;
+            }
+          }
+
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (data.status === 'OK' && data.routes.length > 0) {
+            const route = data.routes[0];
+            const newRouteCoords = decodePolyline(route.overview_polyline.points);
+
+            if (newRouteCoords.length > 0) {
+              // Update both the display route and the original route for safety monitoring
+              setRouteCoordinates(newRouteCoords);
+              setOriginalRoute(newRouteCoords);
+
+              // Reset route deviation confirmation since route has changed
+              setRouteDeviationConfirmed(false);
+
+              // Restart safety monitoring with new route if already initialized
+              if (safetyInitializedRef.current && currentTrip.id && currentTrip.driverId && currentTrip.riderId) {
+                console.log('🔄 Restarting safety monitoring with updated route');
+                stopMonitoring();
+                startMonitoring(
+                  currentTrip.id,
+                  currentTrip.driverId,
+                  currentTrip.riderId,
+                  newRouteCoords,
+                  currentTrip.destination!.coordinates
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to update route after stop change:', error);
+        }
+      };
+
+      fetchNewRoute();
     }
   }, [currentTrip?.stops?.length]);
 
@@ -590,6 +645,38 @@ export default function TripInProgressScreen() {
       const stopRequest = tripData.pendingStopRequest;
       const additionalCost = stopRequest?.estimatedAdditionalCost || pendingStopRequest.additionalCost || 0;
 
+      // If there's an additional cost, charge the rider's card first
+      if (additionalCost > 0) {
+        try {
+          console.log('💳 Charging for extra stop:', additionalCost);
+          const paymentResult = await chargeAdditionalAmount(
+            additionalCost,
+            currentTrip.id,
+            'extra_stop',
+            `Extra stop at ${pendingStopRequest.address}`
+          );
+
+          if (!paymentResult.success) {
+            Alert.alert(
+              'Payment Failed',
+              'We were unable to charge your card for the extra stop. Please try again or update your payment method.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+
+          console.log('✅ Extra stop payment successful:', paymentResult.paymentIntentId);
+        } catch (paymentError: any) {
+          console.error('❌ Extra stop payment failed:', paymentError);
+          Alert.alert(
+            'Payment Failed',
+            paymentError.message || 'Failed to process payment for the extra stop. Please try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+
       // Build the new stop object
       const newStop = {
         address: pendingStopRequest.address,
@@ -598,6 +685,7 @@ export default function TripInProgressScreen() {
         addedBy: 'driver',
         approvedAt: new Date(),
         completed: false,
+        cost: additionalCost, // Track the cost of this stop
       };
 
       // Get existing stops or initialize empty array
@@ -609,16 +697,18 @@ export default function TripInProgressScreen() {
           ...stopRequest,
           status: 'approved',
           approvedAt: new Date(),
+          paidAmount: additionalCost,
         },
         stops: [...existingStops, newStop],
         estimatedCost: (currentTrip.estimatedCost || 0) + additionalCost,
+        extraStopsCost: (tripData.extraStopsCost || 0) + additionalCost,
       });
 
       Alert.alert(
-        'Stop Request Approved',
+        'Stop Approved & Paid',
         `The stop at ${pendingStopRequest.address} has been added to your trip.${
           additionalCost > 0
-            ? ` Additional cost: CI$${additionalCost.toFixed(2)}`
+            ? ` CI$${additionalCost.toFixed(2)} has been charged to your card.`
             : ''
         }`,
         [{ text: 'OK' }]
@@ -761,7 +851,7 @@ export default function TripInProgressScreen() {
             }
             remainingColor="#5d1289"
             traveledColor="#9CA3AF"
-            strokeWidth={4}
+            strokeWidth={3}
           />
         )}
       </MapView>

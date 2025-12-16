@@ -293,7 +293,10 @@ export default function TripDetailScreen() {
             <Polyline
               coordinates={routeCoords}
               strokeColor={Colors.primary}
-              strokeWidth={4}
+              strokeWidth={3}
+              geodesic={true}
+              lineCap="round"
+              lineJoin="round"
             />
 
             {/* Pickup marker */}

@@ -8,6 +8,7 @@ export {
   getOrCreateStripeCustomer,
   createStripePaymentIntent,
   confirmStripePayment,
+  captureStripePayment,
   getStripePaymentStatus,
   refundStripePayment,
   getStripePaymentMethods,
@@ -16,7 +17,10 @@ export {
   createStripeSetupIntent,
   confirmStripeSetupIntent,
   updateDriverEarnings,
+  chargeAdditionalAmount,
+  processTripIssueRefund,
   stripeWebhook,
+  cancelStripePaymentAuth,
 } from './stripe';
 
 // Export Safety functions

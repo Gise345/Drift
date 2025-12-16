@@ -240,9 +240,14 @@ export default function SelectPaymentScreen() {
         estimatedCostKYD: lockedContribution,
         estimatedCostUSD: chargeAmountUSD,
         paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
-        ...(paymentDetails ? {
+        ...(paymentDetails?.paymentIntentId ? {
           paymentMethod: `stripe:${paymentDetails.paymentIntentId}`,
-          paymentStatus: paymentDetails.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
+          paymentIntentId: paymentDetails.paymentIntentId, // Store separately for reliability
+          // Payment is now AUTHORIZED (held) but not captured yet
+          // It will be CAPTURED when driver accepts the ride
+          // If no driver found, the authorization will be RELEASED (not charged)
+          paymentStatus: paymentDetails.status === 'requires_capture' ? 'AUTHORIZED' :
+                        paymentDetails.status === 'succeeded' ? 'CAPTURED' : 'PENDING',
         } : {}),
         // Women-only ride request
         womenOnlyRide: womenOnlyRide || false,

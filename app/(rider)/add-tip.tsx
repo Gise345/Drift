@@ -31,6 +31,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTripStore } from '@/src/stores/trip-store';
 import { addTipToTrip, skipTipAndFinalize } from '@/src/services/ride-request.service';
+import { chargeAdditionalAmount } from '@/src/services/stripe.service';
 
 const Colors = {
   primary: '#5d1289',
@@ -145,7 +146,9 @@ export default function AddTipScreen() {
   }
 
   const driver = currentTrip.driverInfo;
-  const tripCost = currentTrip.finalCost || currentTrip.estimatedCost || 0;
+  const baseCost = currentTrip.finalCost || currentTrip.estimatedCost || 0;
+  const extraStopsCost = (currentTrip as any).extraStopsCost || 0;
+  const tripCost = baseCost; // finalCost/estimatedCost already includes extra stops
 
   // Suggested tip amounts based on trip cost
   const suggestedTips = [
@@ -187,12 +190,33 @@ export default function AddTipScreen() {
     setLoading(true);
 
     try {
-      // Add tip to Firebase
+      // First, charge the rider's card for the tip
+      console.log('💳 Charging tip amount:', tipAmount);
+      const paymentResult = await chargeAdditionalAmount(
+        tipAmount,
+        currentTrip.id,
+        'tip',
+        `Tip for driver ${driver?.name || ''}`
+      );
+
+      if (!paymentResult.success) {
+        Alert.alert(
+          'Payment Failed',
+          'We were unable to charge your card for the tip. Please try again or update your payment method.',
+          [{ text: 'OK' }]
+        );
+        setLoading(false);
+        return;
+      }
+
+      console.log('✅ Tip payment successful:', paymentResult.paymentIntentId);
+
+      // Add tip to Firebase (update trip record and driver earnings)
       await addTipToTrip(currentTrip.id, tipAmount, currentTrip.driverId);
 
       Alert.alert(
         'Tip Added!',
-        `CI$${tipAmount.toFixed(2)} tip added for ${driver?.name || 'your driver'}. Thank you!`,
+        `CI$${tipAmount.toFixed(2)} tip has been charged to your card and sent to ${driver?.name || 'your driver'}. Thank you!`,
         [
           {
             text: 'OK',
@@ -203,9 +227,13 @@ export default function AddTipScreen() {
           },
         ]
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add tip:', error);
-      Alert.alert('Error', 'Failed to add tip. Please try again.');
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to process tip. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setLoading(false);
     }
@@ -371,8 +399,26 @@ export default function AddTipScreen() {
 
           {/* Trip Cost Summary */}
           <View style={styles.tripSummary}>
-            <Text style={styles.tripCostLabel}>Trip Cost</Text>
-            <Text style={styles.tripCostAmount}>CI${tripCost.toFixed(2)}</Text>
+            <View style={styles.tripCostBreakdown}>
+              <View style={styles.tripCostRow}>
+                <Text style={styles.tripCostLabel}>
+                  {extraStopsCost > 0 ? 'Base Trip' : 'Trip Cost'}
+                </Text>
+                <Text style={styles.tripCostValue}>
+                  CI${(tripCost - extraStopsCost).toFixed(2)}
+                </Text>
+              </View>
+              {extraStopsCost > 0 && (
+                <View style={styles.tripCostRow}>
+                  <Text style={styles.tripCostLabel}>Extra Stops</Text>
+                  <Text style={styles.tripCostValue}>CI${extraStopsCost.toFixed(2)}</Text>
+                </View>
+              )}
+              <View style={[styles.tripCostRow, styles.tripCostTotalRow]}>
+                <Text style={styles.tripCostTotalLabel}>Total</Text>
+                <Text style={styles.tripCostAmount}>CI${tripCost.toFixed(2)}</Text>
+              </View>
+            </View>
           </View>
 
           {/* Suggested Tips */}
@@ -565,18 +611,39 @@ const styles = StyleSheet.create({
     color: Colors.gray[600],
   },
   tripSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginHorizontal: 16,
     padding: 16,
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
     marginBottom: 24,
   },
+  tripCostBreakdown: {
+    gap: 8,
+  },
+  tripCostRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tripCostTotalRow: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+  },
   tripCostLabel: {
     fontSize: 14,
     color: Colors.gray[600],
+  },
+  tripCostValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.gray[700],
+  },
+  tripCostTotalLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.black,
   },
   tripCostAmount: {
     fontSize: 18,

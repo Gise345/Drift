@@ -21,14 +21,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { cancelTrip, resendRideRequest } from '@/src/services/ride-request.service';
+import { releasePaymentAuthorization } from '@/src/services/stripe.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
+import { firebaseDb } from '@/src/config/firebase';
+import { doc, getDoc } from '@react-native-firebase/firestore';
 
 // KYD to USD conversion rate
 const KYD_TO_USD_RATE = 1.20;
 
 // Request timeout and retry settings
 const REQUEST_TIMEOUT_SECONDS = 60; // 60 seconds to find a driver
-const MAX_RETRY_ATTEMPTS = 3;
+const AUTO_RETRY_ATTEMPTS = 3; // Automatic retries before asking user
+const MAX_MANUAL_RETRIES = 3; // Additional manual retries user can choose
+const TOTAL_MAX_RETRIES = AUTO_RETRY_ATTEMPTS + MAX_MANUAL_RETRIES; // 6 total attempts
 
 export default function FindingDriverScreen() {
   const router = useRouter();
@@ -151,41 +156,173 @@ export default function FindingDriverScreen() {
     retryCountRef.current += 1;
     setRetryCount(retryCountRef.current);
 
-    if (retryCountRef.current < MAX_RETRY_ATTEMPTS) {
-      // Retry the request
+    if (retryCountRef.current < AUTO_RETRY_ATTEMPTS) {
+      // Automatic retry (first 3 attempts)
       setIsRetrying(true);
-      setSearchStatus(`Retrying... (Attempt ${retryCountRef.current + 1}/${MAX_RETRY_ATTEMPTS})`);
+      setSearchStatus(`Retrying... (Attempt ${retryCountRef.current + 1}/${AUTO_RETRY_ATTEMPTS})`);
 
       try {
         if (currentTrip?.id) {
-          await resendRideRequest(currentTrip.id);
-          console.log('🔄 Ride request resent, attempt:', retryCountRef.current + 1);
+          // After first attempt, expand search to island-wide
+          const expandSearch = retryCountRef.current >= 1;
+          await resendRideRequest(currentTrip.id, expandSearch);
+          console.log('🔄 Ride request resent, attempt:', retryCountRef.current + 1, 'expanded:', expandSearch);
         }
       } catch (error) {
         console.error('Failed to resend request:', error);
       }
 
       setIsRetrying(false);
-      setSearchStatus('Searching for drivers...');
+      setSearchStatus(retryCountRef.current >= 1 ? 'Searching island-wide...' : 'Searching for drivers...');
       setTimeRemaining(REQUEST_TIMEOUT_SECONDS);
+    } else if (retryCountRef.current < TOTAL_MAX_RETRIES) {
+      // After auto-retries, ask user if they want to keep trying
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+
+      const remainingRetries = TOTAL_MAX_RETRIES - retryCountRef.current;
+      Alert.alert(
+        'No Drivers Found Yet',
+        `We haven't found a driver yet. Would you like to keep searching? You have ${remainingRetries} more ${remainingRetries === 1 ? 'attempt' : 'attempts'} available.\n\nWe're now searching island-wide to find you a ride.`,
+        [
+          {
+            text: 'Cancel Trip',
+            style: 'destructive',
+            onPress: () => handleNoDriversAvailable(),
+          },
+          {
+            text: 'Keep Searching',
+            style: 'default',
+            onPress: () => handleManualRetry(),
+          },
+        ]
+      );
     } else {
-      // Max retries reached
+      // Truly max retries reached - NO DRIVERS AVAILABLE
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
 
       Alert.alert(
         'No Drivers Available',
-        'We couldn\'t find any drivers at this time. Please try again later.',
+        'We couldn\'t find any drivers at this time. Your payment authorization has been cancelled and funds will be returned shortly.',
         [
           {
             text: 'OK',
             onPress: () => {
-              handleCancel(true); // Silent cancel, no confirmation
+              // Use special handler for no drivers - NOT rider cancel
+              handleNoDriversAvailable();
             },
           },
         ]
       );
+    }
+  };
+
+  // Handle manual retry when user chooses to keep searching
+  const handleManualRetry = async () => {
+    setIsRetrying(true);
+    setSearchStatus(`Searching island-wide... (Attempt ${retryCountRef.current + 1})`);
+
+    try {
+      if (currentTrip?.id) {
+        // Always expand search for manual retries
+        await resendRideRequest(currentTrip.id, true);
+        console.log('🔄 Manual retry, attempt:', retryCountRef.current + 1);
+      }
+    } catch (error) {
+      console.error('Failed to resend request:', error);
+    }
+
+    setIsRetrying(false);
+    setSearchStatus('Searching island-wide...');
+    setTimeRemaining(REQUEST_TIMEOUT_SECONDS);
+
+    // Restart the timer
+    startSearchTimer();
+  };
+
+  // Start/restart the search timer
+  const startSearchTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    timerRef.current = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 1) {
+          handleRequestTimeout();
+          return REQUEST_TIMEOUT_SECONDS;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  /**
+   * Handle the case when no drivers are available after all retries
+   * This is NOT the same as rider cancelling - payment should be released, not refunded
+   */
+  const handleNoDriversAvailable = async () => {
+    try {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+
+      const tripId = currentTrip?.id;
+      if (tripId) {
+        console.log('🚫 No drivers available - processing cancellation for trip:', tripId);
+
+        // Fetch trip data directly from Firestore to ensure we have paymentMethod
+        let paymentMethod: string | undefined;
+        try {
+          const tripRef = doc(firebaseDb, 'trips', tripId);
+          const tripSnap = await getDoc(tripRef);
+          if (tripSnap.exists) {
+            const tripData = tripSnap.data();
+            paymentMethod = tripData?.paymentMethod;
+            console.log('📄 Trip data fetched, paymentMethod:', paymentMethod);
+          }
+        } catch (fetchError) {
+          console.error('⚠️ Failed to fetch trip data:', fetchError);
+          // Try using currentTrip as fallback
+          paymentMethod = currentTrip?.paymentMethod;
+        }
+
+        // Release the payment authorization
+        if (paymentMethod && paymentMethod.startsWith('stripe:')) {
+          const paymentIntentId = paymentMethod.replace('stripe:', '');
+          console.log('💰 Releasing payment authorization - no drivers found');
+          console.log('   PaymentIntent ID:', paymentIntentId);
+
+          try {
+            const result = await releasePaymentAuthorization(paymentIntentId, tripId, 'No drivers available');
+            console.log('✅ Payment authorization released:', result);
+          } catch (paymentError: any) {
+            console.error('⚠️ Failed to release payment:', paymentError?.message || paymentError);
+            // Continue with cancellation even if payment release fails
+          }
+        } else {
+          console.log('⚠️ No Stripe payment method found on trip:', paymentMethod);
+        }
+
+        // Cancel with correct reason - NO_DRIVERS_AVAILABLE, not rider cancelled
+        console.log('📝 Cancelling trip with NO_DRIVERS_AVAILABLE reason');
+        await cancelTrip(
+          tripId,
+          'SYSTEM', // System-initiated, not rider
+          'No drivers available after multiple attempts',
+          'NO_DRIVERS_AVAILABLE' // CORRECT reason type
+        );
+        console.log('✅ Trip cancelled successfully');
+      }
+
+      clearBookingFlow();
+      router.back();
+    } catch (error) {
+      console.error('❌ Failed to handle no drivers:', error);
+      clearBookingFlow();
+      router.back();
     }
   };
 
@@ -257,13 +394,51 @@ export default function FindingDriverScreen() {
           clearInterval(timerRef.current);
         }
 
-        if (currentTrip?.id) {
-          await cancelTrip(currentTrip.id, 'RIDER', 'Rider cancelled while searching');
+        const tripId = currentTrip?.id;
+        if (tripId) {
+          console.log('🚫 Rider cancelling trip:', tripId);
+
+          // Fetch trip data directly from Firestore to ensure we have paymentMethod
+          let paymentMethod: string | undefined;
+          try {
+            const tripRef = doc(firebaseDb, 'trips', tripId);
+            const tripSnap = await getDoc(tripRef);
+            if (tripSnap.exists) {
+              const tripData = tripSnap.data();
+              paymentMethod = tripData?.paymentMethod;
+              console.log('📄 Trip data fetched, paymentMethod:', paymentMethod);
+            }
+          } catch (fetchError) {
+            console.error('⚠️ Failed to fetch trip data:', fetchError);
+            paymentMethod = currentTrip?.paymentMethod;
+          }
+
+          // Release payment authorization before cancelling
+          if (paymentMethod && paymentMethod.startsWith('stripe:')) {
+            const paymentIntentId = paymentMethod.replace('stripe:', '');
+            console.log('💰 Releasing payment authorization - rider cancelled');
+            console.log('   PaymentIntent ID:', paymentIntentId);
+
+            try {
+              const result = await releasePaymentAuthorization(paymentIntentId, tripId, 'Rider cancelled while searching');
+              console.log('✅ Payment authorization released:', result);
+            } catch (paymentError: any) {
+              console.error('⚠️ Failed to release payment:', paymentError?.message || paymentError);
+            }
+          }
+
+          await cancelTrip(
+            tripId,
+            'RIDER',
+            'Rider cancelled while searching',
+            'RIDER_CANCELLED_WHILE_SEARCHING'
+          );
+          console.log('✅ Trip cancelled successfully');
         }
         clearBookingFlow();
         router.back();
       } catch (error) {
-        console.error('Failed to cancel:', error);
+        console.error('❌ Failed to cancel:', error);
         clearBookingFlow();
         router.back();
       }
@@ -274,7 +449,7 @@ export default function FindingDriverScreen() {
     } else {
       Alert.alert(
         'Cancel Request',
-        'Are you sure you want to cancel this ride request?',
+        'Are you sure you want to cancel this ride request? Your payment authorization will be cancelled and funds returned shortly.',
         [
           { text: 'No', style: 'cancel' },
           { text: 'Yes, Cancel', style: 'destructive', onPress: doCancel },

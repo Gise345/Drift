@@ -116,6 +116,7 @@ export function StripeCheckout({
   const [paymentSheetReady, setPaymentSheetReady] = useState(false);
   const [platformPayAvailable, setPlatformPayAvailable] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
 
   // Check if platform pay (Google Pay / Apple Pay) is supported on this device
   useEffect(() => {
@@ -147,7 +148,8 @@ export function StripeCheckout({
             {
               text: 'Simulate Payment',
               onPress: () => {
-                onSuccess('simulated_payment_' + Date.now(), 'succeeded', {
+                // Simulate authorization (not capture) to match real flow
+                onSuccess('simulated_payment_' + Date.now(), 'requires_capture', {
                   amount,
                   currency,
                   simulated: true,
@@ -190,6 +192,9 @@ export function StripeCheckout({
         customerId: paymentData.customerId,
       });
 
+      // Save payment intent ID for later use in onSuccess
+      setPaymentIntentId(paymentData.paymentIntentId);
+
       // Save client secret for platform pay
       setClientSecret(paymentData.clientSecret);
 
@@ -221,21 +226,18 @@ export function StripeCheckout({
         },
       };
 
-      // Only enable Apple Pay and Google Pay in live mode
-      // They don't work properly with test keys in production builds
-      if (!isTestMode) {
-        paymentSheetConfig.applePay = {
-          merchantCountryCode: 'US',
-        };
-        paymentSheetConfig.googlePay = {
-          merchantCountryCode: 'US',
-          currencyCode: currency.toUpperCase(),
-          testEnv: false,
-        };
-        console.log('🔵 Apple Pay and Google Pay enabled (live mode)');
-      } else {
-        console.log('🔵 Apple Pay and Google Pay disabled (test mode)');
-      }
+      // Enable Apple Pay and Google Pay
+      // In test mode, use testEnv: true for Google Pay
+      paymentSheetConfig.applePay = {
+        merchantCountryCode: 'US',
+      };
+      paymentSheetConfig.googlePay = {
+        merchantCountryCode: 'US',
+        currencyCode: currency.toUpperCase(),
+        // Use test environment when using Stripe test keys
+        testEnv: isTestMode,
+      };
+      console.log('🔵 Apple Pay and Google Pay enabled | Test mode:', isTestMode);
 
       const { error } = await initPaymentSheet(paymentSheetConfig);
 
@@ -282,11 +284,12 @@ export function StripeCheckout({
 
       setStatus('confirming');
 
-      console.log('✅ Payment completed successfully');
+      console.log('✅ Payment authorized successfully (requires capture)');
 
-      // Get the payment intent ID from the initialization
-      // The payment is already confirmed when presentPaymentSheet succeeds
-      onSuccess('payment_completed', 'succeeded', {
+      // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
+      // The actual capture happens when driver accepts the ride
+      // Return the actual paymentIntentId and 'requires_capture' status
+      onSuccess(paymentIntentId || 'unknown', 'requires_capture', {
         amount,
         currency,
       });
@@ -323,9 +326,13 @@ export function StripeCheckout({
 
       console.log('🌐 Presenting Platform Pay (Google Pay / Apple Pay)...');
 
+      // Check if we're using Stripe test keys
+      const stripeKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+      const isTestMode = stripeKey.startsWith('pk_test_');
+
       const { error } = await confirmPlatformPayPayment(clientSecret, {
         googlePay: {
-          testEnv: __DEV__,
+          testEnv: isTestMode, // Use test environment when using Stripe test keys
           merchantName: 'Drift Carpool',
           merchantCountryCode: 'US',
           currencyCode: currency.toUpperCase(),
@@ -356,9 +363,10 @@ export function StripeCheckout({
       }
 
       setStatus('confirming');
-      console.log('✅ Platform Pay completed successfully');
+      console.log('✅ Platform Pay authorized successfully (requires capture)');
 
-      onSuccess('platform_pay_completed', 'succeeded', {
+      // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
+      onSuccess(paymentIntentId || 'unknown', 'requires_capture', {
         amount,
         currency,
         method: preferredMethod,

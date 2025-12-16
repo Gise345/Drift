@@ -23,10 +23,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, collection, doc, getDocs, updateDoc, orderBy, where, query, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
 
 // Initialize Firebase instances
 const app = getApp();
 const db = getFirestore(app, 'main');
+const functions = getFunctions(app, 'us-east1');
 
 interface TripIssue {
   id: string;
@@ -134,50 +136,69 @@ export default function TripIssuesScreen() {
   const handleAction = async (action: string) => {
     if (!selectedIssue) return;
 
+    // Confirm before processing refunds
+    if (action === 'refund') {
+      Alert.alert(
+        'Confirm Refund',
+        `Are you sure you want to issue a full refund of CI$${selectedIssue.tripCost.toFixed(2)} to ${selectedIssue.riderName}?\n\nThis will process the refund through Stripe and cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Issue Refund', style: 'destructive', onPress: () => processAction(action) },
+        ]
+      );
+      return;
+    }
+
+    // Confirm before suspending/banning
+    if (action === 'suspend' || action === 'ban') {
+      Alert.alert(
+        `Confirm ${action === 'suspend' ? 'Suspension' : 'Ban'}`,
+        `Are you sure you want to ${action} driver ${selectedIssue.driverName}?\n\nThis action will prevent them from receiving new ride requests.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: action === 'suspend' ? 'Suspend' : 'Ban', style: 'destructive', onPress: () => processAction(action) },
+        ]
+      );
+      return;
+    }
+
+    processAction(action);
+  };
+
+  const processAction = async (action: string) => {
+    if (!selectedIssue) return;
+
     setProcessingAction(true);
 
     try {
-      let newStatus: TripIssue['status'] = 'reviewed';
-
-      switch (action) {
-        case 'refund':
-          newStatus = 'refunded';
-          // TODO: Trigger actual refund via Stripe
-          break;
-        case 'reject':
-          newStatus = 'rejected';
-          break;
-        case 'suspend':
-          newStatus = 'driver_suspended';
-          // TODO: Update driver status in drivers collection
-          break;
-        case 'ban':
-          newStatus = 'driver_banned';
-          // TODO: Update driver status in drivers collection
-          break;
-      }
-
-      const issueDocRef = doc(db, 'tripIssues', selectedIssue.id);
-      await updateDoc(issueDocRef, {
-        status: newStatus,
-        adminAction: action,
-        adminNotes: adminNotes.trim() || null,
-        resolvedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // Call Cloud Function to process the issue
+      const processTripIssueRefund = httpsCallable(functions, 'processTripIssueRefund');
+      const result = await processTripIssueRefund({
+        issueId: selectedIssue.id,
+        action: action,
+        adminNotes: adminNotes.trim() || undefined,
       });
 
-      // Send notification to rider (TODO: implement push notification)
-      console.log(`Sending notification to rider ${selectedIssue.riderEmail} about action: ${action}`);
+      const data = result.data as { success: boolean; status: string; refund?: { amount: number } };
 
       setShowActionModal(false);
       setSelectedIssue(null);
       setAdminNotes('');
 
-      Alert.alert('Success', `Issue has been marked as ${newStatus.replace('_', ' ')}`);
+      if (action === 'refund' && data.refund) {
+        Alert.alert(
+          'Refund Processed',
+          `Successfully refunded CI$${data.refund.amount.toFixed(2)} to ${selectedIssue.riderName}.\n\nThe rider will receive the funds within 5-10 business days.`
+        );
+      } else {
+        Alert.alert('Success', `Issue has been marked as ${data.status.replace('_', ' ')}`);
+      }
+
       loadIssues();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing action:', error);
-      Alert.alert('Error', 'Failed to process action');
+      const errorMessage = error?.message || 'Failed to process action';
+      Alert.alert('Error', errorMessage);
     } finally {
       setProcessingAction(false);
     }

@@ -1,13 +1,22 @@
 /**
  * Drift Pricing Calculation Engine
  * Calculates suggested cost contributions for trips
+ *
+ * NEW PRICING RULES:
+ * - Within zone, ≤3 mins: $6 KYD
+ * - Within zone, ≤3 mins + extra stop: $10 KYD
+ * - Within zone, >3 mins + extra stop: +$3 KYD
+ * - To sub-zone (same parent): $10 + $3 = $13 KYD
+ * - Cross-zone (different parent): $15 KYD base + distance calc
+ * - Airport: $15 base + distance calc
  */
 
 import {
   CAYMAN_ZONES,
-  AIRPORT_PRICING,
   PRICING_CONSTANTS,
   TIME_MULTIPLIERS,
+  isSubZoneTrip,
+  getParentZoneId,
 } from './drift-zones-config';
 import { detectZone } from './drift-zone-utils';
 
@@ -18,7 +27,8 @@ export interface TripDetails {
   destinationLng: number;
   distanceMiles: number;
   durationMinutes: number;
-  requestTime?: Date; // For time-based multipliers
+  requestTime?: Date;
+  hasExtraStop?: boolean; // New: for extra stop pricing
 }
 
 export interface PricingResult {
@@ -27,12 +37,15 @@ export interface PricingResult {
   destinationZoneId: string;
   destinationZoneName: string;
   isWithinZone: boolean;
+  isSubZoneTrip: boolean;
   isAirportTrip: boolean;
+  isCrossZoneTrip: boolean;
   breakdown: {
-    baseZoneFee?: number;
+    baseFee?: number;
     distanceCost?: number;
     timeCost?: number;
-    flatRate?: number;
+    extraStopFee?: number;
+    subZoneFee?: number;
     timeMultiplier?: number;
     timeMultiplierName?: string;
   };
@@ -41,6 +54,22 @@ export interface PricingResult {
   maxContribution: number;
   displayText: string;
   calculatedAt: Date;
+}
+
+/**
+ * Check if trip is a long-distance trip (Zone 1/2/3 to Zone 6/7 or vice versa)
+ */
+function isLongDistanceTrip(pickupZoneId: string, destZoneId: string): boolean {
+  const westZones = ['zone_1', 'zone_1a', 'zone_2', 'zone_3', 'zone_3a'];
+  const eastZones = ['zone_6', 'zone_6a', 'zone_6b', 'zone_6c', 'zone_7', 'zone_7a', 'zone_7b', 'zone_7c', 'zone_7d', 'zone_7e', 'zone_7f'];
+
+  const pickupIsWest = westZones.includes(pickupZoneId);
+  const pickupIsEast = eastZones.includes(pickupZoneId);
+  const destIsWest = westZones.includes(destZoneId);
+  const destIsEast = eastZones.includes(destZoneId);
+
+  // West to East or East to West
+  return (pickupIsWest && destIsEast) || (pickupIsEast && destIsWest);
 }
 
 /**
@@ -54,39 +83,70 @@ export function calculateTripPricing(trip: TripDetails): PricingResult {
     throw new Error('Pickup or destination is outside service area');
   }
 
-  // Check if it's an airport trip
-  const isAirportTrip =
-    pickupZone.id === 'zone_airport' || destinationZone.id === 'zone_airport';
-
-  if (isAirportTrip) {
-    return calculateAirportPricing(pickupZone.id, destinationZone.id);
+  // Check for long-distance trips first (Zone 1/2/3 to Zone 6/7) - $50 fixed
+  if (isLongDistanceTrip(pickupZone.id, destinationZone.id)) {
+    return calculateLongDistancePricing(pickupZone, destinationZone, trip);
   }
 
-  // Check if within same zone
+  // Check if it's an airport trip (Zone 3a)
+  const isAirportTrip =
+    pickupZone.id === 'zone_3a' || destinationZone.id === 'zone_3a';
+
+  if (isAirportTrip) {
+    return calculateAirportPricing(pickupZone, destinationZone, trip);
+  }
+
+  // Check if within same zone (exact match)
   const isWithinZone = pickupZone.id === destinationZone.id;
 
   if (isWithinZone) {
     return calculateWithinZonePricing(pickupZone, trip);
   }
 
-  // Cross-zone trip
+  // Check if sub-zone trip (same parent zone family)
+  const isSubZone = isSubZoneTrip(pickupZone.id, destinationZone.id);
+
+  if (isSubZone) {
+    return calculateSubZonePricing(pickupZone, destinationZone, trip);
+  }
+
+  // Full cross-zone trip (different zone families)
   return calculateCrossZonePricing(pickupZone, destinationZone, trip);
 }
 
 /**
  * Calculate pricing for within-zone trips
+ * - ≤3 mins: $6 KYD
+ * - ≤3 mins + extra stop: $10 KYD
+ * - >3 mins + extra stop: $10 + $3 = $13 KYD
  */
 function calculateWithinZonePricing(
   zone: any,
   trip: TripDetails
 ): PricingResult {
   const timeMultiplier = getTimeMultiplier(trip.requestTime);
-  const baseMin = PRICING_CONSTANTS.WITHIN_ZONE_MIN;
-  const baseMax = PRICING_CONSTANTS.WITHIN_ZONE_MAX;
+  const isShortTrip = trip.durationMinutes <= 3;
 
-  const suggested = Math.round((baseMin + baseMax) / 2);
-  const min = Math.round(baseMin * timeMultiplier.value);
-  const max = Math.round(baseMax * timeMultiplier.value);
+  let baseFee: number;
+  let extraStopFee = 0;
+
+  if (isShortTrip) {
+    // Short trip: $6 base, $10 with extra stop
+    baseFee = trip.hasExtraStop
+      ? PRICING_CONSTANTS.WITHIN_ZONE_WITH_STOP
+      : PRICING_CONSTANTS.WITHIN_ZONE_SHORT_TRIP;
+  } else {
+    // Longer trip: $6 base, or $10 + $3 with extra stop
+    if (trip.hasExtraStop) {
+      baseFee = PRICING_CONSTANTS.WITHIN_ZONE_WITH_STOP; // $10
+      extraStopFee = PRICING_CONSTANTS.EXTRA_STOP_FEE;   // +$3
+    } else {
+      baseFee = PRICING_CONSTANTS.WITHIN_ZONE_SHORT_TRIP; // $6
+    }
+  }
+
+  const total = baseFee + extraStopFee;
+  const suggested = Math.round(total * timeMultiplier.value);
 
   return {
     pickupZoneId: zone.id,
@@ -94,33 +154,76 @@ function calculateWithinZonePricing(
     destinationZoneId: zone.id,
     destinationZoneName: zone.displayName,
     isWithinZone: true,
+    isSubZoneTrip: false,
     isAirportTrip: false,
+    isCrossZoneTrip: false,
     breakdown: {
-      flatRate: suggested,
+      baseFee,
+      extraStopFee: extraStopFee > 0 ? extraStopFee : undefined,
       timeMultiplier: timeMultiplier.value,
       timeMultiplierName: timeMultiplier.name,
     },
-    suggestedContribution: Math.round(suggested * timeMultiplier.value),
-    minContribution: min,
-    maxContribution: max,
+    suggestedContribution: suggested,
+    minContribution: Math.round(suggested * 0.95),
+    maxContribution: Math.round(suggested * 1.1),
     displayText: `Within ${zone.displayName}`,
     calculatedAt: new Date(),
   };
 }
 
 /**
- * Calculate pricing for cross-zone trips
+ * Calculate pricing for sub-zone trips (same zone family)
+ * Base $10 + $3 sub-zone fee = $13 KYD
+ */
+function calculateSubZonePricing(
+  pickupZone: any,
+  destinationZone: any,
+  trip: TripDetails
+): PricingResult {
+  const timeMultiplier = getTimeMultiplier(trip.requestTime);
+
+  const baseFee = PRICING_CONSTANTS.SUB_ZONE_BASE; // $10
+  const subZoneFee = PRICING_CONSTANTS.SUB_ZONE_FEE; // $3
+  const total = baseFee + subZoneFee;
+
+  const suggested = Math.round(total * timeMultiplier.value);
+
+  return {
+    pickupZoneId: pickupZone.id,
+    pickupZoneName: pickupZone.displayName,
+    destinationZoneId: destinationZone.id,
+    destinationZoneName: destinationZone.displayName,
+    isWithinZone: false,
+    isSubZoneTrip: true,
+    isAirportTrip: false,
+    isCrossZoneTrip: false,
+    breakdown: {
+      baseFee,
+      subZoneFee,
+      timeMultiplier: timeMultiplier.value,
+      timeMultiplierName: timeMultiplier.name,
+    },
+    suggestedContribution: suggested,
+    minContribution: Math.round(suggested * 0.95),
+    maxContribution: Math.round(suggested * 1.1),
+    displayText: `${pickupZone.displayName} → ${destinationZone.displayName}`,
+    calculatedAt: new Date(),
+  };
+}
+
+/**
+ * Calculate pricing for cross-zone trips (different zone families)
+ * $13 KYD base + distance calculation (no time component)
  */
 function calculateCrossZonePricing(
   pickupZone: any,
   destinationZone: any,
   trip: TripDetails
 ): PricingResult {
-  const baseFee = PRICING_CONSTANTS.BASE_ZONE_EXIT_FEE;
+  const baseFee = PRICING_CONSTANTS.CROSS_ZONE_BASE; // $13
   const distanceCost = trip.distanceMiles * PRICING_CONSTANTS.PRICE_PER_MILE;
-  const timeCost = trip.durationMinutes * PRICING_CONSTANTS.PRICE_PER_MINUTE;
 
-  const baseTotal = baseFee + distanceCost + timeCost;
+  const baseTotal = baseFee + distanceCost;
   const timeMultiplier = getTimeMultiplier(trip.requestTime);
 
   const suggested = Math.round(baseTotal * timeMultiplier.value);
@@ -133,11 +236,12 @@ function calculateCrossZonePricing(
     destinationZoneId: destinationZone.id,
     destinationZoneName: destinationZone.displayName,
     isWithinZone: false,
+    isSubZoneTrip: false,
     isAirportTrip: false,
+    isCrossZoneTrip: true,
     breakdown: {
-      baseZoneFee: baseFee,
+      baseFee,
       distanceCost: Math.round(distanceCost * 100) / 100,
-      timeCost: Math.round(timeCost * 100) / 100,
       timeMultiplier: timeMultiplier.value,
       timeMultiplierName: timeMultiplier.name,
     },
@@ -150,51 +254,97 @@ function calculateCrossZonePricing(
 }
 
 /**
- * Calculate pricing for airport trips
+ * Calculate pricing for long-distance trips (Zone 1/2/3 to Zone 6/7)
+ * Fixed $50 KYD
  */
-function calculateAirportPricing(
-  pickupZoneId: string,
-  destinationZoneId: string
+function calculateLongDistancePricing(
+  pickupZone: any,
+  destinationZone: any,
+  trip: TripDetails
 ): PricingResult {
-  let pricing;
-  let direction: 'from' | 'to';
-  let otherZoneId: string;
+  const fixedPrice = PRICING_CONSTANTS.LONG_DISTANCE_FIXED; // $50
+  const timeMultiplier = getTimeMultiplier(trip.requestTime);
 
-  if (pickupZoneId === 'zone_airport') {
-    direction = 'to';
-    otherZoneId = destinationZoneId;
-  } else {
-    direction = 'from';
-    otherZoneId = pickupZoneId;
-  }
-
-  const key = `${direction}_${otherZoneId}` as keyof typeof AIRPORT_PRICING;
-  pricing = AIRPORT_PRICING[key];
-
-  if (!pricing) {
-    // Fallback to default airport pricing
-    pricing = { min: 25, max: 35, suggested: 30 };
-  }
-
-  const pickupZone = CAYMAN_ZONES.find(z => z.id === pickupZoneId);
-  const destZone = CAYMAN_ZONES.find(z => z.id === destinationZoneId);
+  const suggested = Math.round(fixedPrice * timeMultiplier.value);
 
   return {
-    pickupZoneId,
-    pickupZoneName: pickupZone?.displayName || 'Unknown',
-    destinationZoneId,
-    destinationZoneName: destZone?.displayName || 'Unknown',
+    pickupZoneId: pickupZone.id,
+    pickupZoneName: pickupZone.displayName,
+    destinationZoneId: destinationZone.id,
+    destinationZoneName: destinationZone.displayName,
     isWithinZone: false,
-    isAirportTrip: true,
+    isSubZoneTrip: false,
+    isAirportTrip: false,
+    isCrossZoneTrip: true,
     breakdown: {
-      flatRate: pricing.suggested,
+      baseFee: fixedPrice,
+      timeMultiplier: timeMultiplier.value,
+      timeMultiplierName: timeMultiplier.name,
     },
-    suggestedContribution: pricing.suggested,
-    minContribution: pricing.min,
-    maxContribution: pricing.max,
-    displayText: direction === 'from'
-      ? `${pickupZone?.displayName} → Airport`
-      : `Airport → ${destZone?.displayName}`,
+    suggestedContribution: suggested,
+    minContribution: suggested,
+    maxContribution: suggested,
+    displayText: `${pickupZone.displayName} → ${destinationZone.displayName}`,
+    calculatedAt: new Date(),
+  };
+}
+
+/**
+ * Calculate pricing for airport trips
+ * $13 base + distance calculation (no time component)
+ * Uses $1/mile for zones 1, 2, 4, 5 (Owen Roberts International Airport)
+ */
+function calculateAirportPricing(
+  pickupZone: any,
+  destinationZone: any,
+  trip: TripDetails
+): PricingResult {
+  const baseFee = PRICING_CONSTANTS.AIRPORT_BASE; // $13
+
+  // Determine the non-airport zone
+  const isFromAirport = pickupZone.id === 'zone_3a';
+  const otherZoneId = isFromAirport ? destinationZone.id : pickupZone.id;
+
+  // Use $1/mile for zones 1, 2, 4, 5 (and their sub-zones)
+  const premiumZones = ['zone_1', 'zone_1a', 'zone_2', 'zone_4', 'zone_4a', 'zone_5', 'zone_5a', 'zone_5b'];
+  const isPremiumZone = premiumZones.includes(otherZoneId);
+
+  const pricePerMile = isPremiumZone
+    ? PRICING_CONSTANTS.AIRPORT_PRICE_PER_MILE  // $1.00/mile
+    : PRICING_CONSTANTS.PRICE_PER_MILE;         // $0.75/mile for other zones
+
+  const distanceCost = trip.distanceMiles * pricePerMile;
+
+  const baseTotal = baseFee + distanceCost;
+  const timeMultiplier = getTimeMultiplier(trip.requestTime);
+
+  const suggested = Math.round(baseTotal * timeMultiplier.value);
+  const min = Math.round(baseTotal * 0.92 * timeMultiplier.value);
+  const max = Math.round(baseTotal * 1.08 * timeMultiplier.value);
+
+  const displayText = isFromAirport
+    ? `Airport → ${destinationZone.displayName}`
+    : `${pickupZone.displayName} → Airport`;
+
+  return {
+    pickupZoneId: pickupZone.id,
+    pickupZoneName: pickupZone.displayName,
+    destinationZoneId: destinationZone.id,
+    destinationZoneName: destinationZone.displayName,
+    isWithinZone: false,
+    isSubZoneTrip: false,
+    isAirportTrip: true,
+    isCrossZoneTrip: false,
+    breakdown: {
+      baseFee,
+      distanceCost: Math.round(distanceCost * 100) / 100,
+      timeMultiplier: timeMultiplier.value,
+      timeMultiplierName: timeMultiplier.name,
+    },
+    suggestedContribution: suggested,
+    minContribution: min,
+    maxContribution: max,
+    displayText,
     calculatedAt: new Date(),
   };
 }
@@ -235,10 +385,10 @@ function getTimeMultiplier(requestTime?: Date): { value: number; name: string } 
 }
 
 /**
- * Format currency for display
+ * Format currency for display (KYD)
  */
 export function formatCurrency(amount: number): string {
-  return `CI$${amount.toFixed(2)}`;
+  return `$${amount.toFixed(2)} KYD`;
 }
 
 /**
@@ -247,109 +397,80 @@ export function formatCurrency(amount: number): string {
 export function formatPricingDisplay(result: PricingResult): string {
   const lines: string[] = [];
 
-  lines.push(`📍 ${result.displayText}`);
+  lines.push(`Route: ${result.displayText}`);
   lines.push('');
 
   if (result.isWithinZone) {
-    lines.push('💡 Within-zone flat rate');
-    if (result.breakdown.timeMultiplier && result.breakdown.timeMultiplier > 1) {
-      lines.push(`⏰ ${result.breakdown.timeMultiplierName} rate applied`);
+    lines.push('Within-zone trip');
+    if (result.breakdown.baseFee) {
+      lines.push(`  Base: ${formatCurrency(result.breakdown.baseFee)}`);
+    }
+    if (result.breakdown.extraStopFee) {
+      lines.push(`  Extra stop: +${formatCurrency(result.breakdown.extraStopFee)}`);
+    }
+  } else if (result.isSubZoneTrip) {
+    lines.push('Sub-zone trip');
+    if (result.breakdown.baseFee) {
+      lines.push(`  Base: ${formatCurrency(result.breakdown.baseFee)}`);
+    }
+    if (result.breakdown.subZoneFee) {
+      lines.push(`  Sub-zone fee: +${formatCurrency(result.breakdown.subZoneFee)}`);
     }
   } else if (result.isAirportTrip) {
-    lines.push('✈️ Fixed airport contribution');
-  } else {
-    lines.push('💡 Contribution breakdown:');
-    if (result.breakdown.baseZoneFee) {
-      lines.push(`   • Base zone exit: ${formatCurrency(result.breakdown.baseZoneFee)}`);
+    lines.push('Airport trip');
+    if (result.breakdown.baseFee) {
+      lines.push(`  Base: ${formatCurrency(result.breakdown.baseFee)}`);
     }
     if (result.breakdown.distanceCost) {
-      lines.push(`   • Distance: ${formatCurrency(result.breakdown.distanceCost)}`);
+      lines.push(`  Distance: +${formatCurrency(result.breakdown.distanceCost)}`);
     }
     if (result.breakdown.timeCost) {
-      lines.push(`   • Time: ${formatCurrency(result.breakdown.timeCost)}`);
+      lines.push(`  Time: +${formatCurrency(result.breakdown.timeCost)}`);
     }
-    if (result.breakdown.timeMultiplier && result.breakdown.timeMultiplier > 1) {
-      lines.push(`   • ${result.breakdown.timeMultiplierName}: +${((result.breakdown.timeMultiplier - 1) * 100).toFixed(0)}%`);
+  } else if (result.isCrossZoneTrip) {
+    lines.push('Cross-zone trip');
+    if (result.breakdown.baseFee) {
+      lines.push(`  Base: ${formatCurrency(result.breakdown.baseFee)}`);
+    }
+    if (result.breakdown.distanceCost) {
+      lines.push(`  Distance: +${formatCurrency(result.breakdown.distanceCost)}`);
+    }
+    if (result.breakdown.timeCost) {
+      lines.push(`  Time: +${formatCurrency(result.breakdown.timeCost)}`);
     }
   }
 
+  if (result.breakdown.timeMultiplier && result.breakdown.timeMultiplier > 1) {
+    lines.push(`  ${result.breakdown.timeMultiplierName}: +${((result.breakdown.timeMultiplier - 1) * 100).toFixed(0)}%`);
+  }
+
   lines.push('');
-  lines.push(`💰 Suggested contribution: ${formatCurrency(result.suggestedContribution)}`);
-  lines.push(`   Range: ${formatCurrency(result.minContribution)} - ${formatCurrency(result.maxContribution)}`);
+  lines.push(`Suggested: ${formatCurrency(result.suggestedContribution)}`);
+  lines.push(`Range: ${formatCurrency(result.minContribution)} - ${formatCurrency(result.maxContribution)}`);
 
   return lines.join('\n');
 }
 
 /**
- * Example usage function
+ * Quick price estimate without full zone detection
  */
-export function exampleCalculations() {
-  console.log('=== DRIFT PRICING EXAMPLES ===\n');
-
-  // Example 1: Within Zone A
-  const withinZone = calculateTripPricing({
-    pickupLat: 19.3234,
-    pickupLng: -81.3789,
-    destinationLat: 19.2978,
-    destinationLng: -81.3867,
-    distanceMiles: 2.5,
-    durationMinutes: 8,
-  });
-  console.log('Example 1: Seven Mile Beach to George Town (Within Zone A)');
-  console.log(formatPricingDisplay(withinZone));
-  console.log('\n---\n');
-
-  // Example 2: Cross-zone (Zone A to Zone B)
-  const crossZone = calculateTripPricing({
-    pickupLat: 19.2978,
-    pickupLng: -81.3867,
-    destinationLat: 19.2734,
-    destinationLng: -81.2645,
-    distanceMiles: 12.0,
-    durationMinutes: 22,
-  });
-  console.log('Example 2: George Town to Bodden Town (Zone A → Zone B)');
-  console.log(formatPricingDisplay(crossZone));
-  console.log('\n---\n');
-
-  // Example 3: Airport to Zone A
-  const airportTrip = calculateTripPricing({
-    pickupLat: 19.2923,
-    pickupLng: -81.3545,
-    destinationLat: 19.3234,
-    destinationLng: -81.3789,
-    distanceMiles: 3.5,
-    durationMinutes: 10,
-  });
-  console.log('Example 3: Airport to Seven Mile Beach (Airport → Zone A)');
-  console.log(formatPricingDisplay(airportTrip));
-  console.log('\n---\n');
-
-  // Example 4: Late night within zone
-  const lateNight = new Date();
-  lateNight.setHours(23, 30); // 11:30 PM
-  const lateNightTrip = calculateTripPricing({
-    pickupLat: 19.3234,
-    pickupLng: -81.3789,
-    destinationLat: 19.2978,
-    destinationLng: -81.3867,
-    distanceMiles: 2.5,
-    durationMinutes: 8,
-    requestTime: lateNight,
-  });
-  console.log('Example 4: Late Night Trip (11:30 PM, Within Zone A)');
-  console.log(formatPricingDisplay(lateNightTrip));
-  console.log('\n---\n');
-
-  // Example 5: Long cross-island trip
-  const longTrip = calculateTripPricing({
-    pickupLat: 19.3522,
-    pickupLng: -81.4089,
-    destinationLat: 19.2734,
-    destinationLng: -81.1967,
-    distanceMiles: 22.0,
-    durationMinutes: 35,
-  });
-  console.log('Example 5: West Bay to East End (Zone A → Zone C)');
-  console.log(formatPricingDisplay(longTrip));
+export function getQuickEstimate(
+  durationMinutes: number,
+  hasExtraStop: boolean = false,
+  tripType: 'within' | 'subzone' | 'crosszone' | 'airport' = 'within'
+): number {
+  switch (tripType) {
+    case 'within':
+      if (durationMinutes <= 3) {
+        return hasExtraStop ? 10 : 6;
+      }
+      return hasExtraStop ? 13 : 6; // $10 + $3 extra stop for longer trips
+    case 'subzone':
+      return 13; // $10 + $3
+    case 'crosszone':
+    case 'airport':
+      return 15; // Base, actual price depends on distance
+    default:
+      return 6;
+  }
 }

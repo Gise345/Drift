@@ -79,7 +79,22 @@
       "Bash(echo \"Go to Firebase Console -> Firestore -> Select ''main'' database (not default) -> users collection -> find your user document -> delete stripeCustomerId field\")",
       "Bash(cmd /c \"cd /d C:\\Drift && npx expo prebuild --clean --platform android\")",
       "Bash(cmd /c \"cd /d C:\\Drift && npx expo prebuild --platform android 2>&1\")",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck 2>&1 | head -50\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck 2>&1 | head -30\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && git diff src/utils/pricing/ 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && git status src/utils/pricing/ 2>&1\")",
+      "Bash(cd:*)",
+      "Bash(cmd /c \"cd /d C:\\Drift && git diff src/utils/pricing/drift-zones-config.ts\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && git diff src/utils/pricing/drift-pricing-engine.ts\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && git diff --cached src/utils/pricing/drift-zones-config.ts\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && git show HEAD:src/utils/pricing/drift-zones-config.ts | findstr /C:WITHIN_ZONE\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && dir /b .expo 2>nul || echo .expo folder not found\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck \"\"app/(rider)/search-location.tsx\"\" 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck app/_layout.tsx app/(auth)/sign-in.tsx 2>&1\")",
+      "Bash(cmd /c \"cd /d C:\\Drift && firebase deploy --only functions 2>&1\")",
+      "Bash(cmd /c \"firebase deploy --only functions\")",
+      "WebFetch(domain:docs.stripe.com)"
     ],
     "deny": [],
     "ask": []

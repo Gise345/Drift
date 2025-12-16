@@ -17,9 +17,30 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/src/stores/auth-store';
-import { firebaseDb, firebaseAuth } from '@/src/config/firebase';
+import { firebaseDb } from '@/src/config/firebase';
 import { doc, updateDoc, serverTimestamp, setDoc } from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
+
+// Cross-platform helper function to upload image that works on both Android and iOS
+async function uploadImageToStorage(uri: string, storagePath: string): Promise<string> {
+  const storageRef = storage().ref(storagePath);
+
+  // Try putFile first (works best on Android)
+  if (Platform.OS === 'android') {
+    try {
+      await storageRef.putFile(uri);
+      return await storageRef.getDownloadURL();
+    } catch (error) {
+      console.log('putFile failed, trying blob method:', error);
+    }
+  }
+
+  // Use fetch + blob method (works reliably on iOS and as fallback)
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  await storageRef.put(blob);
+  return await storageRef.getDownloadURL();
+}
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -75,18 +96,30 @@ export default function EditProfileScreen() {
     try {
       setUploadingPhoto(true);
 
-      // Create a unique filename
+      // Create a unique filename and path
       const filename = `profile_${user.id}_${Date.now()}.jpg`;
-      const storageRef = storage().ref(`profile-photos/${filename}`);
+      const storagePath = `profile-photos/${filename}`;
 
-      // Upload file
-      await storageRef.putFile(uri);
+      // Upload file using cross-platform helper
+      const downloadURL = await uploadImageToStorage(uri, storagePath);
 
-      // Get download URL
-      const downloadURL = await storageRef.getDownloadURL();
+      // Update Firestore immediately with both photoURL and profilePhoto
+      const userRef = doc(firebaseDb, 'users', user.id);
+      await setDoc(userRef, {
+        photoURL: downloadURL,
+        profilePhoto: downloadURL,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
 
       // Update local state
       setProfilePhoto(downloadURL);
+
+      // Update local auth store
+      setUser({
+        ...user,
+        photoURL: downloadURL,
+        profilePhoto: downloadURL,
+      });
 
       Alert.alert('Success', 'Profile photo updated successfully!');
     } catch (error) {
@@ -138,9 +171,9 @@ export default function EditProfileScreen() {
         updatedAt: serverTimestamp(),
       };
 
-      // Only update profile photo if it changed
-      // Save to both photoURL and profilePhoto for consistency
-      if (profilePhoto !== user.profilePhoto && profilePhoto !== user.photoURL) {
+      // Profile photo is saved immediately when uploaded, but include it here
+      // in case it was set but not yet saved
+      if (profilePhoto) {
         updates.profilePhoto = profilePhoto;
         updates.photoURL = profilePhoto;
       }

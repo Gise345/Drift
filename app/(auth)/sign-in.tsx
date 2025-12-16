@@ -87,10 +87,10 @@ export default function SignInScreen() {
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    
+
     try {
       const result = await signInWithGoogle();
-      
+
       if (result.success && result.user) {
         setUser({
           ...result.user,
@@ -103,10 +103,32 @@ export default function SignInScreen() {
           router.replace('/(tabs)');
         }
       } else {
-        Alert.alert('Google Sign-In Failed', result.error || 'Unknown error occurred');
+        // Handle cancellation silently - don't show error if user just pressed back
+        const errorMessage = result.error || '';
+        if (
+          errorMessage.toLowerCase().includes('cancel') ||
+          errorMessage.toLowerCase().includes('cancelled')
+        ) {
+          // User cancelled - don't show error
+          console.log('Google sign-in cancelled by user');
+        } else {
+          Alert.alert('Google Sign-In Failed', errorMessage || 'Unknown error occurred');
+        }
       }
     } catch (error: any) {
-      Alert.alert('Google Sign-In Failed', error.message || 'Failed to sign in with Google');
+      // Handle cancellation silently
+      const errorMessage = error?.message || 'An error occurred';
+      if (
+        errorMessage.toLowerCase().includes('cancel') ||
+        errorMessage.toLowerCase().includes('cancelled') ||
+        error?.code === '12501' ||
+        error?.code === 'SIGN_IN_CANCELLED'
+      ) {
+        // User cancelled - don't show error
+        console.log('Google sign-in cancelled by user');
+      } else {
+        Alert.alert('Google Sign-In Failed', errorMessage || 'Failed to sign in with Google');
+      }
     } finally {
       setGoogleLoading(false);
     }

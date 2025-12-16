@@ -365,7 +365,7 @@ export default function DriverArrivingScreen() {
             }
             remainingColor="#5d1289"
             traveledColor="#9CA3AF"
-            strokeWidth={4}
+            strokeWidth={3}
           />
         )}
       </MapView>

@@ -206,6 +206,90 @@ export async function refundStripePayment(
 }
 
 /**
+ * Release Payment Authorization (Cancel/Void)
+ * Cancels an authorized payment that was never captured
+ * Used when: no drivers found, rider cancels before driver accepts
+ * This releases the hold on the customer's card - NO funds are charged
+ */
+export async function releasePaymentAuthorization(
+  paymentIntentId: string,
+  tripId?: string,
+  reason?: string
+): Promise<{ paymentIntentId: string; status: string; message: string }> {
+  try {
+    console.log('🚫 Releasing payment authorization:', paymentIntentId);
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    const cancelAuth = httpsCallable(firebaseFunctions, 'cancelStripePaymentAuth');
+
+    const result = await cancelAuth({
+      paymentIntentId,
+      tripId,
+      reason,
+    });
+
+    const data = result.data as { paymentIntentId: string; status: string; message: string };
+
+    console.log('✅ Payment authorization released:', {
+      paymentIntentId: data.paymentIntentId,
+      status: data.status,
+    });
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Failed to release payment authorization:', error);
+    throw new Error(error.message || 'Failed to release payment');
+  }
+}
+
+/**
+ * Capture Payment Authorization
+ * Captures a previously authorized (held) payment
+ * Called when driver accepts a ride
+ */
+export async function capturePaymentAuthorization(
+  paymentIntentId: string,
+  tripId?: string
+): Promise<{ paymentIntentId: string; status: string; amount: number }> {
+  try {
+    console.log('💰 Capturing payment authorization:', paymentIntentId);
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    const capturePayment = httpsCallable(firebaseFunctions, 'captureStripePayment');
+
+    const result = await capturePayment({
+      paymentIntentId,
+      tripId,
+    });
+
+    const data = result.data as { paymentIntentId: string; status: string; amount: number };
+
+    console.log('✅ Payment captured:', {
+      paymentIntentId: data.paymentIntentId,
+      status: data.status,
+      amount: data.amount,
+    });
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Failed to capture payment:', error);
+    throw new Error(error.message || 'Failed to capture payment');
+  }
+}
+
+/**
  * Get or Create Stripe Customer
  * Creates a Stripe customer for the authenticated user
  */
@@ -375,6 +459,50 @@ async function callAuthenticatedFunction<T>(
       console.error('User UID:', uid);
     }
     throw error;
+  }
+}
+
+/**
+ * Charge Additional Amount
+ * Charges for extra stops or tips using saved payment method
+ */
+export async function chargeAdditionalAmount(
+  amount: number,
+  tripId: string,
+  type: 'extra_stop' | 'tip',
+  description?: string
+): Promise<{ success: boolean; paymentIntentId: string; status: string; amount: number }> {
+  try {
+    console.log(`💰 Charging ${type} amount:`, { amount, tripId });
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    const chargeAmount = httpsCallable(firebaseFunctions, 'chargeAdditionalAmount');
+
+    const result = await chargeAmount({
+      amount,
+      tripId,
+      type,
+      description,
+    });
+
+    const data = result.data as { success: boolean; paymentIntentId: string; status: string; amount: number };
+
+    console.log(`✅ ${type} charge result:`, {
+      success: data.success,
+      paymentIntentId: data.paymentIntentId,
+      status: data.status,
+    });
+
+    return data;
+  } catch (error: any) {
+    console.error(`❌ Failed to charge ${type}:`, error);
+    throw new Error(error.message || `Failed to process ${type} payment`);
   }
 }
 
