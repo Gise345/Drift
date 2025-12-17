@@ -192,7 +192,7 @@ export default function DriverAgreementScreen() {
             <Text style={styles.bold}>2.3 Platform Service Fee</Text>
           </Text>
           <Text style={styles.paragraph}>
-            A 19% platform service fee is applied to all cost-sharing contributions processed through the Platform. This fee covers:
+            A 20% platform service fee is applied to all cost-sharing contributions processed through the Platform. This fee covers:
           </Text>
           <Text style={styles.bulletPoint}>• Payment processing costs (~4%): Stripe fees, transaction security, fraud prevention</Text>
           <Text style={styles.bulletPoint}>• Platform maintenance (~16%): Software engineering, server hosting, Google Maps API, customer support, safety features</Text>
@@ -278,7 +278,7 @@ export default function DriverAgreementScreen() {
             All cost-sharing contributions are processed through the Platform's secure payment system:
           </Text>
           <Text style={styles.bulletPoint}>• Payments are processed by Stripe (third-party)</Text>
-          <Text style={styles.bulletPoint}>• 19% platform service fee is deducted (4% transaction fees + 16% platform maintenance)</Text>
+          <Text style={styles.bulletPoint}>• 20% platform service fee is deducted (4% transaction fees + 16% platform maintenance)</Text>
           <Text style={styles.bulletPoint}>• Driver receives 80% of rider's contribution</Text>
           <Text style={styles.bulletPoint}>• Funds are transferred to Driver's registered Stripe account</Text>
           <Text style={styles.bulletPoint}>• All payments must be processed through the in-app system for safety</Text>

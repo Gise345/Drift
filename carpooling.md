@@ -157,7 +157,7 @@ not commercial transport.
   Subscription**    access premium features and unlimited   
                     connections.                            
 
-  **Platform        19% platform service fee applied to     4% transaction
+  **Platform        20% platform service fee applied to     4% transaction
   Service Fee**     all cost-sharing contributions          + 15% platform
                     (mandatory for safety & transparency)   maintenance                            
 

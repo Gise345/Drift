@@ -103,7 +103,7 @@ export default function DriverTermsScreen() {
             <Text style={styles.bold}>"Cost-Sharing Contribution"</Text> means a voluntary payment from Riders to offset travel expenses.
           </Text>
           <Text style={styles.paragraph}>
-            <Text style={styles.bold}>"Platform Service Fee"</Text> means the 19% fee deducted from each cost-sharing contribution (4% for transaction processing + 15% for platform maintenance).
+            <Text style={styles.bold}>"Platform Service Fee"</Text> means the 20% fee deducted from each cost-sharing contribution (4% for transaction processing + 15% for platform maintenance).
           </Text>
         </View>
 
@@ -275,7 +275,7 @@ export default function DriverTermsScreen() {
             Cost-sharing contributions processed through the Platform:
           </Text>
           <Text style={styles.bulletPoint}>• Are processed by Stripe (third-party processor)</Text>
-          <Text style={styles.bulletPoint}>• Have 19% platform service fee automatically deducted</Text>
+          <Text style={styles.bulletPoint}>• Have 20% platform service fee automatically deducted</Text>
           <Text style={styles.bulletPoint}>• Net amount (80%) is transferred to your Wise bank account</Text>
           <Text style={styles.bulletPoint}>• Arrive within 1-2 business days</Text>
 

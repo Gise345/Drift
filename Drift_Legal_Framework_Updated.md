@@ -103,11 +103,11 @@ Final cost-sharing amount is a VOLUNTARY AGREEMENT between driver and rider. Eit
 
 ---
 
-## SECTION 3: PLATFORM SERVICE FEE (19% EXPLAINED)
+## SECTION 3: PLATFORM SERVICE FEE (20% EXPLAINED)
 
 ### 3.1 FEE STRUCTURE:
 
-When users choose to process cost-sharing payments through Drift's platform, a 19% platform service fee is applied to cover:
+When users choose to process cost-sharing payments through Drift's platform, a 20% platform service fee is applied to cover:
 
 **A) PAYMENT PROCESSING COSTS:**
 - Third-party payment processor fees (Stripe: ~3-4%)
@@ -200,7 +200,7 @@ This is legally similar to:
 - Payment platform fees (Stripe charges 2.9% + $0.30 per transaction)
 - Marketplace fees (Airbnb charges guests ~14% service fee)
 
-Drift's 19% covers the FULL COST of operating a complex technology platform—not just payment processing—which is why it's higher than basic credit card fees but comparable to other technology marketplaces.
+Drift's 20% covers the FULL COST of operating a complex technology platform—not just payment processing—which is why it's higher than basic credit card fees but comparable to other technology marketplaces.
 
 ---
 
@@ -426,7 +426,7 @@ By using Drift, all users agree that:
 - Users assume all risks associated with private carpooling
 - Drift is not liable for accidents, injuries, or damages during rides
 - Suggested cost contributions are voluntary; final amounts are user agreements
-- 19% platform service fee applies to all in-app payment processing
+- 20% platform service fee applies to all in-app payment processing
 - All payments must be processed through in-app system for safety reasons
 - Users are responsible for insurance, legal compliance, and taxes
 - Drivers and riders are both independent users, not service providers/customers
@@ -466,8 +466,8 @@ A: No. Drift does not own vehicles, employ drivers, or provide transportation se
 **Q2: Do drivers need taxi licenses?**  
 A: No. Drift drivers do not need taxi licenses because they are not providing commercial for-hire transport. They are independent individuals voluntarily sharing private carpool rides. However, drivers should verify their personal insurance covers carpooling activities.
 
-**Q3: Why is the platform fee 19%?**  
-A: The 19% fee covers payment processing costs (~4%), software engineering salaries, server hosting, Google Maps API fees, customer support, safety features, and all operational costs of maintaining a complex technology platform. Additionally, mandatory in-app payment eliminates cash-related conflicts and provides critical safety protections for both drivers and riders.
+**Q3: Why is the platform fee 20%?**  
+A: The 20% fee covers payment processing costs (~4%), software engineering salaries, server hosting, Google Maps API fees, customer support, safety features, and all operational costs of maintaining a complex technology platform. Additionally, mandatory in-app payment eliminates cash-related conflicts and provides critical safety protections for both drivers and riders.
 
 **Q4: Can drivers set their own prices?**  
 A: Drift provides suggested cost contribution ranges based on distance and time. Drivers and riders can voluntarily agree on amounts within or outside these ranges. If both parties agree to a different amount, that is their private arrangement.
@@ -500,7 +500,7 @@ Drift in Cayman operates as a lawful technology services platform under the foll
 ✓ **SUGGESTED COST-SHARING:** Not mandatory fares or commercial transport pricing  
 ✓ **INDEPENDENT USERS:** Not employees, contractors, or agents of the company  
 ✓ **LIMITED PLATFORM ROLE:** Technology infrastructure only, not transportation operations  
-✓ **TRANSPARENT FEE STRUCTURE:** 19% service fee for payment processing (4%) and platform maintenance (15%)  
+✓ **TRANSPARENT FEE STRUCTURE:** 20% service fee for payment processing (4%) and platform maintenance (15%)  
 ✓ **MANDATORY IN-APP PAYMENT:** Safety-first policy protecting all users from conflicts  
 ✓ **REGULATORY COMPLIANCE:** Structured to operate within Cayman Islands legal framework
 

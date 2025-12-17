@@ -91,7 +91,7 @@ export const driverFAQs: FAQItem[] = [
   {
     id: 'earn-6',
     question: 'What expenses should I expect as a driver?',
-    answer: 'Common expenses include: (1) Fuel: ~CI$40-80/week for active drivers, (2) Vehicle maintenance: oil changes every 3 months, tire rotation, (3) Insurance: ensure your policy covers ride-sharing, (4) Vehicle cleaning: keep it clean for passengers, (5) Annual inspection: CI$30-50. The 19% platform service fee (deducted from rider contributions) covers payment processing (4%), platform maintenance, APIs, servers, and customer support (15%).',
+    answer: 'Common expenses include: (1) Fuel: ~CI$40-80/week for active drivers, (2) Vehicle maintenance: oil changes every 3 months, tire rotation, (3) Insurance: ensure your policy covers ride-sharing, (4) Vehicle cleaning: keep it clean for passengers, (5) Annual inspection: CI$30-50. The 20% platform service fee (deducted from rider contributions) covers payment processing (4%), platform maintenance, APIs, servers, and customer support (15%).',
     category: 'Earnings',
     keywords: ['expenses', 'costs', 'fuel', 'maintenance', 'gas'],
   },
