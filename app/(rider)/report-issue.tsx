@@ -89,6 +89,7 @@ export default function ReportIssueScreen() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [additionalDetails, setAdditionalDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [manualTripId, setManualTripId] = useState((tripId as string) || '');
 
   const issueConfig = ISSUE_TYPES[issueType as keyof typeof ISSUE_TYPES] || ISSUE_TYPES.other;
 
@@ -98,13 +99,18 @@ export default function ReportIssueScreen() {
       return;
     }
 
+    if (!manualTripId.trim()) {
+      Alert.alert('Trip ID Required', 'Please enter your Trip ID to submit the report.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       // Save report to Firestore using modular API
       const supportTicketsRef = collection(db, 'support_tickets');
       await addDoc(supportTicketsRef, {
-        tripId: tripId as string,
+        tripId: manualTripId.trim(),
         riderId: user?.uid,
         riderEmail: user?.email,
         driverName: driverName as string,
@@ -161,13 +167,27 @@ export default function ReportIssueScreen() {
           </View>
         </View>
 
-        {/* Trip Info */}
-        <View style={styles.tripInfo}>
-          <Text style={styles.tripInfoText}>
-            Trip ID: {(tripId as string)?.substring(0, 8).toUpperCase()}
-          </Text>
+        {/* Trip ID Input */}
+        <View style={styles.tripIdSection}>
+          <View style={styles.tripIdHelpNote}>
+            <Ionicons name="information-circle-outline" size={18} color="#5d1289" />
+            <Text style={styles.tripIdHelpText}>
+              To find your Trip ID: Go to the Activity tab, select the trip, and look for the ID in the top right corner.
+            </Text>
+          </View>
+          <Text style={styles.inputLabel}>Trip ID</Text>
+          <TextInput
+            style={styles.tripIdInput}
+            placeholder="Enter your Trip ID"
+            placeholderTextColor="#9CA3AF"
+            value={manualTripId}
+            onChangeText={setManualTripId}
+            autoCapitalize="characters"
+          />
           {driverName && (
-            <Text style={styles.tripInfoText}>Driver: {driverName}</Text>
+            <View style={styles.driverInfo}>
+              <Text style={styles.driverInfoText}>Driver: {driverName}</Text>
+            </View>
           )}
         </View>
 
@@ -301,16 +321,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
-  tripInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
+  tripIdSection: {
     marginTop: 16,
   },
-  tripInfoText: {
+  tripIdHelpNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F3E8FF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+  tripIdHelpText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#5d1289',
+    lineHeight: 18,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  tripIdInput: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#000',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  driverInfo: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+  },
+  driverInfoText: {
     fontSize: 13,
     color: '#6B7280',
   },

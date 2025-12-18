@@ -244,7 +244,7 @@ export default function EmailVerificationScreen() {
             • Check your spam/junk folder{'\n'}
             • Make sure {formatEmail(email)} is correct{'\n'}
             • Wait a few minutes and check again{'\n'}
-            • Contact support if issues persist
+            • Contact support if issues persist. info@drift-global.com
           </Text>
         </View>
 

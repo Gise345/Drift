@@ -215,7 +215,7 @@ export default function DriverArrivingScreen() {
 
         // Set accurate ETA and distance from Google
         setEta(Math.ceil(leg.duration.value / 60)); // seconds to minutes
-        setDistance(leg.distance.value / 1000); // meters to km
+        setDistance(leg.distance.value / 1609.34); // meters to miles
       }
     } catch (error) {
       console.error('Failed to fetch route:', error);
@@ -227,7 +227,7 @@ export default function DriverArrivingScreen() {
     driverLocation: TripLocation,
     pickupLocation: { latitude: number; longitude: number }
   ) => {
-    const R = 6371; // Earth's radius in km
+    const R = 3959; // Earth's radius in miles
     const dLat = toRad(pickupLocation.latitude - driverLocation.latitude);
     const dLon = toRad(pickupLocation.longitude - driverLocation.longitude);
 
@@ -243,9 +243,9 @@ export default function DriverArrivingScreen() {
 
     setDistance(dist);
 
-    // Estimate ETA based on average speed (assuming 40 km/h in city)
-    const avgSpeed = driverLocation.speed || 40 / 3.6; // m/s
-    const timeInSeconds = (dist * 1000) / avgSpeed;
+    // Estimate ETA based on average speed (assuming 25 mph in city)
+    const avgSpeed = driverLocation.speed || 25 / 2.237; // m/s (25 mph)
+    const timeInSeconds = (dist * 1609.34) / avgSpeed; // convert miles to meters
     const timeInMinutes = Math.ceil(timeInSeconds / 60);
 
     setEta(Math.max(1, timeInMinutes));
@@ -389,7 +389,7 @@ export default function DriverArrivingScreen() {
               <Text style={styles.etaLabel}>Arriving in</Text>
               <Text style={styles.etaTime}>{eta} min</Text>
               {distance !== null && (
-                <Text style={styles.distanceText}>{distance.toFixed(1)} km away</Text>
+                <Text style={styles.distanceText}>{distance.toFixed(1)} mi away</Text>
               )}
             </>
           ) : (

@@ -225,42 +225,64 @@ export async function submitDriverRegistration(
       }
     }
 
-    // Upload documents if they're local URIs
+    // Upload documents if they're local URIs, or use existing Firebase URLs
     const documentUrls: any = {};
 
     // License
     if (registrationData.documents.license) {
-      if (registrationData.documents.license.front?.startsWith('file://')) {
+      const licenseFront = registrationData.documents.license.front;
+      const licenseBack = registrationData.documents.license.back;
+
+      if (licenseFront?.startsWith('file://')) {
         documentUrls.licenseFront = await uploadDocument(
-          userId, 'license', registrationData.documents.license.front, 'front'
+          userId, 'license', licenseFront, 'front'
         );
+      } else if (licenseFront) {
+        // Already a Firebase URL
+        documentUrls.licenseFront = licenseFront;
       }
-      if (registrationData.documents.license.back?.startsWith('file://')) {
+
+      if (licenseBack?.startsWith('file://')) {
         documentUrls.licenseBack = await uploadDocument(
-          userId, 'license', registrationData.documents.license.back, 'back'
+          userId, 'license', licenseBack, 'back'
         );
+      } else if (licenseBack) {
+        // Already a Firebase URL
+        documentUrls.licenseBack = licenseBack;
       }
     }
 
     // Insurance
-    if (registrationData.documents.insurance?.image?.startsWith('file://')) {
+    const insuranceImage = registrationData.documents.insurance?.image;
+    if (insuranceImage?.startsWith('file://')) {
       documentUrls.insurance = await uploadDocument(
-        userId, 'insurance', registrationData.documents.insurance.image
+        userId, 'insurance', insuranceImage
       );
+    } else if (insuranceImage) {
+      // Already a Firebase URL
+      documentUrls.insurance = insuranceImage;
     }
 
     // Registration
-    if (registrationData.documents.registration?.image?.startsWith('file://')) {
+    const registrationImage = registrationData.documents.registration?.image;
+    if (registrationImage?.startsWith('file://')) {
       documentUrls.registration = await uploadDocument(
-        userId, 'registration', registrationData.documents.registration.image
+        userId, 'registration', registrationImage
       );
+    } else if (registrationImage) {
+      // Already a Firebase URL
+      documentUrls.registration = registrationImage;
     }
 
     // Inspection (optional)
-    if (registrationData.documents.inspection?.image?.startsWith('file://')) {
+    const inspectionImage = registrationData.documents.inspection?.image;
+    if (inspectionImage?.startsWith('file://')) {
       documentUrls.inspection = await uploadDocument(
-        userId, 'inspection', registrationData.documents.inspection.image
+        userId, 'inspection', inspectionImage
       );
+    } else if (inspectionImage) {
+      // Already a Firebase URL
+      documentUrls.inspection = inspectionImage;
     }
 
     // Create driver profile document
@@ -396,10 +418,18 @@ export async function saveRegistrationProgress(
   registrationData: Partial<DriverRegistration>
 ): Promise<void> {
   try {
-    console.log('💾 Saving registration progress at step:', currentStep);
+    console.log('💾 Saving registration progress at step:', currentStep, 'for user:', userId);
 
     // Clean the registration data to remove any undefined values
     const cleanedData = removeUndefinedValues(registrationData);
+
+    console.log('📦 Cleaned data to save:', {
+      hasPersonalInfo: !!cleanedData?.personalInfo,
+      hasVehicle: !!cleanedData?.vehicle,
+      vehiclePhotos: cleanedData?.vehicle?.photos ? Object.keys(cleanedData.vehicle.photos) : [],
+      hasDocuments: !!cleanedData?.documents,
+      documentKeys: cleanedData?.documents ? Object.keys(cleanedData.documents) : [],
+    });
 
     const progressRef = doc(db, 'driverRegistrationProgress', userId);
     await setDoc(
@@ -413,10 +443,12 @@ export async function saveRegistrationProgress(
       { merge: true }
     );
 
-    console.log('✅ Registration progress saved');
-  } catch (error) {
+    console.log('✅ Registration progress saved successfully to Firebase');
+  } catch (error: any) {
     console.error('❌ Error saving registration progress:', error);
-    // Don't throw - this is non-critical
+    console.error('Error code:', error?.code);
+    console.error('Error message:', error?.message);
+    // Don't throw - this is non-critical, but log the full error
   }
 }
 
@@ -555,10 +587,79 @@ export async function updateDocumentStatus(
   }
 }
 
+/**
+ * Upload a document immediately during registration
+ * This stores the file in Firebase Storage right away so it persists across app restarts
+ * Returns the Firebase Storage URL that can be stored in registrationProgress
+ */
+export async function uploadDocumentImmediately(
+  userId: string,
+  documentType: 'license' | 'insurance' | 'registration' | 'inspection',
+  imageUri: string,
+  side?: 'front' | 'back'
+): Promise<string> {
+  // If it's already a Firebase URL, return as-is
+  if (isFirebaseStorageUrl(imageUri)) {
+    console.log(`📎 ${documentType} already uploaded, using existing URL`);
+    return imageUri;
+  }
+
+  // Only upload if it's a local file
+  if (!imageUri.startsWith('file://')) {
+    console.warn('⚠️ Unexpected image URI format:', imageUri.substring(0, 50));
+    return imageUri;
+  }
+
+  console.log(`📤 Uploading ${documentType} immediately...`);
+  return await uploadDocument(userId, documentType, imageUri, side);
+}
+
+/**
+ * Upload a vehicle photo immediately during registration
+ * This stores the file in Firebase Storage right away so it persists across app restarts
+ * Returns the Firebase Storage URL that can be stored in registrationProgress
+ */
+export async function uploadVehiclePhotoImmediately(
+  userId: string,
+  photoType: 'front' | 'back' | 'leftSide' | 'rightSide' | 'interior',
+  imageUri: string
+): Promise<string> {
+  // If it's already a Firebase URL, return as-is
+  if (isFirebaseStorageUrl(imageUri)) {
+    console.log(`📎 Vehicle ${photoType} photo already uploaded, using existing URL`);
+    return imageUri;
+  }
+
+  // Only upload if it's a local file
+  if (!imageUri.startsWith('file://')) {
+    console.warn('⚠️ Unexpected image URI format:', imageUri.substring(0, 50));
+    return imageUri;
+  }
+
+  console.log(`📤 Uploading vehicle ${photoType} photo immediately...`);
+  return await uploadVehiclePhoto(userId, photoType, imageUri);
+}
+
+/**
+ * Check if a URI is a Firebase Storage URL (already uploaded)
+ */
+export function isFirebaseStorageUrl(uri: string | undefined | null): boolean {
+  if (!uri) return false;
+  return uri.startsWith('https://firebasestorage.googleapis.com') ||
+         uri.startsWith('https://storage.googleapis.com') ||
+         uri.startsWith('gs://');
+}
+
 export default {
   uploadDocument,
   uploadVehiclePhoto,
+  uploadDocumentImmediately,
+  uploadVehiclePhotoImmediately,
+  isFirebaseStorageUrl,
   submitDriverRegistration,
+  saveRegistrationProgress,
+  loadRegistrationProgress,
+  clearRegistrationProgress,
   getDriverRegistrationStatus,
   updateDriverRegistrationStatus,
   updateDocumentStatus,

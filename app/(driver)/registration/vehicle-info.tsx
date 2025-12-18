@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: 100,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],

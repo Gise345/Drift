@@ -180,15 +180,15 @@ export default function ProfileViewScreen() {
           <Text style={styles.sectionTitle}>Performance</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{Math.round((1 - (stats?.cancellationRate || 0)) * 100)}%</Text>
+              <Text style={styles.statValue}>{Math.round(100 - (stats?.cancellationRate || 0))}%</Text>
               <Text style={styles.statLabel}>Completion</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{Math.round((stats?.acceptanceRate || 0) * 100)}%</Text>
+              <Text style={styles.statValue}>{Math.round(stats?.acceptanceRate || 0)}%</Text>
               <Text style={styles.statLabel}>Acceptance</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{Math.round((stats?.cancellationRate || 0) * 100)}%</Text>
+              <Text style={styles.statValue}>{Math.round(stats?.cancellationRate || 0)}%</Text>
               <Text style={styles.statLabel}>Cancellation</Text>
             </View>
           </View>
@@ -303,7 +303,7 @@ export default function ProfileViewScreen() {
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Actions - Commented out for now
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsGrid}>
@@ -337,6 +337,7 @@ export default function ProfileViewScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        */}
       </ScrollView>
     </SafeAreaView>
   );

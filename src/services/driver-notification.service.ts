@@ -3,17 +3,21 @@
  *
  * Handles push notifications for drivers including:
  * - Ride request notifications when app is in background
+ * - Chat message notifications during active trips
  * - Actionable notifications to accept/decline from notification
  * - Online status persistence
+ * - Saving notifications to inbox
  */
 
 import * as Notifications from 'expo-notifications';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
+import { NotificationService } from './notification.service';
 
 // Notification categories
 export const DRIVER_NOTIFICATION_CATEGORIES = {
   RIDE_REQUEST: 'RIDE_REQUEST',
+  CHAT_MESSAGE: 'CHAT_MESSAGE',
 } as const;
 
 // Action identifiers
@@ -35,6 +39,16 @@ Notifications.setNotificationHandler({
         shouldPlaySound: true,
         shouldSetBadge: true,
         priority: Notifications.AndroidNotificationPriority.MAX,
+      };
+    }
+
+    // Show chat message notifications
+    if (data?.type === 'CHAT_MESSAGE') {
+      return {
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
       };
     }
 
@@ -77,8 +91,9 @@ export async function initializeDriverNotifications(): Promise<void> {
       );
     }
 
-    // Android notification channel for ride requests
+    // Android notification channels
     if (Platform.OS === 'android') {
+      // Channel for ride requests (highest priority)
       await Notifications.setNotificationChannelAsync('ride-requests', {
         name: 'Ride Requests',
         importance: Notifications.AndroidImportance.MAX,
@@ -89,6 +104,19 @@ export async function initializeDriverNotifications(): Promise<void> {
         enableLights: true,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: true, // Important for drivers to not miss requests
+      });
+
+      // Channel for chat messages
+      await Notifications.setNotificationChannelAsync('messages', {
+        name: 'Messages',
+        description: 'Chat messages from riders during active trips',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#5d1289',
+        sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       });
     }
 
@@ -211,11 +239,199 @@ export function addAppStateListener(
   return AppState.addEventListener('change', callback);
 }
 
+/**
+ * Save a notification to the driver's inbox in Firebase
+ */
+export async function saveNotificationToInbox(
+  driverId: string,
+  title: string,
+  message: string,
+  type: 'ride' | 'earnings' | 'system' | 'document' | 'promo',
+  data?: any
+): Promise<void> {
+  try {
+    await NotificationService.createNotification({
+      driverId,
+      type,
+      title,
+      message,
+      read: false,
+      data,
+    });
+    console.log('📥 Notification saved to inbox');
+  } catch (error) {
+    console.error('Failed to save notification to inbox:', error);
+  }
+}
+
+/**
+ * Set up listener for incoming push notifications (foreground)
+ * Saves notifications to inbox and handles navigation
+ */
+export function setupPushNotificationListener(
+  driverId: string,
+  onMessageReceived?: (tripId: string, senderName: string) => void
+): Notifications.Subscription {
+  return Notifications.addNotificationReceivedListener(async (notification) => {
+    const data = notification.request.content.data as any;
+    const title = notification.request.content.title || '';
+    const body = notification.request.content.body || '';
+
+    console.log('📲 Push notification received:', data?.type);
+
+    // Handle chat message notifications
+    if (data?.type === 'CHAT_MESSAGE') {
+      // Save to inbox as a ride notification (message related to trip)
+      await saveNotificationToInbox(
+        driverId,
+        title,
+        body,
+        'ride',
+        {
+          tripId: data.tripId,
+          senderName: data.senderName,
+          messageType: 'chat',
+        }
+      );
+
+      // Notify the app about the new message
+      if (onMessageReceived && data.tripId && data.senderName) {
+        onMessageReceived(data.tripId, data.senderName);
+      }
+    }
+
+    // Handle ride request notifications
+    if (data?.type === 'ride_request') {
+      await saveNotificationToInbox(
+        driverId,
+        title,
+        body,
+        'ride',
+        {
+          requestId: data.requestId,
+          riderName: data.riderName,
+          messageType: 'ride_request',
+        }
+      );
+    }
+
+    // Handle earnings notifications
+    if (data?.type === 'earnings' || data?.type === 'payout') {
+      await saveNotificationToInbox(
+        driverId,
+        title,
+        body,
+        'earnings',
+        data
+      );
+    }
+
+    // Handle system notifications
+    if (data?.type === 'system' || data?.type === 'announcement') {
+      await saveNotificationToInbox(
+        driverId,
+        title,
+        body,
+        'system',
+        data
+      );
+    }
+  });
+}
+
+/**
+ * Set up listener for notification taps/responses (including chat messages)
+ */
+export function setupNotificationResponseListener(
+  onRideAccept: (requestId: string) => void,
+  onRideDecline: (requestId: string) => void,
+  onMessageTap?: (tripId: string) => void
+): Notifications.Subscription {
+  return Notifications.addNotificationResponseReceivedListener((response) => {
+    const actionId = response.actionIdentifier;
+    const data = response.notification.request.content.data as any;
+
+    console.log('📲 Notification response:', actionId, data?.type);
+
+    // Handle chat message tap - navigate to chat
+    if (data?.type === 'CHAT_MESSAGE') {
+      if (data.tripId && onMessageTap) {
+        onMessageTap(data.tripId);
+      } else {
+        // Default: navigate to active ride screen
+        router.push('/(driver)/active-ride/navigate-to-pickup');
+      }
+      return;
+    }
+
+    // Handle ride request actions
+    if (data?.type === 'ride_request') {
+      const requestId = data.requestId;
+      if (!requestId) return;
+
+      switch (actionId) {
+        case DRIVER_NOTIFICATION_ACTIONS.ACCEPT_RIDE:
+          onRideAccept(requestId);
+          break;
+
+        case DRIVER_NOTIFICATION_ACTIONS.DECLINE_RIDE:
+          onRideDecline(requestId);
+          break;
+
+        case Notifications.DEFAULT_ACTION_IDENTIFIER:
+          // User tapped the notification body - navigate to home
+          router.replace('/(driver)/tabs');
+          break;
+      }
+    }
+  });
+}
+
+/**
+ * Send a local chat message notification (for foreground display)
+ */
+export async function sendChatMessageNotification(
+  senderName: string,
+  messageText: string,
+  tripId: string
+): Promise<string | null> {
+  try {
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `💬 ${senderName}`,
+        body: messageText.length > 100 ? messageText.substring(0, 97) + '...' : messageText,
+        data: {
+          type: 'CHAT_MESSAGE',
+          tripId,
+          senderName,
+          timestamp: Date.now(),
+        },
+        categoryIdentifier: DRIVER_NOTIFICATION_CATEGORIES.CHAT_MESSAGE,
+        sound: 'default',
+        ...(Platform.OS === 'android' && {
+          channelId: 'messages',
+          color: '#5d1289',
+        }),
+      },
+      trigger: null, // Immediate
+    });
+
+    return notificationId;
+  } catch (error) {
+    console.error('Failed to send chat notification:', error);
+    return null;
+  }
+}
+
 export default {
   initializeDriverNotifications,
   sendRideRequestNotification,
   dismissRideRequestNotifications,
   setupDriverNotificationListener,
+  setupPushNotificationListener,
+  setupNotificationResponseListener,
+  saveNotificationToInbox,
+  sendChatMessageNotification,
   isAppInBackground,
   addAppStateListener,
 };

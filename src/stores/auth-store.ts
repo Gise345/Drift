@@ -362,17 +362,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
                 try {
                   const savedMode = await AsyncStorage.getItem(LAST_MODE_KEY);
                   if (savedMode === 'DRIVER' || savedMode === 'RIDER') {
-                    // Only use saved mode if user has that role
-                    if (savedMode === 'DRIVER' && user.roles?.includes('DRIVER')) {
+                    // IMPORTANT: Allow DRIVER mode even without DRIVER role
+                    // This supports users who are in the middle of driver registration
+                    // The driver tabs _layout will handle routing to registration screens
+                    if (savedMode === 'DRIVER') {
                       initialMode = 'DRIVER';
-                      console.log('📂 Restored last mode from storage: DRIVER');
-                    } else if (savedMode === 'RIDER' && user.roles?.includes('RIDER')) {
+                      console.log('📂 Restored last mode from storage: DRIVER (may be registering)');
+                    } else if (savedMode === 'RIDER') {
                       initialMode = 'RIDER';
                       console.log('📂 Restored last mode from storage: RIDER');
-                    } else {
-                      // Saved mode doesn't match user's roles, default based on roles
-                      initialMode = user.roles?.includes('DRIVER') ? 'DRIVER' : 'RIDER';
-                      console.log('📂 Saved mode not available, defaulting to:', initialMode);
                     }
                   } else {
                     // No saved mode, default based on roles

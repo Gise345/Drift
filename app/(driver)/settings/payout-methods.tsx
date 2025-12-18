@@ -30,6 +30,7 @@ import {
   writeBatch,
   serverTimestamp
 } from '@react-native-firebase/firestore';
+import { WiseService } from '@/src/services/wise.service';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -168,6 +169,18 @@ export default function PayoutMethodsScreen() {
     try {
       setSaving(true);
 
+      // Validate account with Wise API
+      const validation = await WiseService.validateAccount(
+        newAccount.sortCode,
+        newAccount.accountNumber
+      );
+
+      if (!validation.valid) {
+        Alert.alert('Invalid Account', validation.error || 'The bank details could not be verified.');
+        setSaving(false);
+        return;
+      }
+
       const isFirstAccount = wiseAccounts.length === 0;
 
       const payoutMethodsRef = collection(db, 'drivers', driver.id, 'payoutMethods');
@@ -177,7 +190,9 @@ export default function PayoutMethodsScreen() {
         sortCode: newAccount.sortCode,
         accountNumber: newAccount.accountNumber,
         isDefault: isFirstAccount,
-        verificationStatus: 'pending',
+        verificationStatus: validation.bankName ? 'verified' : 'pending',
+        bankName: validation.bankName || null,
+        branchName: validation.branchName || null,
         createdAt: serverTimestamp(),
       });
 
@@ -190,13 +205,17 @@ export default function PayoutMethodsScreen() {
         accountNumber: '',
       });
 
+      const bankInfo = validation.bankName
+        ? `\n\nBank: ${validation.bankName}${validation.branchName ? `\nBranch: ${validation.branchName}` : ''}`
+        : '';
+
       Alert.alert(
         'Success',
-        'Wise account added successfully! Your account will be verified before the first payout.'
+        `Wise account added successfully!${bankInfo}\n\nYour account is ready to receive payouts.`
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding Wise account:', error);
-      Alert.alert('Error', 'Failed to add Wise account. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to add Wise account. Please try again.');
     } finally {
       setSaving(false);
     }

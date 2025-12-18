@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
-import { useAuthStore } from '@/src/stores/auth-store';
 
 export default function WelcomeScreen() {
   const router = useRouter();

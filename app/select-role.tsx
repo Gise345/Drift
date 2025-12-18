@@ -9,24 +9,29 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+import { useAuthStore } from '@/src/stores/auth-store';
 
 /**
  * ROLE SELECTION SCREEN
- * 
+ *
  * Let users choose between Rider and Driver modes
  */
 export default function SelectRole() {
   const router = useRouter();
+  const { setMode } = useAuthStore();
 
-  const handleRiderMode = () => {
+  const handleRiderMode = async () => {
+    // Save mode to AsyncStorage so user returns to rider screen next time
+    await setMode('RIDER');
     // Go to rider app (tabs)
     router.replace('/(tabs)');
   };
 
-  const handleDriverMode = () => {
-    // Check if driver is registered
-    // For now, go straight to driver tabs (Home, Earnings, Inbox, Menu)
-    // You can add registration check here later
+  const handleDriverMode = async () => {
+    // Save mode to AsyncStorage so user can resume driver registration/flow next time
+    await setMode('DRIVER');
+    // Go to driver flow - the tabs _layout will check registration status
+    // and redirect to appropriate registration screen if needed
     router.replace('/(driver)/tabs');
   };
 

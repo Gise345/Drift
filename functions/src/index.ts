@@ -73,3 +73,14 @@ export {
   sendTestEmail,
   sendTestEmailDirect,
 } from './emailTest';
+
+// Export Wise Payout functions
+export {
+  createWiseRecipient,
+  processWisePayout,
+  processBatchWisePayouts,
+  getWiseTransferStatus,
+  syncWisePayoutStatus,
+  getWiseBalance,
+  validateWiseAccount,
+} from './wise';

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { uploadDocumentImmediately } from '@/src/services/driver-registration.service';
 
 /**
  * DRIVER'S LICENSE UPLOAD
@@ -30,6 +33,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 export default function DriversLicense() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+  const { user } = useAuthStore();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -44,8 +48,15 @@ export default function DriversLicense() {
 
   const [frontImage, setFrontImage] = useState<string | null>(savedLicense?.front || null);
   const [backImage, setBackImage] = useState<string | null>(savedLicense?.back || null);
+  const [uploadingFront, setUploadingFront] = useState(false);
+  const [uploadingBack, setUploadingBack] = useState(false);
 
   const pickImage = async (side: 'front' | 'back', useCamera: boolean) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to upload documents');
+      return;
+    }
+
     if (useCamera) {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
@@ -57,18 +68,69 @@ export default function DriversLicense() {
     const result = useCamera
       ? await ImagePicker.launchCameraAsync({
           allowsEditing: true,
-          quality: 0.9,
+          aspect: [4, 3],
+          quality: 0.8,
         })
       : await ImagePicker.launchImageLibraryAsync({
           allowsEditing: true,
-          quality: 0.9,
+          aspect: [4, 3],
+          quality: 0.8,
         });
 
     if (!result.canceled && result.assets[0]) {
+      const localUri = result.assets[0].uri;
+
+      // Show uploading state
       if (side === 'front') {
-        setFrontImage(result.assets[0].uri);
+        setUploadingFront(true);
       } else {
-        setBackImage(result.assets[0].uri);
+        setUploadingBack(true);
+      }
+
+      try {
+        // Upload immediately to Firebase Storage
+        const firebaseUrl = await uploadDocumentImmediately(user.id, 'license', localUri, side);
+
+        // Save the Firebase URL
+        if (side === 'front') {
+          setFrontImage(firebaseUrl);
+          // Also save to registration data immediately
+          updateRegistrationData({
+            documents: {
+              license: {
+                front: firebaseUrl,
+                back: backImage || '',
+              },
+            },
+          });
+        } else {
+          setBackImage(firebaseUrl);
+          updateRegistrationData({
+            documents: {
+              license: {
+                front: frontImage || '',
+                back: firebaseUrl,
+              },
+            },
+          });
+        }
+
+        console.log(`✅ License ${side} uploaded and saved`);
+      } catch (error) {
+        console.error(`❌ Error uploading license ${side}:`, error);
+        Alert.alert('Upload Failed', 'Failed to upload document. Please try again.');
+        // Keep the local URI as fallback
+        if (side === 'front') {
+          setFrontImage(localUri);
+        } else {
+          setBackImage(localUri);
+        }
+      } finally {
+        if (side === 'front') {
+          setUploadingFront(false);
+        } else {
+          setUploadingBack(false);
+        }
       }
     }
   };
@@ -91,16 +153,12 @@ export default function DriversLicense() {
       return;
     }
 
-    // Save to store in the correct format
-    updateRegistrationData({
-      documents: {
-        license: {
-          front: frontImage,
-          back: backImage,
-        },
-      },
-    });
+    if (uploadingFront || uploadingBack) {
+      Alert.alert('Please wait', 'Documents are still uploading. Please wait for them to finish.');
+      return;
+    }
 
+    // Documents are already saved during upload, just move to next step
     setRegistrationStep(7); // Moving to step 7 (insurance)
     router.push('/(driver)/registration/insurance');
   };
@@ -131,7 +189,12 @@ export default function DriversLicense() {
         {/* Front Side */}
         <View style={styles.documentSection}>
           <Text style={styles.sectionLabel}>Front Side</Text>
-          {frontImage ? (
+          {uploadingFront ? (
+            <View style={styles.uploadingBox}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.uploadingText}>Uploading...</Text>
+            </View>
+          ) : frontImage ? (
             <View style={styles.imagePreview}>
               <Image source={{ uri: frontImage }} style={styles.documentImage} />
               <TouchableOpacity
@@ -156,7 +219,12 @@ export default function DriversLicense() {
         {/* Back Side */}
         <View style={styles.documentSection}>
           <Text style={styles.sectionLabel}>Back Side</Text>
-          {backImage ? (
+          {uploadingBack ? (
+            <View style={styles.uploadingBox}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.uploadingText}>Uploading...</Text>
+            </View>
+          ) : backImage ? (
             <View style={styles.imagePreview}>
               <Image source={{ uri: backImage }} style={styles.documentImage} />
               <TouchableOpacity
@@ -263,7 +331,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: 100,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],
@@ -287,7 +355,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   uploadBox: {
-    height: 180,
+    height: 140,
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: Colors.gray[300],
@@ -299,10 +367,25 @@ const styles = StyleSheet.create({
   uploadText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  uploadingBox: {
+    height: 140,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '10',
+  },
+  uploadingText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.primary,
+    marginTop: Spacing.sm,
+    fontWeight: '600',
   },
   imagePreview: {
-    height: 180,
+    height: 140,
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',

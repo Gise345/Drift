@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Location from 'expo-location';
 
 interface Destination {
   id: string;
@@ -20,8 +21,36 @@ interface Destination {
   imageUrl: string | number;
   icon: keyof typeof Ionicons.glyphMap;
   rating: number;
-  distance?: string;
+  latitude: number;
+  longitude: number;
 }
+
+// Calculate distance between two coordinates using Haversine formula
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 3959; // Earth's radius in miles
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in miles
+};
+
+const formatDistance = (miles: number): string => {
+  if (miles < 0.1) {
+    return `${Math.round(miles * 5280)} ft`;
+  }
+  return `${miles.toFixed(1)} mi`;
+};
 
 // Complete list of Cayman Islands destinations
 const ALL_DESTINATIONS: Destination[] = [
@@ -34,7 +63,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/7mile.jpg'),
     icon: 'water',
     rating: 4.9,
-    distance: '3.2 km',
+    latitude: 19.33393617545512,
+    longitude: -81.38168710295884,
   },
   {
     id: '2',
@@ -44,7 +74,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/stingray-city.jpg'),
     icon: 'fish',
     rating: 4.8,
-    distance: '8.5 km',
+    latitude: 19.337969180384626,
+    longitude: -81.36708079804148,
   },
   {
     id: '3',
@@ -54,7 +85,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/hell.jpg'),
     icon: 'flame',
     rating: 4.3,
-    distance: '5.7 km',
+    latitude: 19.378930980690154,
+    longitude: -81.40710397897249,
   },
   {
     id: '4',
@@ -64,7 +96,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/turtlefarm.jpg'),
     icon: 'paw',
     rating: 4.6,
-    distance: '6.1 km',
+    latitude: 19.380291932035938,
+    longitude: -81.41652466101658,
   },
   {
     id: '5',
@@ -74,7 +107,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/botanic.jpg'),
     icon: 'leaf',
     rating: 4.7,
-    distance: '12.3 km',
+    latitude: 19.31586563665741,
+    longitude: -81.16874644033008,
   },
   {
     id: '6',
@@ -84,7 +118,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/rumpoint.jpg'),
     icon: 'beer',
     rating: 4.7,
-    distance: '18.4 km',
+    latitude: 19.372783124935932,
+    longitude: -81.2711970616566,
   },
   {
     id: '7',
@@ -94,7 +129,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/pedro.jpg'),
     icon: 'home',
     rating: 4.5,
-    distance: '14.2 km',
+    latitude: 19.266571276509374,
+    longitude: -81.29085826942116,
   },
   {
     id: '8',
@@ -104,7 +140,8 @@ const ALL_DESTINATIONS: Destination[] = [
     imageUrl: require('@/assets/images/destinations/crystalcaves.jpg'),
     icon: 'diamond',
     rating: 4.8,
-    distance: '9.2 km',
+    latitude: 19.3453244974135,
+    longitude: -81.17726090778349,
   },
 
   // Additional Beaches
@@ -113,80 +150,88 @@ const ALL_DESTINATIONS: Destination[] = [
     name: 'Starfish Point',
     description: 'Shallow waters filled with orange starfish, perfect for families',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/starfish.png'),
     icon: 'star',
     rating: 4.7,
-    distance: '19.5 km',
+    latitude: 19.35652342968566,
+    longitude: -81.28319571148067,
   },
   {
     id: '10',
     name: 'Governor\'s Beach',
     description: 'Secluded beach with excellent snorkeling and calm waters',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/governors-beach.png'),
     icon: 'water',
     rating: 4.6,
-    distance: '2.8 km',
+    latitude: 19.34133221227731,
+    longitude: -81.38141168403403,
   },
   {
     id: '11',
     name: 'Cemetery Beach',
     description: 'Popular snorkeling spot with vibrant coral reefs',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/cemetery-beach.png'),
     icon: 'water',
     rating: 4.5,
-    distance: '4.1 km',
+    latitude: 19.36565788530454,
+    longitude: -81.39523024697236,
   },
   {
     id: '12',
     name: 'Colliers Public Beach',
     description: 'East End beach with rustic charm and local atmosphere',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/colliers-beach.png'),
     icon: 'water',
     rating: 4.4,
-    distance: '21.3 km',
+    latitude: 19.33272378961449,
+    longitude: -81.0850555714593,
   },
   {
     id: '13',
     name: 'Spotts Public Beach',
     description: 'Turtle nesting site and great snorkeling location',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/spotts-beach.png'),
     icon: 'water',
     rating: 4.3,
-    distance: '8.7 km',
+    latitude: 19.27273381034965,
+    longitude: -81.3140243091877,
   },
   {
     id: '14',
     name: 'Cayman Kai Public Beach',
     description: 'North side beach with shallow, calm waters',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/cayman-kai.png'),
     icon: 'water',
     rating: 4.6,
-    distance: '20.1 km',
+    latitude: 19.36944549776127,
+    longitude: -81.2657746647515,
   },
   {
     id: '15',
     name: 'Heritage Beach',
     description: 'Historic beach with cultural significance',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/heritage-beach.png'),
     icon: 'water',
     rating: 4.2,
-    distance: '10.5 km',
+    latitude: 19.2990858458558,
+    longitude: -81.16280094190316,
   },
   {
     id: '16',
     name: 'West Bay Public Beach',
     description: 'Local favorite with easy access and clear waters',
     category: 'Beaches',
-    imageUrl: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/west-bay-public-beach.png'),
     icon: 'water',
     rating: 4.4,
-    distance: '5.2 km',
+    latitude: 19.37004545449024,
+    longitude: -81.40327798136222,
   },
 
   // Marine & Wildlife
@@ -195,30 +240,33 @@ const ALL_DESTINATIONS: Destination[] = [
     name: 'Dolphin Discovery',
     description: 'Interactive dolphin encounters and educational programs',
     category: 'Marine Adventure',
-    imageUrl: 'https://images.unsplash.com/photo-1570481662006-a3a1374699e8?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/dolphin.png'),
     icon: 'fish',
     rating: 4.7,
-    distance: '7.3 km',
+    latitude: 19.38089353390587,
+    longitude: -81.41669376524635,
   },
   {
     id: '18',
     name: 'Kittiwake Shipwreck & Artificial Reef',
     description: 'Underwater diving attraction and marine habitat',
     category: 'Marine Adventure',
-    imageUrl: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/kittiwake.png'),
     icon: 'boat',
     rating: 4.8,
-    distance: '3.5 km',
+    latitude: 19.363287495869947,
+    longitude: -81.39935403290465,
   },
   {
     id: '19',
     name: 'Cayman Parrot Sanctuary',
     description: 'Protected habitat for endemic Cayman parrots',
     category: 'Wildlife',
-    imageUrl: 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/parrot.png'),
     icon: 'leaf',
     rating: 4.5,
-    distance: '15.8 km',
+    latitude: 19.318956120132274,
+    longitude: -81.08706871711028,
   },
 
   // History & Culture
@@ -227,40 +275,44 @@ const ALL_DESTINATIONS: Destination[] = [
     name: 'Cayman National Museum',
     description: 'Island history and cultural exhibits',
     category: 'History & Culture',
-    imageUrl: 'https://images.unsplash.com/photo-1566127992631-137a642a90f4?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/cayman-national-museum.png'),
     icon: 'library',
     rating: 4.4,
-    distance: '1.2 km',
+    latitude: 19.29422170256735,
+    longitude: -81.38271202427607,
   },
   {
     id: '21',
     name: 'The National Gallery of the Cayman Islands',
     description: 'Contemporary and traditional Caymanian art',
     category: 'History & Culture',
-    imageUrl: 'https://images.unsplash.com/photo-1577720643272-265f7b0e7874?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/national-gallery.png'),
     icon: 'color-palette',
     rating: 4.3,
-    distance: '2.1 km',
+    latitude: 19.315906866999462,
+    longitude: -81.37875601601985,
   },
   {
     id: '22',
     name: 'Bodden Town Mission House',
     description: 'Historic mission house showcasing island heritage',
     category: 'History & Culture',
-    imageUrl: 'https://images.unsplash.com/photo-1518780664697-55e3ad937233?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/bt-mission-house.png'),
     icon: 'home',
     rating: 4.1,
-    distance: '13.4 km',
+    latitude: 19.2791816683388,
+    longitude: -81.25133916160242,
   },
   {
     id: '23',
     name: 'Heroes Square',
     description: 'National monument honoring Caymanian heritage',
     category: 'History & Culture',
-    imageUrl: 'https://images.unsplash.com/photo-1464207687429-7505649dae38?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/heroes-square.png'),
     icon: 'flag',
     rating: 4.2,
-    distance: '0.8 km',
+    latitude: 19.29641803526233,
+    longitude: -81.38173548768253,
   },
 
   // Shopping & Dining
@@ -269,30 +321,33 @@ const ALL_DESTINATIONS: Destination[] = [
     name: 'Cayman Spirits Co',
     description: 'Award-winning rum distillery with tours and tastings',
     category: 'Shopping & Dining',
-    imageUrl: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/cayman-spirits.png'),
     icon: 'wine',
     rating: 4.7,
-    distance: '6.9 km',
+    latitude: 19.30159977840125,
+    longitude: -81.37123521621187,
   },
   {
     id: '25',
     name: 'Camana Bay',
     description: 'Modern waterfront with shopping, dining, and observation tower',
     category: 'Shopping & Dining',
-    imageUrl: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/camana-bay.png'),
     icon: 'storefront',
     rating: 4.6,
-    distance: '4.8 km',
+    latitude: 19.322072160291885,
+    longitude: -81.37817988585999,
   },
   {
     id: '26',
     name: 'Smith\'s Barcadere',
     description: 'Historic port and local gathering spot',
     category: 'Shopping & Dining',
-    imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/smiths-cove.png'),
     icon: 'restaurant',
     rating: 4.3,
-    distance: '11.2 km',
+    latitude: 19.27665408799054,
+    longitude: -81.39088784651551,
   },
 
   // Natural Wonders
@@ -301,30 +356,33 @@ const ALL_DESTINATIONS: Destination[] = [
     name: 'The Blowholes',
     description: 'Natural rock formations shooting water spray',
     category: 'Natural Wonders',
-    imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/blowholes.png'),
     icon: 'water',
     rating: 4.5,
-    distance: '16.7 km',
+    latitude: 19.294279930817897,
+    longitude: -81.1276440197753,
   },
   {
     id: '28',
     name: 'Mastic Trail Southern Trailhead',
     description: 'Historic hiking trail through native forest',
     category: 'Natural Wonders',
-    imageUrl: 'https://images.unsplash.com/photo-1551632811-561732d1e306?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/mastic-trail.png'),
     icon: 'trail-sign',
     rating: 4.6,
-    distance: '17.9 km',
+    latitude: 19.31364012108411,
+    longitude: -81.19059404356044,
   },
   {
     id: '29',
     name: 'Barkers National Park',
     description: 'Protected coastal and wetland area',
     category: 'Natural Wonders',
-    imageUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
+    imageUrl: require('@/assets/images/destinations/barkers.png'),
     icon: 'leaf',
     rating: 4.4,
-    distance: '11.8 km',
+    latitude: 19.385874342139363,
+    longitude: -81.36517255144965,
   },
 ];
 
@@ -347,23 +405,84 @@ interface AllDestinationsScreenProps {
 const AllDestinationsScreen: React.FC<AllDestinationsScreenProps> = ({ onDestinationPress }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const filteredDestinations = ALL_DESTINATIONS.filter((dest) => {
-    const matchesCategory = selectedCategory === 'All' || dest.category === selectedCategory;
-    const matchesSearch = dest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         dest.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  // Get user's current location on mount
+  useEffect(() => {
+    const getUserLocation = async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        setUserLocation({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+      } catch (error) {
+        console.log('Could not get user location for distance calculation');
+      }
+    };
+
+    getUserLocation();
+  }, []);
+
+  // Get distance string for a destination
+  const getDistanceString = (destination: Destination): string | null => {
+    if (!userLocation) return null;
+    const distance = calculateDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      destination.latitude,
+      destination.longitude
+    );
+    return formatDistance(distance);
+  };
+
+  const filteredDestinations = ALL_DESTINATIONS
+    .filter((dest) => {
+      const matchesCategory = selectedCategory === 'All' || dest.category === selectedCategory;
+      const matchesSearch = dest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           dest.description.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesSearch;
+    })
+    .sort((a, b) => {
+      // Sort by distance if user location is available
+      if (userLocation) {
+        const distA = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          a.latitude,
+          a.longitude
+        );
+        const distB = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          b.latitude,
+          b.longitude
+        );
+        return distA - distB;
+      }
+      return 0; // Keep original order if no user location
+    });
 
   const handleDestinationPress = (destination: Destination) => {
     if (onDestinationPress) {
       onDestinationPress(destination);
     } else {
-      // Navigate to search with destination pre-filled
+      // Navigate to search with destination coordinates and name pre-filled
       router.push({
         pathname: '/(rider)/search-location',
         params: {
           searchQuery: destination.name,
+          destinationLat: destination.latitude.toString(),
+          destinationLng: destination.longitude.toString(),
+          destinationName: destination.name,
         },
       });
     }
@@ -479,11 +598,11 @@ const AllDestinationsScreen: React.FC<AllDestinationsScreenProps> = ({ onDestina
               <Text style={styles.listItemDescription} numberOfLines={2}>
                 {destination.description}
               </Text>
-              
-              {destination.distance && (
+
+              {getDistanceString(destination) && (
                 <View style={styles.distanceRow}>
                   <Ionicons name="location" size={14} color="#5d1289" />
-                  <Text style={styles.distanceText}>{destination.distance} away</Text>
+                  <Text style={styles.distanceText}>{getDistanceString(destination)} away</Text>
                 </View>
               )}
             </View>

@@ -84,9 +84,33 @@ export default function DriverInboxScreen() {
     }
   };
 
-  // Load notifications from Firebase
+  // Subscribe to real-time notifications from Firebase
   useEffect(() => {
+    if (!driver?.id) return;
+
+    // Initial load
     loadNotifications();
+
+    // Set up real-time listener
+    const unsubscribe = NotificationService.subscribeToNotifications(
+      driver.id,
+      (firebaseNotifications) => {
+        // Map Firebase notifications to app format
+        const mappedNotifications: Notification[] = firebaseNotifications.map(notif => {
+          const { icon, iconColor } = getNotificationIconAndColor(notif.type);
+          return {
+            ...notif,
+            icon,
+            iconColor,
+            time: formatTime(notif.createdAt),
+          };
+        });
+        setNotifications(mappedNotifications);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [driver?.id]);
 
   const loadNotifications = async () => {

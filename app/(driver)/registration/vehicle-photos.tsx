@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +16,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { uploadVehiclePhotoImmediately } from '@/src/services/driver-registration.service';
 
 type PhotoType = 'front' | 'back' | 'leftSide' | 'rightSide' | 'interior';
 
@@ -26,6 +29,7 @@ interface Photo {
 export default function VehiclePhotos() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+  const { user } = useAuthStore();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -46,6 +50,15 @@ export default function VehiclePhotos() {
     interior: savedPhotos?.interior || null,
   });
 
+  // Track which photos are currently uploading
+  const [uploadingPhotos, setUploadingPhotos] = useState<Record<PhotoType, boolean>>({
+    front: false,
+    back: false,
+    leftSide: false,
+    rightSide: false,
+    interior: false,
+  });
+
   const photoLabels: Record<PhotoType, string> = {
     front: 'Front View',
     back: 'Back View',
@@ -64,6 +77,11 @@ export default function VehiclePhotos() {
   };
 
   const pickImage = async (type: PhotoType, useCamera: boolean) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to upload photos');
+      return;
+    }
+
     if (useCamera) {
       const hasPermission = await requestPermissions();
       if (!hasPermission) return;
@@ -82,10 +100,44 @@ export default function VehiclePhotos() {
         });
 
     if (!result.canceled && result.assets[0]) {
-      setPhotos(prev => ({
-        ...prev,
-        [type]: result.assets[0].uri,
-      }));
+      const localUri = result.assets[0].uri;
+
+      // Show uploading state
+      setUploadingPhotos(prev => ({ ...prev, [type]: true }));
+
+      try {
+        // Upload immediately to Firebase Storage
+        const firebaseUrl = await uploadVehiclePhotoImmediately(user.id, type, localUri);
+
+        // Save the Firebase URL (not local URI) so it persists across sessions
+        setPhotos(prev => ({
+          ...prev,
+          [type]: firebaseUrl,
+        }));
+
+        // Also save to registration data immediately
+        updateRegistrationData({
+          vehicle: {
+            ...useDriverStore.getState().registrationData.vehicle!,
+            photos: {
+              ...useDriverStore.getState().registrationData.vehicle?.photos,
+              [type]: firebaseUrl,
+            },
+          },
+        });
+
+        console.log(`✅ Vehicle ${type} photo uploaded and saved`);
+      } catch (error) {
+        console.error(`❌ Error uploading ${type} photo:`, error);
+        Alert.alert('Upload Failed', 'Failed to upload photo. Please try again.');
+        // Keep the local URI as fallback so user can see the image
+        setPhotos(prev => ({
+          ...prev,
+          [type]: localUri,
+        }));
+      } finally {
+        setUploadingPhotos(prev => ({ ...prev, [type]: false }));
+      }
     }
   };
 
@@ -102,6 +154,7 @@ export default function VehiclePhotos() {
   };
 
   const allPhotosUploaded = Object.values(photos).every(photo => photo !== null);
+  const anyPhotoUploading = Object.values(uploadingPhotos).some(uploading => uploading);
 
   const handleContinue = () => {
     if (!allPhotosUploaded) {
@@ -109,18 +162,12 @@ export default function VehiclePhotos() {
       return;
     }
 
-    updateRegistrationData({
-      vehicle: {
-        ...useDriverStore.getState().registrationData.vehicle!,
-        photos: {
-          front: photos.front!,
-          back: photos.back!,
-          leftSide: photos.leftSide!,
-          rightSide: photos.rightSide!,
-          interior: photos.interior!,
-        },
-      },
-    });
+    if (anyPhotoUploading) {
+      Alert.alert('Please wait', 'Photos are still uploading. Please wait for them to finish.');
+      return;
+    }
+
+    // Photos are already saved to registration data during upload, just move to next step
     setRegistrationStep(6); // Moving to step 6 (drivers-license)
     router.push('/(driver)/registration/drivers-license');
   };
@@ -128,8 +175,13 @@ export default function VehiclePhotos() {
   const renderPhotoCard = (type: PhotoType) => (
     <View key={type} style={styles.photoCard}>
       <Text style={styles.photoLabel}>{photoLabels[type]}</Text>
-      
-      {photos[type] ? (
+
+      {uploadingPhotos[type] ? (
+        <View style={styles.uploadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.uploadingText}>Uploading...</Text>
+        </View>
+      ) : photos[type] ? (
         <View style={styles.photoPreview}>
           <Image source={{ uri: photos[type]! }} style={styles.photoImage} />
           <TouchableOpacity
@@ -262,7 +314,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: 100,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],
@@ -311,6 +363,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
     marginTop: Spacing.sm,
+  },
+  uploadingContainer: {
+    height: 160,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '10',
+  },
+  uploadingText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.primary,
+    marginTop: Spacing.sm,
+    fontWeight: '600',
   },
   photoPreview: {
     height: 160,

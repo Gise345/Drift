@@ -124,6 +124,41 @@ const formatDuration = (seconds: number | undefined): string => {
   return `${hours}h ${mins}m`;
 };
 
+// Helper to format payment method for display
+const formatPaymentMethod = (paymentMethod: string | undefined, paymentMethodDetails?: any): string => {
+  if (!paymentMethod) return 'Card';
+
+  // If we have detailed payment method info, use it
+  if (paymentMethodDetails) {
+    const { brand, last4, type } = paymentMethodDetails;
+    if (type === 'google_pay') return 'Google Pay';
+    if (type === 'apple_pay') return 'Apple Pay';
+    if (brand && last4) {
+      const brandName = brand.charAt(0).toUpperCase() + brand.slice(1);
+      return `${brandName} •••• ${last4}`;
+    }
+  }
+
+  // Parse legacy formats
+  if (paymentMethod.startsWith('stripe:pi_')) {
+    return 'Card'; // Generic card if we only have payment intent ID
+  }
+  if (paymentMethod.startsWith('card-')) {
+    return 'Saved Card';
+  }
+  if (paymentMethod === 'stripe' || paymentMethod === 'stripe-new') {
+    return 'Card';
+  }
+  if (paymentMethod === 'google-pay' || paymentMethod === 'google_pay') {
+    return 'Google Pay';
+  }
+  if (paymentMethod === 'apple-pay' || paymentMethod === 'apple_pay') {
+    return 'Apple Pay';
+  }
+
+  return paymentMethod;
+};
+
 export default function TripDetailScreen() {
   const router = useRouter();
   const { tripId } = useLocalSearchParams();
@@ -266,7 +301,7 @@ export default function TripDetailScreen() {
           plate: data.driverInfo.vehicle?.plate || '',
         } : null,
         rating: data.driverRating,
-        paymentMethod: data.paymentMethod || 'Card',
+        paymentMethod: formatPaymentMethod(data.paymentMethod, data.paymentMethodDetails),
         routeHistory,
         cancellation,
       };

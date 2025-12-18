@@ -65,7 +65,10 @@ interface DriverData {
 
 export default function PendingApproval() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, setMode } = useAuthStore();
+
+  // Check if user has RIDER role
+  const hasRiderRole = user?.roles?.includes('RIDER') ?? false;
   const [driverData, setDriverData] = useState<DriverData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,10 +115,6 @@ export default function PendingApproval() {
     return () => unsubscribe();
   }, [user?.id]);
 
-  const handleGoHome = () => {
-    router.replace('/(auth)/sign-in');
-  };
-
   const handleResubmitDocuments = () => {
     router.push('/(driver)/registration/resubmit-documents');
   };
@@ -137,20 +136,26 @@ export default function PendingApproval() {
   // Get document status counts
   const getStatusCounts = () => {
     const docs = driverData?.documents || {};
-    const requiredDocs = ['driversLicense', 'insurance', 'registration'];
+    // Count all uploaded documents (include inspection if uploaded)
+    const uploadedDocs = ['driversLicense', 'insurance', 'registration'];
+
+    // Add inspection to the count if it was uploaded
+    if (docs.inspection) {
+      uploadedDocs.push('inspection');
+    }
 
     let approved = 0;
     let rejected = 0;
     let pending = 0;
 
-    requiredDocs.forEach((docType) => {
+    uploadedDocs.forEach((docType) => {
       const status = docs[docType as keyof typeof docs]?.status;
       if (status === 'approved') approved++;
       else if (status === 'rejected') rejected++;
       else pending++;
     });
 
-    return { approved, rejected, pending, total: requiredDocs.length };
+    return { approved, rejected, pending, total: uploadedDocs.length };
   };
 
   if (loading) {
@@ -387,8 +392,56 @@ export default function PendingApproval() {
           </>
         )}
 
-        {/* Return to Home Button */}
-        <DriftButton title="Return to Home" onPress={handleGoHome} variant="black" />
+        {/* Rider Mode Section */}
+        <View style={styles.riderSection}>
+          <View style={styles.riderSectionHeader}>
+            <Ionicons name="car-outline" size={24} color={Colors.primary} />
+            <Text style={styles.riderSectionTitle}>Need a Ride?</Text>
+          </View>
+
+          {hasRiderRole ? (
+            // User has rider account - show button to switch to rider mode
+            <View>
+              <Text style={styles.riderSectionText}>
+                While waiting for your driver application to be reviewed, you can use Drift as a rider.
+              </Text>
+              <TouchableOpacity
+                style={styles.riderButton}
+                onPress={async () => {
+                  await setMode('RIDER');
+                  router.replace('/(tabs)');
+                }}
+              >
+                <Ionicons name="swap-horizontal" size={20} color={Colors.white} />
+                <Text style={styles.riderButtonText}>Switch to Rider Mode</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // User doesn't have rider account - show sign up instructions
+            <View>
+              <Text style={styles.riderSectionText}>
+                You don't have a rider account yet. Sign up as a rider to request rides while your driver application is being reviewed.
+              </Text>
+              <TouchableOpacity
+                style={styles.riderButton}
+                onPress={() => router.push('/(auth)/sign-up')}
+              >
+                <Ionicons name="person-add" size={20} color={Colors.white} />
+                <Text style={styles.riderButtonText}>Sign Up as Rider</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Navigation Instructions */}
+          <View style={styles.navigationInstructions}>
+            <Ionicons name="information-circle-outline" size={18} color={Colors.gray[500]} />
+            <Text style={styles.navigationInstructionsText}>
+              To return to this driver application screen later: Go to your{' '}
+              <Text style={styles.boldText}>Profile tab</Text>, scroll down, and select{' '}
+              <Text style={styles.boldText}>"Become a Driver"</Text>.
+            </Text>
+          </View>
+        </View>
 
         {/* Footer */}
         <Text style={styles.footerText}>
@@ -490,7 +543,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing['3xl'],
+    paddingTop: Spacing['3xl'],
+    paddingBottom: 100,
     alignItems: 'center',
   },
   iconContainer: {
@@ -796,5 +850,65 @@ const styles = StyleSheet.create({
   footerLink: {
     color: Colors.primary,
     fontWeight: '600',
+  },
+
+  // Rider Section
+  riderSection: {
+    width: '100%',
+    marginTop: Spacing.xl,
+    padding: Spacing.lg,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+  },
+  riderSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  riderSectionTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  riderSectionText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    marginBottom: Spacing.md,
+    lineHeight: 20,
+  },
+  riderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: 12,
+  },
+  riderButtonText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  navigationInstructions: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+  },
+  navigationInstructionsText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[500],
+    lineHeight: 18,
+  },
+  boldText: {
+    fontWeight: '600',
+    color: Colors.gray[700],
   },
 });

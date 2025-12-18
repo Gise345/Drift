@@ -242,6 +242,33 @@ const SearchLocationScreen = () => {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Handle pre-filled destination from AllDestinationsScreen
+    if (params.destinationLat && params.destinationLng && params.destinationName) {
+      const lat = parseFloat(params.destinationLat as string);
+      const lng = parseFloat(params.destinationLng as string);
+      const name = params.destinationName as string;
+
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setDestinationQuery(name);
+        setDestinationLocationState({
+          name: name,
+          address: name,
+          latitude: lat,
+          longitude: lng,
+        });
+
+        // Animate map to show destination
+        if (mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          }, 500);
+        }
+      }
+    }
   }, []);
 
   const initializeScreen = async () => {
@@ -260,8 +287,58 @@ const SearchLocationScreen = () => {
         return;
       }
 
+      // FAST PATH: Try to get last known location first (instant if available)
+      let quickLocation: Location.LocationObject | null = null;
+      try {
+        quickLocation = await Location.getLastKnownPositionAsync({
+          maxAge: 60000, // Accept locations up to 1 minute old
+        });
+      } catch (e) {
+        // Last known position not available, continue to get fresh
+      }
+
+      // If we have a quick location, use it immediately
+      if (quickLocation && !addStopMode) {
+        const quickCoords = quickLocation.coords;
+        setCurrentLocation(quickCoords);
+
+        // Immediately set pickup to "Current Location" without waiting for geocode
+        setPickupQuery('Current Location');
+        setPickupLocationState({
+          name: 'Current Location',
+          address: 'Getting address...',
+          latitude: quickCoords.latitude,
+          longitude: quickCoords.longitude,
+        });
+
+        const quickRegion = {
+          latitude: quickCoords.latitude,
+          longitude: quickCoords.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        };
+        setMapRegion(quickRegion);
+
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(quickRegion, 300);
+        }
+
+        // Fetch address in background (non-blocking)
+        reverseGeocode(quickCoords.latitude, quickCoords.longitude).then(address => {
+          if (address) {
+            setPickupLocationState({
+              name: 'Current Location',
+              address: address,
+              latitude: quickCoords.latitude,
+              longitude: quickCoords.longitude,
+            });
+          }
+        });
+      }
+
+      // Get fresh location with balanced accuracy (faster than High)
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
       });
 
       setCurrentLocation(location.coords);
@@ -283,6 +360,7 @@ const SearchLocationScreen = () => {
 
       // Auto-fill pickup with current location if not in add-stop mode
       if (!addStopMode) {
+        // If we already set quick location, just update the address
         const address = await reverseGeocode(location.coords.latitude, location.coords.longitude);
         if (address) {
           setPickupQuery('Current Location');

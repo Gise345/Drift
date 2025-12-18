@@ -27,7 +27,9 @@ export default function BankDetails() {
   // Initialize from saved data
   const savedBankDetails = registrationData?.bankDetails;
 
-  const [wiseEmail, setWiseEmail] = useState(savedBankDetails?.accountHolderName || '');
+  const [accountHolderName, setAccountHolderName] = useState(savedBankDetails?.accountHolderName || '');
+  const [sortCode, setSortCode] = useState(savedBankDetails?.routingNumber || '');
+  const [accountNumber, setAccountNumber] = useState(savedBankDetails?.accountNumber || '');
   const [hasWiseAccount, setHasWiseAccount] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -43,10 +45,20 @@ export default function BankDetails() {
   const handleContinue = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!wiseEmail.trim()) {
-      newErrors.wiseEmail = 'Wise email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wiseEmail)) {
-      newErrors.wiseEmail = 'Please enter a valid email';
+    if (!accountHolderName.trim()) {
+      newErrors.accountHolderName = 'Account holder name is required';
+    }
+
+    if (!sortCode.trim()) {
+      newErrors.sortCode = 'Sort code is required';
+    } else if (!/^\d{6}$/.test(sortCode.replace(/-/g, ''))) {
+      newErrors.sortCode = 'Sort code must be 6 digits';
+    }
+
+    if (!accountNumber.trim()) {
+      newErrors.accountNumber = 'Account number is required';
+    } else if (!/^\d{8,10}$/.test(accountNumber)) {
+      newErrors.accountNumber = 'Account number must be 8-10 digits';
     }
 
     setErrors(newErrors);
@@ -54,10 +66,10 @@ export default function BankDetails() {
     if (Object.keys(newErrors).length === 0) {
       updateRegistrationData({
         bankDetails: {
-          accountHolderName: wiseEmail.trim(),
+          accountHolderName: accountHolderName.trim(),
           bankName: 'Wise',
-          accountNumber: '',
-          routingNumber: '',
+          accountNumber: accountNumber.trim(),
+          routingNumber: sortCode.replace(/-/g, '').trim(), // Store sort code in routingNumber field
         },
       });
       setRegistrationStep(11); // Moving to step 11 (review-application)
@@ -187,7 +199,7 @@ export default function BankDetails() {
                   <Text style={styles.stepNumberText}>4</Text>
                 </View>
                 <View style={styles.stepContent}>
-                  <Text style={styles.stepText}>Come back and enter your Wise email below</Text>
+                  <Text style={styles.stepText}>Come back and enter your Wise bank details below or add bank details later in your profile settings after approval.</Text>
                 </View>
               </View>
             </View>
@@ -214,24 +226,50 @@ export default function BankDetails() {
           </View>
         )}
 
-        {/* Email Input - Show when they have account */}
+        {/* Bank Details Form - Show when they have account */}
         {hasWiseAccount && (
-          <View style={styles.emailSection}>
-            <Text style={styles.emailLabel}>Enter your Wise account email</Text>
+          <View style={styles.bankDetailsSection}>
+            <Text style={styles.bankDetailsTitle}>Enter your Wise bank details</Text>
+            <Text style={styles.bankDetailsSubtitle}>
+              You can find these details in your Wise app under "Account details"
+            </Text>
+
             <DriftInput
-              label="Wise Email Address"
-              placeholder="your.email@example.com"
-              value={wiseEmail}
-              onChangeText={setWiseEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={errors.wiseEmail}
+              label="Account Holder Name"
+              placeholder="John Smith"
+              value={accountHolderName}
+              onChangeText={setAccountHolderName}
+              autoCapitalize="words"
+              error={errors.accountHolderName}
+              variant="light"
             />
 
-            <View style={styles.emailNote}>
+            <DriftInput
+              label="Sort Code"
+              placeholder="00-00-00"
+              value={sortCode}
+              onChangeText={setSortCode}
+              keyboardType="number-pad"
+              maxLength={8}
+              error={errors.sortCode}
+              variant="light"
+            />
+
+            <DriftInput
+              label="Account Number"
+              placeholder="12345678"
+              value={accountNumber}
+              onChangeText={setAccountNumber}
+              keyboardType="number-pad"
+              maxLength={10}
+              error={errors.accountNumber}
+              variant="light"
+            />
+
+            <View style={styles.bankNote}>
               <Ionicons name="information-circle-outline" size={16} color={Colors.gray[500]} />
-              <Text style={styles.emailNoteText}>
-                This must match the email on your Wise account
+              <Text style={styles.bankNoteText}>
+                These details must match your Wise account. We'll use this to send your earnings.
               </Text>
             </View>
 
@@ -316,7 +354,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: 100,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],
@@ -470,24 +508,34 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     textDecorationLine: 'underline',
   },
-  emailSection: {
+  bankDetailsSection: {
     marginBottom: Spacing.xl,
   },
-  emailLabel: {
-    fontSize: Typography.fontSize.base,
+  bankDetailsTitle: {
+    fontSize: Typography.fontSize.lg,
     fontWeight: '600',
     color: Colors.black,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.xs,
   },
-  emailNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
+  bankDetailsSubtitle: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
     marginBottom: Spacing.lg,
   },
-  emailNoteText: {
+  bankNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
+    marginBottom: Spacing.lg,
+    backgroundColor: Colors.gray[50],
+    padding: Spacing.md,
+    borderRadius: 8,
+  },
+  bankNoteText: {
+    flex: 1,
     fontSize: Typography.fontSize.xs,
-    color: Colors.gray[500],
+    color: Colors.gray[600],
+    lineHeight: 18,
   },
   backToStepsButton: {
     alignItems: 'center',

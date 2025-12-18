@@ -240,11 +240,15 @@ export default function VehicleSelectionScreen() {
   const selectedVehicleData = VEHICLE_OPTIONS.find(v => v.id === selectedVehicle);
   const finalPrice = selectedVehicleData ? getVehiclePrice(selectedVehicleData.multiplier) : 0;
 
-  // Format route info
+  // Format route info (distance in meters from API, convert to miles)
   const formatDistance = () => {
     if (!route?.distance) return '';
-    const km = route.distance / 1000;
-    return km < 1 ? `${route.distance}m` : `${km.toFixed(1)} km`;
+    const miles = route.distance / 1609.34; // meters to miles
+    if (miles < 0.1) {
+      const feet = Math.round(miles * 5280);
+      return `${feet} ft`;
+    }
+    return `${miles.toFixed(1)} mi`;
   };
 
   const formatDuration = () => {

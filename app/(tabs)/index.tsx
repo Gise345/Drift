@@ -925,24 +925,14 @@ const HomeScreen = () => {
       }
     }
 
-    const pickup = currentLoc ? {
-      name: 'Current Location',
-      address: 'Your current location',
-      latitude: currentLoc.coords.latitude,
-      longitude: currentLoc.coords.longitude,
-    } : {
-      name: 'Grand Cayman',
-      address: 'Grand Cayman, Cayman Islands',
-      latitude: 19.3133,
-      longitude: -81.2546,
-    };
-
-    // For destinations, we'll need to geocode the name to get coordinates
-    // For now, let's just open search with the destination name pre-filled
+    // Navigate to search with destination coordinates pre-filled
     router.push({
       pathname: '/(rider)/search-location',
       params: {
         searchQuery: destination.name,
+        destinationLat: destination.latitude?.toString(),
+        destinationLng: destination.longitude?.toString(),
+        destinationName: destination.name,
       },
     });
   };

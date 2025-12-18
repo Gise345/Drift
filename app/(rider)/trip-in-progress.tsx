@@ -482,8 +482,8 @@ export default function TripInProgressScreen() {
           const leg = data.routes[0].legs[0];
           // Use Google's accurate duration (in seconds, convert to minutes)
           setEta(Math.ceil(leg.duration.value / 60));
-          // Use Google's accurate distance (in meters, convert to km)
-          setDistance(leg.distance.value / 1000);
+          // Use Google's accurate distance (in meters, convert to miles)
+          setDistance(leg.distance.value / 1609.34);
           return;
         }
       } catch (error) {
@@ -493,14 +493,14 @@ export default function TripInProgressScreen() {
 
     // Fallback: use straight-line distance with speed estimate
     setDistance(dist);
-    const avgSpeedKmPerMin = 0.5; // 30 km/h = 0.5 km/min (city speed fallback)
-    const timeInMinutes = Math.ceil(dist / avgSpeedKmPerMin);
+    const avgSpeedMiPerMin = 0.4; // 25 mph = 0.4 mi/min (city speed fallback)
+    const timeInMinutes = Math.ceil(dist / avgSpeedMiPerMin);
     setEta(Math.max(1, Math.min(timeInMinutes, 999)));
   };
 
-  // Calculate distance (Haversine)
+  // Calculate distance (Haversine) - returns miles
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
+    const R = 3959; // Earth's radius in miles
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
     const dLon = ((lon2 - lon1) * Math.PI) / 180;
     const a =
@@ -924,7 +924,7 @@ export default function TripInProgressScreen() {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>{distance?.toFixed(1) ?? '--'} km</Text>
+          <Text style={styles.statValue}>{distance?.toFixed(1) ?? '--'} mi</Text>
           <Text style={styles.statLabel}>Distance</Text>
         </View>
       </View>

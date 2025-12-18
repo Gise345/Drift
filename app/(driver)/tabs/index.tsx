@@ -35,7 +35,9 @@ import { getActiveDriverTrip } from '@/src/services/ride-request.service';
 import {
   initializeDriverNotifications,
   setupDriverNotificationListener,
+  setupPushNotificationListener,
 } from '@/src/services/driver-notification.service';
+import { NotificationService } from '@/src/services/notification.service';
 import { useBackgroundLocationPermission } from '@/src/hooks/useBackgroundLocationPermission';
 import { BackgroundLocationDisclosureModal } from '@/components/location/BackgroundLocationDisclosureModal';
 
@@ -67,6 +69,7 @@ export default function DriverHomeScreen() {
   const [isStatusCardMinimized, setIsStatusCardMinimized] = useState(false);
   const [isActiveTripMinimized, setIsActiveTripMinimized] = useState(false);
   const [hasCheckedActiveTrip, setHasCheckedActiveTrip] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   // Track shown request IDs to prevent modal from re-appearing for same request
   const shownRequestIds = useRef<Set<string>>(new Set());
@@ -107,12 +110,27 @@ export default function DriverHomeScreen() {
     }
   }, [user?.id]);
 
+  // Subscribe to real-time notifications for unread count badge
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const unsubscribe = NotificationService.subscribeToNotifications(
+      user.id,
+      (notifications) => {
+        const unread = notifications.filter(n => !n.read).length;
+        setUnreadNotificationCount(unread);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.id]);
+
   // Initialize driver notifications
   useEffect(() => {
     initializeDriverNotifications();
 
     // Set up notification response listener for accept/decline from notification
-    const subscription = setupDriverNotificationListener(
+    const responseSubscription = setupDriverNotificationListener(
       // On Accept from notification
       async (requestId) => {
         try {
@@ -132,10 +150,25 @@ export default function DriverHomeScreen() {
       }
     );
 
+    // Set up push notification listener to save notifications to inbox
+    let pushSubscription: any = null;
+    if (user?.id) {
+      pushSubscription = setupPushNotificationListener(
+        user.id,
+        // On chat message received
+        (tripId, senderName) => {
+          console.log(`📬 New message from ${senderName} for trip ${tripId}`);
+        }
+      );
+    }
+
     return () => {
-      subscription.remove();
+      responseSubscription.remove();
+      if (pushSubscription) {
+        pushSubscription.remove();
+      }
     };
-  }, []);
+  }, [user?.id]);
 
   // Keep online status persistent - restart listener when app comes to foreground
   useEffect(() => {
@@ -584,9 +617,13 @@ export default function DriverHomeScreen() {
               onPress={() => router.push('/(driver)/dashboard/notifications')}
             >
               <Ionicons name="notifications-outline" size={24} color={Colors.black} />
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>3</Text>
-              </View>
+              {unreadNotificationCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity

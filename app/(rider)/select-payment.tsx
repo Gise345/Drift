@@ -198,14 +198,40 @@ export default function SelectPaymentScreen() {
     paymentIntentId?: string;
     status?: string;
     paymentMethod?: string;
+    paymentMethodType?: 'card' | 'google_pay' | 'apple_pay';
+    cardBrand?: string;
+    cardLast4?: string;
   }) => {
     if (!user || !pickupLocation || !destination || !lockedContribution) return;
 
     setLoading(true);
 
     try {
+      // Determine the payment method display name
+      let paymentMethodDisplay = 'Card';
+      if (paymentDetails?.paymentMethodType === 'google_pay') {
+        paymentMethodDisplay = 'Google Pay';
+      } else if (paymentDetails?.paymentMethodType === 'apple_pay') {
+        paymentMethodDisplay = 'Apple Pay';
+      } else if (paymentDetails?.cardBrand && paymentDetails?.cardLast4) {
+        const brandName = paymentDetails.cardBrand.charAt(0).toUpperCase() + paymentDetails.cardBrand.slice(1);
+        paymentMethodDisplay = `${brandName} •••• ${paymentDetails.cardLast4}`;
+      } else if (selectedPayment === 'google-pay') {
+        paymentMethodDisplay = 'Google Pay';
+      } else if (selectedPayment === 'apple-pay') {
+        paymentMethodDisplay = 'Apple Pay';
+      } else if (selectedPayment.startsWith('card-')) {
+        // Find the saved card details
+        const cardId = selectedPayment.replace('card-', '');
+        const savedCard = stripeMethods.find(m => m.id === cardId);
+        if (savedCard) {
+          const brandName = savedCard.brand.charAt(0).toUpperCase() + savedCard.brand.slice(1);
+          paymentMethodDisplay = `${brandName} •••• ${savedCard.last4}`;
+        }
+      }
+
       // Save payment method
-      setSelectedPaymentMethod(paymentDetails?.paymentMethod || selectedPayment);
+      setSelectedPaymentMethod(paymentMethodDisplay);
 
       // Create trip in Firebase with status "REQUESTED"
       const tripId = await createTrip({
@@ -239,9 +265,15 @@ export default function SelectPaymentScreen() {
         estimatedCost: lockedContribution,
         estimatedCostKYD: lockedContribution,
         estimatedCostUSD: chargeAmountUSD,
-        paymentMethod: paymentDetails?.paymentMethod || selectedPayment,
+        // Store human-readable payment method name
+        paymentMethod: paymentMethodDisplay,
+        // Also store detailed payment method info for reference
+        paymentMethodDetails: paymentDetails ? {
+          type: paymentDetails.paymentMethodType || 'card',
+          brand: paymentDetails.cardBrand,
+          last4: paymentDetails.cardLast4,
+        } : undefined,
         ...(paymentDetails?.paymentIntentId ? {
-          paymentMethod: `stripe:${paymentDetails.paymentIntentId}`,
           paymentIntentId: paymentDetails.paymentIntentId, // Store separately for reliability
           // Payment is now AUTHORIZED (held) but not captured yet
           // It will be CAPTURED when driver accepts the ride
@@ -275,15 +307,26 @@ export default function SelectPaymentScreen() {
     paymentProcessedRef.current = true;
     setPaymentProcessed(true);
 
-    console.log('Stripe payment successful:', { paymentIntentId, status });
+    console.log('Stripe payment successful:', { paymentIntentId, status, details });
 
     setShowStripeCheckout(false);
+
+    // Determine payment method type based on what was selected
+    let paymentMethodType: 'card' | 'google_pay' | 'apple_pay' = 'card';
+    if (selectedPayment === 'google-pay') {
+      paymentMethodType = 'google_pay';
+    } else if (selectedPayment === 'apple-pay') {
+      paymentMethodType = 'apple_pay';
+    }
 
     // Create trip with payment details
     await createTripRequest({
       paymentIntentId,
       status,
       paymentMethod: 'stripe',
+      paymentMethodType,
+      cardBrand: details?.brand,
+      cardLast4: details?.last4,
     });
   };
 

@@ -18,23 +18,53 @@ import { View, Text, StyleSheet, Platform, ActivityIndicator } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { useDriverStore } from '@/src/stores/driver-store';
+import { NotificationService } from '@/src/services/notification.service';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+import { getFirestore, doc, getDoc, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
 // Get Firebase instances - use 'main' database
 const app = getApp();
 const db = getFirestore(app, 'main');
 
+/**
+ * Helper to check if document exists
+ * React Native Firebase can return exists as either a boolean or function depending on version
+ */
+function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): boolean {
+  if (typeof docSnapshot.exists === 'function') {
+    return (docSnapshot.exists as () => boolean)();
+  }
+  return docSnapshot.exists as unknown as boolean;
+}
+
 export default function DriverTabsLayout() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
+  const { loadSavedRegistrationProgress } = useDriverStore();
   const [isChecking, setIsChecking] = useState(true);
   const [isRegistrationComplete, setIsRegistrationComplete] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     checkDriverRegistration();
   }, [user?.id]);
+
+  // Subscribe to real-time notifications for unread count
+  useEffect(() => {
+    if (!user?.id || !isRegistrationComplete) return;
+
+    const unsubscribe = NotificationService.subscribeToNotifications(
+      user.id,
+      (notifications) => {
+        const unread = notifications.filter(n => !n.read).length;
+        setUnreadCount(unread);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.id, isRegistrationComplete]);
 
   const checkDriverRegistration = async () => {
     if (!user?.id) {
@@ -50,16 +80,21 @@ export default function DriverTabsLayout() {
       const driverRef = doc(db, 'drivers', user.id);
       const driverDoc = await getDoc(driverRef);
 
-      if (!driverDoc.exists) {
+      if (!documentExists(driverDoc)) {
         // No driver profile - check if there's a saved registration in progress
         try {
           const registrationRef = doc(db, 'driverRegistrationProgress', user.id);
           const registrationDoc = await getDoc(registrationRef);
 
-          if (registrationDoc.exists) {
+          if (documentExists(registrationDoc)) {
             const progress = registrationDoc.data();
             const step = progress?.currentStep || 1;
             console.log('📝 Found registration in progress at step:', step);
+
+            // IMPORTANT: Load the registration data into the driver store BEFORE redirecting
+            // This ensures form data and photos are available when the registration screen loads
+            await loadSavedRegistrationProgress(user.id);
+            console.log('✅ Loaded registration data into store');
 
             // Redirect to the appropriate registration screen based on saved step
             const stepRoutes: { [key: number]: string } = {
@@ -72,7 +107,7 @@ export default function DriverTabsLayout() {
               7: '/(driver)/registration/insurance',
               8: '/(driver)/registration/registration-cert',
               9: '/(driver)/registration/inspection',
-              10: '/(driver)/registration/background-check',
+              10: '/(driver)/registration/bank-details',
               11: '/(driver)/registration/bank-details',
               12: '/(driver)/registration/review-application',
             };
@@ -218,10 +253,14 @@ export default function DriverTabsLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons name="mail" size={size} color={color} />
-              {/* Notification Badge */}
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>5</Text>
-              </View>
+              {/* Notification Badge - only show if there are unread notifications */}
+              {unreadCount > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </View>
           ),
         }}

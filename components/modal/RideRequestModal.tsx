@@ -169,8 +169,9 @@ export default function RideRequestModal({
 
   const formatEarnings = (amount: number) => `$${amount.toFixed(2)}`;
   const formatDistance = (meters: number) => {
-    if (meters < 1000) return `${Math.round(meters)}m`;
-    return `${(meters / 1000).toFixed(1)}km`;
+    const miles = meters / 1609.34;
+    if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+    return `${miles.toFixed(1)} mi`;
   };
   const formatDuration = (minutes: number) => {
     if (minutes < 60) return `${Math.round(minutes)} min`;

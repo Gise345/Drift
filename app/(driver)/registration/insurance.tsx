@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,10 +18,13 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore } from '@/src/stores/driver-store';
+import { useAuthStore } from '@/src/stores/auth-store';
+import { uploadDocumentImmediately } from '@/src/services/driver-registration.service';
 
 export default function Insurance() {
   const router = useRouter();
   const { registrationData, updateRegistrationData, setRegistrationStep } = useDriverStore();
+  const { user } = useAuthStore();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -36,8 +40,14 @@ export default function Insurance() {
   const [insuranceImage, setInsuranceImage] = useState<string | null>(savedInsurance?.image || null);
   const [expiryDate, setExpiryDate] = useState(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const pickImage = async (useCamera: boolean) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to upload documents');
+      return;
+    }
+
     if (useCamera) {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
@@ -47,11 +57,35 @@ export default function Insurance() {
     }
 
     const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.9 })
-      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, quality: 0.9 });
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.8 });
 
     if (!result.canceled && result.assets[0]) {
-      setInsuranceImage(result.assets[0].uri);
+      const localUri = result.assets[0].uri;
+      setIsUploading(true);
+
+      try {
+        // Upload immediately to Firebase Storage
+        const firebaseUrl = await uploadDocumentImmediately(user.id, 'insurance', localUri);
+        setInsuranceImage(firebaseUrl);
+
+        // Save to registration data immediately
+        updateRegistrationData({
+          documents: {
+            insurance: {
+              image: firebaseUrl,
+            },
+          },
+        });
+
+        console.log('✅ Insurance document uploaded and saved');
+      } catch (error) {
+        console.error('❌ Error uploading insurance:', error);
+        Alert.alert('Upload Failed', 'Failed to upload document. Please try again.');
+        setInsuranceImage(localUri); // Keep local URI as fallback
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -69,20 +103,17 @@ export default function Insurance() {
       return;
     }
 
+    if (isUploading) {
+      Alert.alert('Please wait', 'Document is still uploading. Please wait for it to finish.');
+      return;
+    }
+
     if (expiryDate < new Date()) {
       Alert.alert('Insurance expired', 'Please provide valid insurance that has not expired');
       return;
     }
 
-    // Save to store in the correct format
-    updateRegistrationData({
-      documents: {
-        insurance: {
-          image: insuranceImage,
-        },
-      },
-    });
-
+    // Document is already saved during upload, just move to next step
     setRegistrationStep(8); // Moving to step 8 (registration-cert)
     router.push('/(driver)/registration/registration-cert');
   };
@@ -113,7 +144,12 @@ export default function Insurance() {
         {/* Insurance Document */}
         <View style={styles.documentSection}>
           <Text style={styles.sectionLabel}>Insurance Certificate *</Text>
-          {insuranceImage ? (
+          {isUploading ? (
+            <View style={styles.uploadingBox}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.uploadingText}>Uploading...</Text>
+            </View>
+          ) : insuranceImage ? (
             <View style={styles.imagePreview}>
               <Image source={{ uri: insuranceImage }} style={styles.documentImage} />
               <TouchableOpacity style={styles.retakeButton} onPress={showImageOptions}>
@@ -238,7 +274,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing['3xl'],
+    paddingBottom: 100,
   },
   title: {
     fontSize: Typography.fontSize['2xl'],
@@ -262,7 +298,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   uploadBox: {
-    height: 180,
+    height: 140,
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: Colors.gray[300],
@@ -274,10 +310,25 @@ const styles = StyleSheet.create({
   uploadText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  uploadingBox: {
+    height: 140,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '10',
+  },
+  uploadingText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.primary,
+    marginTop: Spacing.sm,
+    fontWeight: '600',
   },
   imagePreview: {
-    height: 180,
+    height: 140,
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',

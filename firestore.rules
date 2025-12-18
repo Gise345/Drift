@@ -57,6 +57,18 @@ service cloud.firestore {
     }
 
     // ============================================================================
+    // Driver Registration Progress (for saving/resuming incomplete registrations)
+    // ============================================================================
+
+    match /driverRegistrationProgress/{userId} {
+      // Users can only read/write their own registration progress
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // ============================================================================
     // Driver Documents
     // ============================================================================
 

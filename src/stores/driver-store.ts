@@ -324,31 +324,87 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
     const { getCurrentUser } = require('../services/firebase-auth-service');
     const currentUser = getCurrentUser();
     if (currentUser?.uid) {
-      saveRegistrationProgress(currentUser.uid, step, get().registrationData);
+      console.log('📍 Setting registration step to:', step);
+      saveRegistrationProgress(currentUser.uid, step, get().registrationData)
+        .then(() => console.log('✅ Step saved to Firebase'))
+        .catch((err: any) => console.error('❌ Failed to save step:', err));
+    } else {
+      console.warn('⚠️ Cannot save step: no current user');
     }
   },
 
   updateRegistrationData: (data) => {
-    set((state) => ({
-      registrationData: {
+    set((state) => {
+      // Deep merge for nested objects (vehicle, documents, personalInfo)
+      const mergedData = {
         ...state.registrationData,
         ...data,
-        // Deep merge for nested documents object
-        documents: data.documents
-          ? {
-              ...state.registrationData.documents,
-              ...data.documents,
-            }
-          : state.registrationData.documents,
+      };
+
+      // Deep merge for vehicle (including photos)
+      if (data.vehicle) {
+        mergedData.vehicle = {
+          ...state.registrationData.vehicle,
+          ...data.vehicle,
+          // Deep merge photos if present
+          photos: data.vehicle.photos
+            ? {
+                ...state.registrationData.vehicle?.photos,
+                ...data.vehicle.photos,
+              }
+            : state.registrationData.vehicle?.photos,
+        };
       }
-    }));
+
+      // Deep merge for documents (including nested license, insurance, etc.)
+      if (data.documents) {
+        mergedData.documents = {
+          ...state.registrationData.documents,
+          ...data.documents,
+          // Deep merge license if present
+          license: data.documents.license
+            ? {
+                ...state.registrationData.documents?.license,
+                ...data.documents.license,
+              }
+            : state.registrationData.documents?.license,
+        };
+      }
+
+      // Deep merge for personalInfo (including nested address)
+      if (data.personalInfo) {
+        mergedData.personalInfo = {
+          ...state.registrationData.personalInfo,
+          ...data.personalInfo,
+          address: data.personalInfo.address
+            ? {
+                ...state.registrationData.personalInfo?.address,
+                ...data.personalInfo.address,
+              }
+            : state.registrationData.personalInfo?.address,
+        };
+      }
+
+      return { registrationData: mergedData };
+    });
+
     // Auto-save progress to Firebase when data changes
     const { saveRegistrationProgress } = require('../services/driver-registration.service');
     const { getCurrentUser } = require('../services/firebase-auth-service');
     const currentUser = getCurrentUser();
     if (currentUser?.uid) {
       const state = get();
-      saveRegistrationProgress(currentUser.uid, state.registrationStep, state.registrationData);
+      console.log('💾 Auto-saving registration progress...', {
+        step: state.registrationStep,
+        hasVehicle: !!state.registrationData.vehicle,
+        hasPhotos: !!state.registrationData.vehicle?.photos,
+        hasDocuments: !!state.registrationData.documents,
+      });
+      saveRegistrationProgress(currentUser.uid, state.registrationStep, state.registrationData)
+        .then(() => console.log('✅ Registration progress auto-saved'))
+        .catch((err: any) => console.error('❌ Failed to auto-save registration progress:', err));
+    } else {
+      console.warn('⚠️ Cannot auto-save: no current user');
     }
   },
   

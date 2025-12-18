@@ -123,14 +123,13 @@ export default function AdminDashboard() {
       color: Colors.success,
       badge: stats.activeDrivers > 0 ? String(stats.activeDrivers) : undefined,
     },
-    // COMMENTED OUT FOR GOOGLE REVIEW - Live tracking may cause rejection
-    // {
-    //   icon: 'location-outline',
-    //   title: 'Live Map',
-    //   subtitle: 'Track active drivers in real-time',
-    //   route: '/(admin)/map',
-    //   color: Colors.info,
-    // },
+    {
+      icon: 'location-outline',
+      title: 'Live Map',
+      subtitle: 'Track active drivers in real-time',
+      route: '/(admin)/map',
+      color: Colors.info,
+    },
     {
       icon: 'receipt-outline',
       title: 'All Trips',

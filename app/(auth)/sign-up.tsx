@@ -103,7 +103,7 @@ export default function SignUpScreen() {
       Alert.alert(
         'Registration Successful! 🎉',
         needsVerification
-          ? 'A verification email has been sent to your inbox. Please verify your email to continue.'
+          ? 'A verification email has been sent to your inbox (check your spam folder if you don\'t see it). Please verify your email to continue.'
           : 'Welcome to Drift!',
         [
           {

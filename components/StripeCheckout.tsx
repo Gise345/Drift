@@ -377,10 +377,25 @@ export function StripeCheckout({
       if (error.message?.includes('canceled') || error.message?.includes('cancelled')) {
         onCancel();
       } else {
+        // Check for specific Google Pay merchant errors
+        const isGooglePayMerchantError =
+          error.message?.includes('OR_BIBED') ||
+          error.message?.includes('merchant') ||
+          error.message?.includes('not supported') ||
+          error.code === 'Failed';
+
+        const errorTitle = isGooglePayMerchantError
+          ? 'Google Pay Not Available'
+          : 'Payment Method Unavailable';
+
+        const errorMessage = isGooglePayMerchantError
+          ? 'Google Pay is temporarily unavailable for this merchant. Please use a credit or debit card instead.'
+          : `${preferredMethod === 'google_pay' ? 'Google Pay' : 'Apple Pay'} is not available. Would you like to pay with a card instead?`;
+
         // If platform pay fails, offer to use card payment
         Alert.alert(
-          'Payment Method Unavailable',
-          `${preferredMethod === 'google_pay' ? 'Google Pay' : 'Apple Pay'} is not available. Would you like to pay with a card instead?`,
+          errorTitle,
+          errorMessage,
           [
             { text: 'Cancel', onPress: onCancel, style: 'cancel' },
             { text: 'Pay with Card', onPress: handlePayment },

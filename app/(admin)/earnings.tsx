@@ -1,9 +1,10 @@
 /**
  * EARNINGS & PAYOUTS SCREEN
- * Shows driver earnings and manages payouts
+ * Shows driver earnings and manages payouts via Wise
  *
  * ✅ UPGRADED TO React Native Firebase v22+ Modular API
  * ✅ Using 'main' database (restored from backup)
+ * ✅ Integrated with Wise for mass payouts
  */
 
 import React, { useEffect, useState } from 'react';
@@ -17,12 +18,15 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, query, where, orderBy, limit, serverTimestamp, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { WiseService, WiseBalance, BatchPayoutItem } from '@/src/services/wise.service';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -58,8 +62,16 @@ export default function EarningsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<'earnings' | 'payouts'>('earnings');
 
+  // Wise integration state
+  const [wiseBalances, setWiseBalances] = useState<WiseBalance[]>([]);
+  const [selectedDrivers, setSelectedDrivers] = useState<Set<string>>(new Set());
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [processingPayout, setProcessingPayout] = useState(false);
+  const [batchResults, setBatchResults] = useState<any>(null);
+
   useEffect(() => {
     loadData();
+    loadWiseBalance();
   }, [view]);
 
   const loadData = async () => {
@@ -174,6 +186,45 @@ export default function EarningsScreen() {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+    loadWiseBalance();
+  };
+
+  const loadWiseBalance = async () => {
+    try {
+      const result = await WiseService.getBalance();
+      if (result.success) {
+        setWiseBalances(result.balances);
+      }
+    } catch (error) {
+      console.error('Error loading Wise balance:', error);
+    }
+  };
+
+  const toggleDriverSelection = (driverId: string) => {
+    setSelectedDrivers(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(driverId)) {
+        newSet.delete(driverId);
+      } else {
+        newSet.add(driverId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllDrivers = () => {
+    const driversWithPayout = drivers.filter(d => d.pendingPayout > 0);
+    setSelectedDrivers(new Set(driversWithPayout.map(d => d.driverId)));
+  };
+
+  const clearSelection = () => {
+    setSelectedDrivers(new Set());
+  };
+
+  const getSelectedTotal = () => {
+    return drivers
+      .filter(d => selectedDrivers.has(d.driverId))
+      .reduce((sum, d) => sum + d.pendingPayout, 0);
   };
 
   const handleProcessPayout = (driver: DriverEarnings) => {
@@ -183,44 +234,102 @@ export default function EarningsScreen() {
     }
 
     Alert.alert(
-      'Process Payout',
-      `Process payout of CI$${driver.pendingPayout.toFixed(2)} for ${driver.driverName}?`,
+      'Process Wise Payout',
+      `Send CI$${driver.pendingPayout.toFixed(2)} to ${driver.driverName} via Wise?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Process',
           onPress: async () => {
             try {
-              // Create payout record
-              const payoutsRef = collection(db, 'payouts');
-              await addDoc(payoutsRef, {
-                driverId: driver.driverId,
-                driverName: driver.driverName,
-                amount: driver.pendingPayout,
-                status: 'processing',
-                requestedAt: serverTimestamp(),
-                method: 'Bank Transfer',
-                createdAt: serverTimestamp(),
-              });
+              setProcessingPayout(true);
 
-              // Clear pending payout
-              const earningsSummaryRef = doc(db, 'drivers', driver.driverId, 'earnings', 'summary');
-              await updateDoc(earningsSummaryRef, {
-                pendingPayout: 0,
-                lastPayoutAt: serverTimestamp(),
-                lastPayoutAmount: driver.pendingPayout,
-              });
+              // Process via Wise API
+              const result = await WiseService.processPayout(
+                driver.driverId,
+                driver.pendingPayout,
+                `Drift Payout - ${driver.driverName}`
+              );
 
-              Alert.alert('Success', 'Payout has been processed successfully.');
-              loadData();
-            } catch (error) {
-              console.error('❌ Error processing payout:', error);
-              Alert.alert('Error', 'Failed to process payout. Please try again.');
+              if (result.success) {
+                Alert.alert(
+                  'Payout Sent',
+                  `Successfully sent $${result.sourceAmount.toFixed(2)} USD\n` +
+                  `Driver will receive £${result.targetAmount.toFixed(2)} GBP\n` +
+                  `Exchange rate: ${result.exchangeRate.toFixed(4)}\n` +
+                  `Fee: $${result.fee.toFixed(2)}`
+                );
+                loadData();
+                loadWiseBalance();
+              }
+            } catch (error: any) {
+              console.error('Error processing payout:', error);
+              Alert.alert('Error', error.message || 'Failed to process payout. Please try again.');
+            } finally {
+              setProcessingPayout(false);
             }
           },
         },
       ]
     );
+  };
+
+  const handleBatchPayout = async () => {
+    if (selectedDrivers.size === 0) {
+      Alert.alert('No Selection', 'Please select drivers to pay out.');
+      return;
+    }
+
+    const payouts: BatchPayoutItem[] = drivers
+      .filter(d => selectedDrivers.has(d.driverId) && d.pendingPayout > 0)
+      .map(d => ({
+        driverId: d.driverId,
+        amount: d.pendingPayout,
+      }));
+
+    if (payouts.length === 0) {
+      Alert.alert('No Payouts', 'Selected drivers have no pending payouts.');
+      return;
+    }
+
+    setShowBatchModal(true);
+  };
+
+  const confirmBatchPayout = async () => {
+    try {
+      setProcessingPayout(true);
+      setBatchResults(null);
+
+      const payouts: BatchPayoutItem[] = drivers
+        .filter(d => selectedDrivers.has(d.driverId) && d.pendingPayout > 0)
+        .map(d => ({
+          driverId: d.driverId,
+          amount: d.pendingPayout,
+        }));
+
+      const result = await WiseService.processBatchPayouts(payouts);
+      setBatchResults(result);
+
+      if (result.failedCount === 0) {
+        Alert.alert('Success', `All ${result.successCount} payouts processed successfully!`);
+      } else if (result.successCount === 0) {
+        Alert.alert('Failed', `All ${result.failedCount} payouts failed. Check results for details.`);
+      } else {
+        Alert.alert(
+          'Partial Success',
+          `${result.successCount} succeeded, ${result.failedCount} failed. Check results for details.`
+        );
+      }
+
+      loadData();
+      loadWiseBalance();
+      clearSelection();
+    } catch (error: any) {
+      console.error('Error processing batch payouts:', error);
+      Alert.alert('Error', error.message || 'Failed to process batch payouts.');
+    } finally {
+      setProcessingPayout(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -238,56 +347,74 @@ export default function EarningsScreen() {
     }
   };
 
-  const renderDriver = ({ item }: { item: DriverEarnings }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.driverInfo}>
-          <Text style={styles.driverName}>{item.driverName}</Text>
-          <Text style={styles.tripsText}>{item.totalTrips} trips</Text>
-        </View>
-        <TouchableOpacity
-          style={[
-            styles.payoutButton,
-            item.pendingPayout <= 0 && styles.payoutButtonDisabled,
-          ]}
-          onPress={() => handleProcessPayout(item)}
-          disabled={item.pendingPayout <= 0}
-        >
-          <Text style={styles.payoutButtonText}>Pay Out</Text>
-        </TouchableOpacity>
-      </View>
+  const renderDriver = ({ item }: { item: DriverEarnings }) => {
+    const isSelected = selectedDrivers.has(item.driverId);
 
-      <View style={styles.earningsGrid}>
-        <View style={styles.earningsItem}>
-          <Text style={styles.earningsLabel}>Total Earnings</Text>
-          <Text style={styles.earningsValue}>CI${item.totalEarnings.toFixed(2)}</Text>
+    return (
+      <View style={[styles.card, isSelected && styles.cardSelected]}>
+        <View style={styles.cardHeader}>
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => toggleDriverSelection(item.driverId)}
+            disabled={item.pendingPayout <= 0}
+          >
+            <View style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected,
+              item.pendingPayout <= 0 && styles.checkboxDisabled,
+            ]}>
+              {isSelected && <Ionicons name="checkmark" size={16} color={Colors.white} />}
+            </View>
+          </TouchableOpacity>
+          <View style={styles.driverInfo}>
+            <Text style={styles.driverName}>{item.driverName}</Text>
+            <Text style={styles.tripsText}>{item.totalTrips} trips</Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.payoutButton,
+              item.pendingPayout <= 0 && styles.payoutButtonDisabled,
+              processingPayout && styles.payoutButtonDisabled,
+            ]}
+            onPress={() => handleProcessPayout(item)}
+            disabled={item.pendingPayout <= 0 || processingPayout}
+          >
+            <Text style={styles.payoutButtonText}>Pay Out</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.earningsItem}>
-          <Text style={styles.earningsLabel}>Pending Payout</Text>
-          <Text style={[styles.earningsValue, { color: Colors.warning }]}>
-            CI${item.pendingPayout.toFixed(2)}
-          </Text>
-        </View>
-      </View>
 
-      <View style={styles.earningsGrid}>
-        <View style={styles.earningsItem}>
-          <Text style={styles.earningsLabel}>Avg per Trip</Text>
-          <Text style={styles.earningsSecondary}>
-            CI${item.avgTripEarnings.toFixed(2)}
-          </Text>
-        </View>
-        {item.lastPayout && (
+        <View style={styles.earningsGrid}>
           <View style={styles.earningsItem}>
-            <Text style={styles.earningsLabel}>Last Payout</Text>
-            <Text style={styles.earningsSecondary}>
-              CI${item.lastPayoutAmount?.toFixed(2)} • {item.lastPayout.toLocaleDateString()}
+            <Text style={styles.earningsLabel}>Total Earnings</Text>
+            <Text style={styles.earningsValue}>CI${item.totalEarnings.toFixed(2)}</Text>
+          </View>
+          <View style={styles.earningsItem}>
+            <Text style={styles.earningsLabel}>Pending Payout</Text>
+            <Text style={[styles.earningsValue, { color: Colors.warning }]}>
+              CI${item.pendingPayout.toFixed(2)}
             </Text>
           </View>
-        )}
+        </View>
+
+        <View style={styles.earningsGrid}>
+          <View style={styles.earningsItem}>
+            <Text style={styles.earningsLabel}>Avg per Trip</Text>
+            <Text style={styles.earningsSecondary}>
+              CI${item.avgTripEarnings.toFixed(2)}
+            </Text>
+          </View>
+          {item.lastPayout && (
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsLabel}>Last Payout</Text>
+              <Text style={styles.earningsSecondary}>
+                CI${item.lastPayoutAmount?.toFixed(2)} • {item.lastPayout.toLocaleDateString()}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderPayout = ({ item }: { item: Payout }) => (
     <View style={styles.card}>
@@ -331,6 +458,26 @@ export default function EarningsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Wise Balance */}
+      {wiseBalances.length > 0 && (
+        <View style={styles.wiseBalanceBar}>
+          <View style={styles.wiseLogo}>
+            <Text style={styles.wiseLogoText}>Wise</Text>
+          </View>
+          <View style={styles.wiseBalances}>
+            {wiseBalances.map((balance, index) => (
+              <View key={index} style={styles.wiseBalanceItem}>
+                <Text style={styles.wiseBalanceAmount}>
+                  {balance.currency === 'USD' ? '$' : balance.currency === 'GBP' ? '£' : ''}
+                  {balance.amount.toFixed(2)}
+                </Text>
+                <Text style={styles.wiseBalanceCurrency}>{balance.currency}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* View Toggle */}
       <View style={styles.toggleBar}>
         <TouchableOpacity
@@ -350,6 +497,40 @@ export default function EarningsScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Selection Bar (when drivers are selected) */}
+      {view === 'earnings' && selectedDrivers.size > 0 && (
+        <View style={styles.selectionBar}>
+          <View style={styles.selectionInfo}>
+            <Text style={styles.selectionCount}>{selectedDrivers.size} selected</Text>
+            <Text style={styles.selectionTotal}>CI${getSelectedTotal().toFixed(2)}</Text>
+          </View>
+          <View style={styles.selectionActions}>
+            <TouchableOpacity style={styles.selectionButton} onPress={clearSelection}>
+              <Text style={styles.selectionButtonText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectionButton, styles.batchPayButton]}
+              onPress={handleBatchPayout}
+              disabled={processingPayout}
+            >
+              {processingPayout ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <Text style={styles.batchPayButtonText}>Batch Payout</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Select All Button */}
+      {view === 'earnings' && drivers.filter(d => d.pendingPayout > 0).length > 0 && selectedDrivers.size === 0 && (
+        <TouchableOpacity style={styles.selectAllButton} onPress={selectAllDrivers}>
+          <Ionicons name="checkbox-outline" size={18} color={Colors.primary} />
+          <Text style={styles.selectAllText}>Select All with Pending Payouts</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -383,6 +564,138 @@ export default function EarningsScreen() {
           }
         />
       )}
+
+      {/* Batch Payout Modal */}
+      <Modal
+        visible={showBatchModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => !processingPayout && setShowBatchModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => !processingPayout && setShowBatchModal(false)}
+              disabled={processingPayout}
+            >
+              <Text style={[styles.modalCancel, processingPayout && { color: Colors.gray[400] }]}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Batch Payout</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.batchSummary}>
+              <View style={styles.wiseLogo}>
+                <Text style={styles.wiseLogoText}>Wise</Text>
+              </View>
+              <Text style={styles.batchTitle}>Mass Payout via Wise</Text>
+              <Text style={styles.batchDescription}>
+                Send payouts to {selectedDrivers.size} drivers instantly via Wise.
+                Each driver will receive funds in GBP to their registered Wise account.
+              </Text>
+            </View>
+
+            <View style={styles.batchDetails}>
+              <View style={styles.batchDetailRow}>
+                <Text style={styles.batchDetailLabel}>Total Drivers</Text>
+                <Text style={styles.batchDetailValue}>{selectedDrivers.size}</Text>
+              </View>
+              <View style={styles.batchDetailRow}>
+                <Text style={styles.batchDetailLabel}>Total Amount (USD)</Text>
+                <Text style={styles.batchDetailValue}>
+                  ${getSelectedTotal().toFixed(2)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.batchDriversList}>
+              <Text style={styles.batchDriversTitle}>Selected Drivers</Text>
+              {drivers
+                .filter(d => selectedDrivers.has(d.driverId))
+                .map(driver => (
+                  <View key={driver.driverId} style={styles.batchDriverItem}>
+                    <Text style={styles.batchDriverName}>{driver.driverName}</Text>
+                    <Text style={styles.batchDriverAmount}>
+                      CI${driver.pendingPayout.toFixed(2)}
+                    </Text>
+                  </View>
+                ))}
+            </View>
+
+            {batchResults && (
+              <View style={styles.batchResults}>
+                <Text style={styles.batchResultsTitle}>Results</Text>
+                <View style={styles.batchResultsSummary}>
+                  <View style={[styles.resultBadge, { backgroundColor: Colors.success + '20' }]}>
+                    <Text style={[styles.resultBadgeText, { color: Colors.success }]}>
+                      {batchResults.successCount} Succeeded
+                    </Text>
+                  </View>
+                  {batchResults.failedCount > 0 && (
+                    <View style={[styles.resultBadge, { backgroundColor: Colors.error + '20' }]}>
+                      <Text style={[styles.resultBadgeText, { color: Colors.error }]}>
+                        {batchResults.failedCount} Failed
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {batchResults.results
+                  .filter((r: any) => !r.success)
+                  .map((r: any, i: number) => (
+                    <View key={i} style={styles.failedItem}>
+                      <Ionicons name="alert-circle" size={16} color={Colors.error} />
+                      <Text style={styles.failedItemText}>
+                        {drivers.find(d => d.driverId === r.driverId)?.driverName}: {r.error}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+            )}
+
+            <View style={styles.batchWarning}>
+              <Ionicons name="information-circle" size={20} color={Colors.warning} />
+              <Text style={styles.batchWarningText}>
+                Payouts are processed immediately and cannot be reversed. Make sure all
+                driver Wise accounts are verified before proceeding.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            {!batchResults ? (
+              <TouchableOpacity
+                style={[styles.confirmButton, processingPayout && styles.confirmButtonDisabled]}
+                onPress={confirmBatchPayout}
+                disabled={processingPayout}
+              >
+                {processingPayout ? (
+                  <View style={styles.processingContainer}>
+                    <ActivityIndicator size="small" color={Colors.white} />
+                    <Text style={styles.confirmButtonText}>Processing...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.confirmButtonText}>
+                    Confirm Payout (${getSelectedTotal().toFixed(2)})
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={() => {
+                  setShowBatchModal(false);
+                  setBatchResults(null);
+                }}
+              >
+                <Text style={styles.confirmButtonText}>Done</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -562,5 +875,313 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
     textAlign: 'center',
+  },
+  // Wise Balance Bar
+  wiseBalanceBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[200],
+  },
+  wiseLogo: {
+    backgroundColor: '#9FE870',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  wiseLogoText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+    color: '#163300',
+  },
+  wiseBalances: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.lg,
+  },
+  wiseBalanceItem: {
+    alignItems: 'flex-end',
+  },
+  wiseBalanceAmount: {
+    fontSize: Typography.fontSize.lg,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.text,
+  },
+  wiseBalanceCurrency: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[500],
+  },
+  // Selection UI
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.primary + '15',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.primary + '30',
+  },
+  selectionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  selectionCount: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.primary,
+  },
+  selectionTotal: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[700],
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  selectionButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.white,
+  },
+  selectionButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[700],
+  },
+  batchPayButton: {
+    backgroundColor: Colors.success,
+  },
+  batchPayButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.white,
+  },
+  selectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[200],
+  },
+  selectAllText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.primary,
+  },
+  // Checkbox
+  checkboxContainer: {
+    marginRight: Spacing.md,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.gray[400],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  checkboxDisabled: {
+    borderColor: Colors.gray[300],
+    backgroundColor: Colors.gray[100],
+  },
+  cardSelected: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: Colors.gray[50],
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[200],
+  },
+  modalCancel: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.gray[600],
+  },
+  modalTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.text,
+  },
+  modalContent: {
+    flex: 1,
+    padding: Spacing.lg,
+  },
+  modalFooter: {
+    padding: Spacing.lg,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[200],
+  },
+  // Batch Payout Modal
+  batchSummary: {
+    alignItems: 'center',
+    padding: Spacing.xl,
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.lg,
+  },
+  batchTitle: {
+    fontSize: Typography.fontSize.xl,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.text,
+    marginTop: Spacing.md,
+  },
+  batchDescription: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+    lineHeight: 20,
+  },
+  batchDetails: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  batchDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  batchDetailLabel: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[600],
+  },
+  batchDetailValue: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.text,
+  },
+  batchDriversList: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  batchDriversTitle: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.gray[600],
+    textTransform: 'uppercase',
+    marginBottom: Spacing.md,
+  },
+  batchDriverItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray[100],
+  },
+  batchDriverName: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.text,
+  },
+  batchDriverAmount: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.success,
+  },
+  batchWarning: {
+    flexDirection: 'row',
+    backgroundColor: Colors.warning + '15',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.sm,
+  },
+  batchWarningText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.gray[700],
+    lineHeight: 18,
+  },
+  batchResults: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  batchResultsTitle: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.gray[600],
+    textTransform: 'uppercase',
+    marginBottom: Spacing.md,
+  },
+  batchResultsSummary: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  resultBadge: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  resultBadgeText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.bold,
+  },
+  failedItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[100],
+  },
+  failedItemText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.error,
+  },
+  confirmButton: {
+    backgroundColor: Colors.success,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+  },
+  confirmButtonDisabled: {
+    backgroundColor: Colors.gray[400],
+  },
+  confirmButtonText: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.bold,
+    color: Colors.white,
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
 });

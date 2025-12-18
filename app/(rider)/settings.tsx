@@ -59,7 +59,7 @@ export default function SettingsScreen() {
       title: 'General',
       items: [
         { icon: 'language', title: 'Language', value: 'English', route: '/(rider)/language' },
-        { icon: 'speedometer', title: 'Distance Unit', value: 'Kilometers', route: '/(rider)/units' },
+        { icon: 'speedometer', title: 'Distance Unit', value: 'Miles', route: '/(rider)/units' },
       ],
     },
     {
@@ -69,12 +69,13 @@ export default function SettingsScreen() {
         { icon: 'notifications', title: 'Notifications', route: '/(rider)/notifications' },
       ],
     },
-    {
-      title: 'Appearance',
-      items: [
-        { icon: 'moon', title: 'Dark Mode', toggle: true, value: darkMode, onToggle: setDarkMode },
-      ],
-    },
+    // Dark Mode commented out - not yet implemented
+    // {
+    //   title: 'Appearance',
+    //   items: [
+    //     { icon: 'moon', title: 'Dark Mode', toggle: true, value: darkMode, onToggle: setDarkMode },
+    //   ],
+    // },
     {
       title: 'Account',
       items: [
