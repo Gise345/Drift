@@ -167,12 +167,12 @@ export default function DriverMenuScreen() {
           subtitle: 'See cancellation history',
           route: '/(driver)/history/trips',
         },
-        {
-          icon: 'time-outline',
-          title: 'Upcoming Trips',
-          subtitle: 'Scheduled rides',
-          route: '/(driver)/dashboard/schedule',
-        },
+        // {
+        //   icon: 'time-outline',
+        //   title: 'Upcoming Trips',
+        //   subtitle: 'Scheduled rides',
+        //   route: '/(driver)/dashboard/schedule',
+        // },
       ],
     },
     // {

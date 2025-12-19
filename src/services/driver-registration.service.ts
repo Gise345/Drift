@@ -16,6 +16,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  addDoc,
   arrayUnion,
   serverTimestamp,
   FirebaseFirestoreTypes,
@@ -376,8 +377,27 @@ export async function submitDriverRegistration(
     const progressRef = doc(db, 'driverRegistrationProgress', userId);
     await deleteDoc(progressRef);
 
+    // Create admin notification for new driver application
+    const adminNotificationsRef = collection(db, 'admin_notifications');
+    await addDoc(adminNotificationsRef, {
+      type: 'new_driver_application',
+      title: 'New Driver Application',
+      message: `${registrationData.personalInfo.firstName} ${registrationData.personalInfo.lastName} has submitted a driver application and is awaiting approval.`,
+      driverId: userId,
+      driverName: `${registrationData.personalInfo.firstName} ${registrationData.personalInfo.lastName}`,
+      driverEmail: registrationData.personalInfo.email,
+      driverPhone: registrationData.personalInfo.phone,
+      vehicleInfo: `${registrationData.vehicle.year} ${registrationData.vehicle.make} ${registrationData.vehicle.model}`,
+      priority: 'high',
+      status: 'unread',
+      actionRequired: true,
+      actionType: 'review_application',
+      createdAt: serverTimestamp(),
+    });
+
     console.log('✅ Driver registration submitted successfully');
     console.log('✅ DRIVER role added to user');
+    console.log('✅ Admin notification created');
     console.log('🗑️ Registration progress cleared');
   } catch (error: any) {
     console.error('❌ Error submitting driver registration:', error);

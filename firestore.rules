@@ -400,5 +400,46 @@ service cloud.firestore {
       allow update: if isAuthenticated();
       allow delete: if isAdmin();
     }
+
+    // ============================================================================
+    // Support Tickets (Report Issues)
+    // ============================================================================
+
+    match /support_tickets/{ticketId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.riderId == request.auth.uid ||
+         resource.data.driverId == request.auth.uid ||
+         isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================================================
+    // Contact Requests (Contact Us Form)
+    // ============================================================================
+
+    match /contact_requests/{requestId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================================================
+    // Admin Notifications (Driver Applications, Document Resubmissions, etc.)
+    // ============================================================================
+
+    match /admin_notifications/{notificationId} {
+      // Only admins can read notifications
+      allow read: if isAdmin();
+      // Any authenticated user can create (for driver applications, etc.)
+      allow create: if isAuthenticated();
+      // Only admins can update (mark as read, etc.)
+      allow update: if isAdmin();
+      // Only admins can delete
+      allow delete: if isAdmin();
+    }
   }
 }

@@ -65,9 +65,38 @@ export default function AdminDashboard() {
         activeSnapshot = await getDocs(activeQuery);
       }
 
-      // Get total riders
-      const ridersQuery = query(usersRef, where('roles', 'array-contains', 'RIDER'));
-      const ridersSnapshot = await getDocs(ridersQuery);
+      // Get total riders - support both 'roles' array and 'role' string
+      let ridersCount = 0;
+      try {
+        // Try roles array first (new schema)
+        const ridersQuery = query(usersRef, where('roles', 'array-contains', 'RIDER'));
+        const ridersSnapshot = await getDocs(ridersQuery);
+        ridersCount = ridersSnapshot.size;
+        console.log(`✅ Found ${ridersCount} riders with 'roles' array`);
+      } catch (rolesError) {
+        console.log('⚠️ Roles array query failed, trying role string...');
+        try {
+          // Fallback to role string (legacy schema)
+          const roleQuery = query(usersRef, where('role', '==', 'RIDER'));
+          const roleSnapshot = await getDocs(roleQuery);
+          ridersCount = roleSnapshot.size;
+          console.log(`✅ Found ${ridersCount} riders with 'role' string`);
+        } catch (roleError) {
+          console.log('⚠️ Role string query also failed, fetching all users...');
+          // Last resort: get all users and count client-side
+          const allUsersSnapshot = await getDocs(usersRef);
+          allUsersSnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (
+              (Array.isArray(data.roles) && data.roles.includes('RIDER')) ||
+              data.role === 'RIDER'
+            ) {
+              ridersCount++;
+            }
+          });
+          console.log(`✅ Found ${ridersCount} riders via client-side filter`);
+        }
+      }
 
       // Get pending trip issues
       let pendingIssuesCount = 0;
@@ -90,12 +119,12 @@ export default function AdminDashboard() {
         console.log('⚠️ No deleted users found');
       }
 
-      console.log(`✅ Admin stats: ${pendingSnapshot.size} pending, ${activeSnapshot.size} active drivers, ${ridersSnapshot.size} riders, ${deletedUsersCount} deleted`);
+      console.log(`✅ Admin stats: ${pendingSnapshot.size} pending, ${activeSnapshot.size} active drivers, ${ridersCount} riders, ${deletedUsersCount} deleted`);
 
       setStats({
         pendingApplications: pendingSnapshot.size,
         activeDrivers: activeSnapshot.size,
-        totalRiders: ridersSnapshot.size,
+        totalRiders: ridersCount,
         pendingIssues: pendingIssuesCount,
         deletedUsers: deletedUsersCount,
       });
@@ -107,6 +136,14 @@ export default function AdminDashboard() {
   };
 
   const adminSections = [
+    {
+      icon: 'notifications-outline',
+      title: 'Notifications',
+      subtitle: 'New applications and alerts',
+      route: '/(admin)/notifications',
+      color: Colors.error,
+      badge: undefined, // Will be populated with unread count
+    },
     {
       icon: 'people-outline',
       title: 'Driver Applications',

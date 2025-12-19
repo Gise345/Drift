@@ -25,7 +25,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import { DriftButton } from '@/components/ui/DriftButton';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
@@ -318,9 +318,26 @@ export default function ResubmitDocuments() {
                 resubmittedAt: serverTimestamp(),
               });
 
+              // Create admin notification for document resubmission
+              const adminNotificationsRef = collection(db, 'admin_notifications');
+              await addDoc(adminNotificationsRef, {
+                type: 'documents_resubmitted',
+                title: 'Documents Resubmitted for Review',
+                message: `${user?.name || 'A driver'} has resubmitted their documents for verification.`,
+                driverId: userId,
+                driverName: user?.name || 'Unknown',
+                driverEmail: user?.email,
+                documentsSubmitted: documentsNeedingResubmission,
+                priority: 'high',
+                status: 'unread',
+                actionRequired: true,
+                actionType: 'review_documents',
+                createdAt: serverTimestamp(),
+              });
+
               Alert.alert(
                 'Documents Submitted',
-                'Your documents have been submitted for review. You will be notified when they are verified.',
+                'Your documents have been submitted for review. You will be notified when they are verified. You cannot go online until your documents are approved.',
                 [{ text: 'OK', onPress: () => router.replace('/(driver)/registration/pending-approval') }]
               );
             } catch (error) {

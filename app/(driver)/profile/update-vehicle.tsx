@@ -23,7 +23,7 @@ import { Colors, Typography, Spacing, Shadows, BorderRadius } from '@/src/consta
 import { useDriverStore } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, doc, updateDoc, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, updateDoc, addDoc, collection, serverTimestamp } from '@react-native-firebase/firestore';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -228,14 +228,38 @@ export default function UpdateVehicleScreen() {
         seats: parseInt(formData.seats),
       };
 
-      // Update vehicle and set documents status to pending re-verification using modular API
+      // Update vehicle and set driver status to pending re-approval
       const driverRef = doc(db, 'drivers', user.id);
       await updateDoc(driverRef, {
         vehicle: vehicleData,
+        // Set all vehicle-related documents to pending
         'documents.registration.status': 'pending',
         'documents.insurance.status': 'pending',
+        'documents.inspection.status': 'pending',
+        // Mark which documents need resubmission
+        documentsNeedingResubmission: ['registration', 'insurance', 'inspection'],
+        // Set driver status to pending - they can't go online until re-approved
+        registrationStatus: 'pending_reapproval',
+        previousApprovalStatus: 'approved', // Track that they were previously approved
         vehicleUpdatedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+
+      // Create admin notification for document resubmission
+      const adminNotificationsRef = collection(db, 'admin_notifications');
+      await addDoc(adminNotificationsRef, {
+        type: 'document_resubmission',
+        title: 'Vehicle Update - Documents Required',
+        message: `${user.name || 'A driver'} has updated their vehicle information and needs document re-verification.`,
+        driverId: user.id,
+        driverName: user.name || 'Unknown',
+        driverEmail: user.email,
+        vehicleInfo: `${vehicleData.year} ${vehicleData.make} ${vehicleData.model}`,
+        priority: 'high',
+        status: 'unread',
+        actionRequired: true,
+        actionType: 'review_documents',
+        createdAt: serverTimestamp(),
       });
 
       // Reload profile
@@ -243,14 +267,19 @@ export default function UpdateVehicleScreen() {
 
       Alert.alert(
         'Vehicle Updated',
-        'Your vehicle information has been updated. Please upload new vehicle documents (registration and insurance) for verification.',
+        'Your vehicle information has been updated. You must upload new vehicle documents for verification before you can go online again.',
         [
           {
-            text: 'Upload Documents',
+            text: 'Upload Documents Now',
             onPress: () => {
               router.back();
-              router.push('/(driver)/profile/documents');
+              router.push('/(driver)/registration/resubmit-documents');
             },
+          },
+          {
+            text: 'Later',
+            style: 'cancel',
+            onPress: () => router.back(),
           },
         ]
       );

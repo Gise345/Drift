@@ -390,7 +390,7 @@ export default function RiderPrivacyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>10. Children's Privacy</Text>
           <Text style={styles.paragraph}>
-            The Drift Platform is not intended for children under 18 years of age. We do not knowingly collect personal data from children under 18.
+            The Drift Platform is not intended for children under 16 years of age. We do not knowingly collect personal data from children under 18.
           </Text>
           <Text style={styles.paragraph}>
             If we become aware that we have collected personal data from a child under 18, we will take steps to delete such information immediately.

@@ -42,6 +42,7 @@ export interface Driver {
   rating: number;
   totalTrips: number;
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
+  registrationStatus?: 'pending' | 'approved' | 'rejected' | 'suspended' | 'pending_reapproval';
   createdAt: Date;
 }
 

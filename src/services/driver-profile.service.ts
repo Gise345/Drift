@@ -410,20 +410,37 @@ export async function loadDriverStats(userId: string) {
 export async function loadDriverTripHistory(userId: string, limitCount: number = 50) {
   try {
     const tripsRef = collection(db, 'trips');
-    const tripsQ = query(
+
+    // Query completed trips (ordered by completedAt)
+    const completedQ = query(
       tripsRef,
       where('driverId', '==', userId),
-      where('status', 'in', ['COMPLETED', 'CANCELLED']),
+      where('status', '==', 'COMPLETED'),
       orderBy('completedAt', 'desc'),
       limit(limitCount)
     );
-    const tripsSnapshot = await getDocs(tripsQ);
+
+    // Query cancelled trips (ordered by cancelledAt)
+    const cancelledQ = query(
+      tripsRef,
+      where('driverId', '==', userId),
+      where('status', '==', 'CANCELLED'),
+      orderBy('cancelledAt', 'desc'),
+      limit(limitCount)
+    );
+
+    // Execute both queries in parallel
+    const [completedSnapshot, cancelledSnapshot] = await Promise.all([
+      getDocs(completedQ),
+      getDocs(cancelledQ),
+    ]);
 
     // Collect unique rider IDs that need name lookup
     const riderIdsToFetch = new Set<string>();
     const tripsData: any[] = [];
 
-    tripsSnapshot.docs.forEach((doc) => {
+    // Process completed trips
+    completedSnapshot.docs.forEach((doc) => {
       const data = doc.data();
       tripsData.push({ id: doc.id, ...data });
 
@@ -431,6 +448,24 @@ export async function loadDriverTripHistory(userId: string, limitCount: number =
       if (data.riderId && !data.riderName && !data.riderInfo?.name) {
         riderIdsToFetch.add(data.riderId);
       }
+    });
+
+    // Process cancelled trips
+    cancelledSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      tripsData.push({ id: doc.id, ...data });
+
+      // Check if we need to fetch rider info
+      if (data.riderId && !data.riderName && !data.riderInfo?.name) {
+        riderIdsToFetch.add(data.riderId);
+      }
+    });
+
+    // Sort combined results by most recent first (using completedAt or cancelledAt)
+    tripsData.sort((a, b) => {
+      const dateA = a.completedAt?.toDate?.() || a.completedAt || a.cancelledAt?.toDate?.() || a.cancelledAt || new Date(0);
+      const dateB = b.completedAt?.toDate?.() || b.completedAt || b.cancelledAt?.toDate?.() || b.cancelledAt || new Date(0);
+      return dateB.getTime() - dateA.getTime();
     });
 
     // Fetch rider names in batch

@@ -350,6 +350,27 @@ export default function DriverHomeScreen() {
       return;
     }
 
+    // Check if the currently shown request was cancelled by the rider
+    // (i.e., modal is open but request is no longer in the list)
+    if (showRequestModal && currentRequest) {
+      const requestStillExists = incomingRequests.some(r => r.id === currentRequest.id);
+      if (!requestStillExists) {
+        // Request disappeared - rider cancelled or request was taken by another driver
+        console.log('🚫 Current request was cancelled/taken:', currentRequest.id);
+        setShowRequestModal(false);
+        setCurrentRequest(null);
+        markRequestProcessed(currentRequest.id);
+
+        // Show appropriate message
+        Alert.alert(
+          'Ride Cancelled',
+          'The rider has cancelled this ride request.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
+
     if (incomingRequests.length > 0) {
       // Find the NEWEST unprocessed request (first in list since sorted by requestedAt desc)
       const newestRequest = incomingRequests.find(
@@ -373,7 +394,7 @@ export default function DriverHomeScreen() {
         }
       }
     }
-  }, [incomingRequests, showRequestModal, processedRequestIds, currentRequest]);
+  }, [incomingRequests, showRequestModal, processedRequestIds, currentRequest, markRequestProcessed]);
 
   const getCurrentLocation = async () => {
     try {
@@ -447,12 +468,38 @@ export default function DriverHomeScreen() {
 
   const handleToggleOnline = () => {
     // Check if driver is approved before allowing them to go online
-    if (!isOnline && driver?.status !== 'approved') {
-      Alert.alert(
-        'Account Not Approved',
-        'Your driver account is still pending approval. You\'ll be able to go online once our team has reviewed and approved your application.',
-        [{ text: 'OK' }]
-      );
+    // Check both 'status' and 'registrationStatus' fields
+    const driverStatus = driver?.registrationStatus || driver?.status;
+    const isApproved = driverStatus === 'approved';
+    const isPendingReapproval = driverStatus === 'pending_reapproval';
+    const isPending = driverStatus === 'pending';
+
+    if (!isOnline && !isApproved) {
+      if (isPendingReapproval) {
+        Alert.alert(
+          'Documents Pending Review',
+          'You updated your vehicle information and need to resubmit your documents. You cannot go online until your new documents are reviewed and approved.',
+          [
+            { text: 'View Status', onPress: () => router.push('/(driver)/registration/pending-approval') },
+            { text: 'OK', style: 'cancel' },
+          ]
+        );
+      } else if (isPending) {
+        Alert.alert(
+          'Application Pending',
+          'Your driver application is still being reviewed. You\'ll be able to go online once our team has approved your application.',
+          [
+            { text: 'View Status', onPress: () => router.push('/(driver)/registration/pending-approval') },
+            { text: 'OK', style: 'cancel' },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Account Not Approved',
+          'Your driver account is not approved. Please contact support if you believe this is an error.',
+          [{ text: 'OK' }]
+        );
+      }
       return;
     }
 

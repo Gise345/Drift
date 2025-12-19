@@ -16,7 +16,7 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { useDriverStore } from '@/src/stores/driver-store';
 import { DriverService } from '@/src/services/driver.service';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
+import { getFirestore, doc, getDoc, collection, query, where, getDocs } from '@react-native-firebase/firestore';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -43,27 +43,40 @@ export default function ProfileScreen() {
         const userRef = doc(db, 'users', user.id);
         const userDoc = await getDoc(userRef);
 
+        let createdAt = user.createdAt || new Date();
+        let totalTrips = user.totalTrips || 0;
+        let rating = user.rating || 0;
+
         if (userDoc.exists()) {
           const userData = userDoc.data();
-
-          // Calculate years since joining
-          const createdAt = userData?.createdAt?.toDate() || user.createdAt || new Date();
-          const yearsSinceJoining = new Date().getFullYear() - createdAt.getFullYear();
-
-          setStats({
-            rating: userData?.rating || user.rating || 0,
-            totalTrips: userData?.totalTrips || user.totalTrips || 0,
-            memberSince: createdAt,
-          });
-        } else {
-          // Fallback to user object from auth store
-          const createdAt = user.createdAt || new Date();
-          setStats({
-            rating: user.rating || 0,
-            totalTrips: user.totalTrips || 0,
-            memberSince: createdAt,
-          });
+          createdAt = userData?.createdAt?.toDate() || createdAt;
+          totalTrips = userData?.totalTrips || totalTrips;
+          rating = userData?.rating || rating;
         }
+
+        // Also calculate rating from riderReviews collection for accuracy
+        try {
+          const reviewsRef = collection(db, 'riderReviews');
+          const reviewsQuery = query(reviewsRef, where('riderId', '==', user.id));
+          const reviewsSnapshot = await getDocs(reviewsQuery);
+
+          if (!reviewsSnapshot.empty) {
+            let totalRating = 0;
+            reviewsSnapshot.docs.forEach(doc => {
+              totalRating += doc.data().rating || 0;
+            });
+            const calculatedRating = totalRating / reviewsSnapshot.docs.length;
+            rating = Number(calculatedRating.toFixed(1));
+          }
+        } catch (reviewError) {
+          console.warn('Could not fetch reviews for rating calculation:', reviewError);
+        }
+
+        setStats({
+          rating,
+          totalTrips,
+          memberSince: createdAt,
+        });
       } catch (error) {
         console.error('Error loading user stats:', error);
         // Use data from auth store as fallback
@@ -163,6 +176,12 @@ export default function ProfileScreen() {
       title: 'My Trips',
       subtitle: 'View trip history',
       route: '/(rider)/my-trips',
+    },
+    {
+      icon: 'star-outline',
+      title: 'My Reviews',
+      subtitle: 'See what drivers say about you',
+      route: '/(rider)/my-reviews',
     },
     {
       icon: 'card-outline',

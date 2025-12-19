@@ -34,7 +34,6 @@
       "Bash(powershell:*)",
       "Bash(find:*)",
       "Bash(npm install:*)",
-      "Bash(del \"C:\\Drift\\app\\(driver)\\registration\\background-check.tsx\")",
       "Bash(npx expo export:*)",
       "Bash(wc:*)",
       "Bash(npm run firebase:deploy:all:*)",
@@ -67,7 +66,6 @@
       "Bash(cmd /c \"cd /d C:\\Drift\\functions && npm run build\")",
       "Bash(cmd /c \"cd /d C:\\Drift && firebase deploy --only functions:onDriverDocumentUpdate\")",
       "Bash(cmd /c \"cd /d C:\\Drift && firebase functions:list\")",
-      "Bash(cmd /c del \"C:\\Drift\\app\\(driver)\\dev-menu.tsx\")",
       "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck 2>&1\")",
       "Bash(cmd /c \"cd /d C:\\Drift\\functions && npm run build 2>&1\")",
       "WebFetch(domain:extensions.dev)",
@@ -97,7 +95,9 @@
       "WebFetch(domain:docs.stripe.com)",
       "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck app/(driver)/registration/bank-details.tsx 2>&1\")",
       "Bash(cmd /c \"cd /d C:\\Drift && npx tsc --noEmit --skipLibCheck 2>&1 | head -20\")",
-      "Bash(cmd /c \"cd /d C:\\Drift && firebase deploy --only firestore:rules 2>&1\")"
+      "Bash(cmd /c \"cd /d C:\\Drift && firebase deploy --only firestore:rules 2>&1\")",
+      "Bash(firebase:*)",
+      "Bash(cmd /c \"cd /d C:\\\\Drift && npx tsc --noEmit --skipLibCheck app/\\(admin\\)/drivers/active.tsx app/\\(admin\\)/drivers/review/[driverId].tsx 2>&1 | head -20\")"
     ],
     "deny": [],
     "ask": []

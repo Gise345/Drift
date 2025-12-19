@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing } from '@/src/constants/theme-helper';
 import { useDriverStore } from '@/src/stores/driver-store';
@@ -19,12 +20,15 @@ export default function ProfileViewScreen() {
   const { user } = useAuthStore();
   const { driver, vehicle, documents, stats, loadDriverProfile } = useDriverStore();
 
-  // Load driver profile from Firebase
-  useEffect(() => {
-    if (user?.id && !driver) {
-      loadDriverProfile(user.id);
-    }
-  }, [user?.id]);
+  // Reload driver profile when screen is focused (e.g., returning from photo upload)
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) {
+        console.log('📸 Profile view focused - reloading driver profile');
+        loadDriverProfile(user.id);
+      }
+    }, [user?.id, loadDriverProfile])
+  );
 
   // Show loading state while fetching data
   if (!driver || !vehicle) {

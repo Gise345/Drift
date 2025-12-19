@@ -27,12 +27,12 @@ export default function FAQScreen() {
     {
       id: 4,
       question: 'How does cost-sharing work?',
-      answer: 'Cost contributions are voluntary and should reflect actual trip expenses like fuel and parking. Drift processes payments as a convenience only.',
+      answer: 'Cost contributions are voluntary and should reflect actual trip expenses like fuel and wear and tear. Drift processes payments as a convenience only.',
     },
     {
       id: 5,
       question: 'How do I become a driver?',
-      answer: 'Download the Drift driver app, complete the registration process, upload required documents (license, insurance), and wait for approval.',
+      answer: 'In the profile tab, scroll down and select "Become a Driver". Complete the registration process, upload required documents (license, insurance), and wait for approval.',
     },
     {
       id: 6,
@@ -47,7 +47,7 @@ export default function FAQScreen() {
     {
       id: 8,
       question: 'What payment methods are accepted?',
-      answer: 'We accept credit/debit cards (Visa, Mastercard) and cash. You can add payment methods in your profile settings.',
+      answer: 'We accept credit/debit cards (Visa, Mastercard), Google Pay and Apple Pay will soon be available. You can add payment methods in your profile settings.',
     },
     {
       id: 9,

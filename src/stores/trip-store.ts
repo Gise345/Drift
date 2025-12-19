@@ -473,8 +473,9 @@ export const useTripStore = create<TripStore>((set, get) => ({
       console.log('📋 Found', trips.length, 'total trips');
 
       // Separate past and upcoming trips
+      // Past trips include: COMPLETED, CANCELLED, and AWAITING_TIP (trip finished, waiting for tip)
       const pastTrips = trips.filter(trip =>
-        trip.status === 'COMPLETED' || trip.status === 'CANCELLED'
+        trip.status === 'COMPLETED' || trip.status === 'CANCELLED' || trip.status === 'AWAITING_TIP'
       );
       const upcomingTrips = trips.filter(trip =>
         trip.status === 'REQUESTED' || trip.status === 'ACCEPTED' || trip.status === 'DRIVER_ARRIVING' || trip.status === 'DRIVER_ARRIVED' || trip.status === 'IN_PROGRESS'

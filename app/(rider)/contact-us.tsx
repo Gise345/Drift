@@ -1,24 +1,73 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { getApp } from '@react-native-firebase/app';
+import { getFirestore, collection, addDoc, serverTimestamp } from '@react-native-firebase/firestore';
+import { useAuthStore } from '@/src/stores/auth-store';
+
+// Initialize Firebase instances
+const app = getApp();
+const db = getFirestore(app, 'main');
 
 export default function ContactUsScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(user?.email || '');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name || !email || !subject || !message) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    Alert.alert('Success', 'Your message has been sent! We\'ll get back to you soon.', [
-      { text: 'OK', onPress: () => router.back() }
-    ]);
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const userId = user?.id || (user as any)?.uid || null;
+    console.log('Submitting contact request for user:', userId);
+
+    try {
+      // Save contact request to Firestore
+      const contactRequestsRef = collection(db, 'contact_requests');
+      const contactData = {
+        userId: userId,
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        subject: subject.trim(),
+        message: message.trim(),
+        status: 'new',
+        source: 'rider_app',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      console.log('Contact data:', JSON.stringify(contactData, null, 2));
+      await addDoc(contactRequestsRef, contactData);
+      console.log('Contact request submitted successfully');
+
+      Alert.alert(
+        'Message Sent!',
+        'Thank you for contacting us. Our team will review your message and get back to you at ' + email + ' within 24-48 hours.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+    } catch (error: any) {
+      console.error('Error submitting contact request:', error?.message || error, error?.code);
+      Alert.alert('Error', 'Failed to send your message. Please try again or email us directly at info@drift-global.com');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -83,9 +132,19 @@ export default function ContactUsScreen() {
           />
         </View>
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Send Message</Text>
-          <Ionicons name="send" size={18} color="#FFF" />
+        <TouchableOpacity
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <Text style={styles.submitButtonText}>Send Message</Text>
+              <Ionicons name="send" size={18} color="#FFF" />
+            </>
+          )}
         </TouchableOpacity>
 
         {/* Contact Methods */}
@@ -101,18 +160,10 @@ export default function ContactUsScreen() {
           </View>
 
           <View style={styles.contactMethodCard}>
-            <Ionicons name="call" size={20} color="#5d1289ff" />
-            <View style={styles.contactMethodText}>
-              <Text style={styles.contactMethodLabel}>Phone</Text>
-              <Text style={styles.contactMethodValue}>+1 (345) 555-DRIFT</Text>
-            </View>
-          </View>
-
-          <View style={styles.contactMethodCard}>
             <Ionicons name="time" size={20} color="#5d1289ff" />
             <View style={styles.contactMethodText}>
               <Text style={styles.contactMethodLabel}>Hours</Text>
-              <Text style={styles.contactMethodValue}>Mon-Fri: 9AM - 6PM</Text>
+              <Text style={styles.contactMethodValue}>Mon-Fri: 8AM - 5PM</Text>
             </View>
           </View>
         </View>
@@ -133,7 +184,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 14, fontSize: 15, color: '#000' },
   textArea: { height: 120, paddingTop: 14 },
-  submitButton: { flexDirection: 'row', backgroundColor: '#000', paddingVertical: 16, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 32 },
+  submitButton: { flexDirection: 'row', backgroundColor: '#5d1289', paddingVertical: 16, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 32 },
+  submitButtonDisabled: { backgroundColor: '#D1D5DB' },
   submitButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginRight: 8 },
   alternativeContact: { paddingTop: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   alternativeTitle: { fontSize: 14, fontWeight: '600', color: '#6B7280', marginBottom: 16 },

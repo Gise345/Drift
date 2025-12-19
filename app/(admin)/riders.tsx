@@ -57,14 +57,47 @@ export default function RidersScreen() {
       const usersRef = collection(db, 'users');
       const tripsRef = collection(db, 'trips');
 
-      const ridersQuery = query(
-        usersRef,
-        where('roles', 'array-contains', 'RIDER'),
-        orderBy('createdAt', 'desc'),
-        limit(100)
-      );
-
-      const snapshot = await getDocs(ridersQuery);
+      // Try to get riders - support both 'roles' array and 'role' string fields
+      // First try with roles array (new schema)
+      let snapshot;
+      try {
+        // Query without orderBy to avoid composite index requirement
+        const ridersQuery = query(
+          usersRef,
+          where('roles', 'array-contains', 'RIDER'),
+          limit(100)
+        );
+        snapshot = await getDocs(ridersQuery);
+        console.log(`✅ Found ${snapshot.size} riders with 'roles' array`);
+      } catch (rolesError) {
+        console.log('⚠️ Roles array query failed, trying role string...');
+        // Fallback: try with role string (legacy schema)
+        try {
+          const roleQuery = query(
+            usersRef,
+            where('role', '==', 'RIDER'),
+            limit(100)
+          );
+          snapshot = await getDocs(roleQuery);
+          console.log(`✅ Found ${snapshot.size} riders with 'role' string`);
+        } catch (roleError) {
+          console.error('❌ Both rider queries failed:', roleError);
+          // Last resort: get all users and filter client-side
+          console.log('⚠️ Falling back to client-side filtering...');
+          const allUsersQuery = query(usersRef, limit(200));
+          const allUsersSnapshot = await getDocs(allUsersQuery);
+          const riderDocs = allUsersSnapshot.docs.filter(doc => {
+            const data = doc.data();
+            return (
+              (Array.isArray(data.roles) && data.roles.includes('RIDER')) ||
+              data.role === 'RIDER'
+            );
+          });
+          // Create a mock snapshot-like structure
+          snapshot = { docs: riderDocs, size: riderDocs.length };
+          console.log(`✅ Found ${snapshot.size} riders via client-side filter`);
+        }
+      }
 
       const ridersList: Rider[] = await Promise.all(
         snapshot.docs.map(async (userDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
@@ -98,6 +131,9 @@ export default function RidersScreen() {
           };
         })
       );
+
+      // Sort by createdAt descending (newest first) - client-side since we removed orderBy
+      ridersList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
       // Apply filter
       let filteredRiders = ridersList;

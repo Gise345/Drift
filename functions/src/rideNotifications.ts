@@ -56,11 +56,16 @@ export const onRideRequested = onDocumentCreated(
     const tripData = snapshot.data();
     const { tripId } = event.params;
 
-    // Only process if status is REQUESTED and payment is completed
-    if (tripData.status !== 'REQUESTED' || tripData.paymentStatus !== 'COMPLETED') {
+    // Only process if status is REQUESTED and payment is ready
+    // Accept AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
+    const validPaymentStatuses = ['AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    const hasValidPayment = validPaymentStatuses.includes(tripData.paymentStatus);
+
+    if (tripData.status !== 'REQUESTED' || !hasValidPayment) {
       console.log(`Trip ${tripId} not ready for driver notification:`, {
         status: tripData.status,
         paymentStatus: tripData.paymentStatus,
+        validPaymentStatuses,
       });
       return null;
     }
@@ -224,9 +229,13 @@ export const onRideResent = onDocumentUpdated(
     if (!before || !after) return null;
 
     // Check if this is a resend (declinedBy cleared and status still REQUESTED)
+    // Accept AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
+    const validPaymentStatuses = ['AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    const hasValidPayment = validPaymentStatuses.includes(after.paymentStatus);
+
     const wasResent =
       after.status === 'REQUESTED' &&
-      after.paymentStatus === 'COMPLETED' &&
+      hasValidPayment &&
       before.declinedBy?.length > 0 &&
       (after.declinedBy?.length === 0 || !after.declinedBy) &&
       after.resendCount > (before.resendCount || 0);

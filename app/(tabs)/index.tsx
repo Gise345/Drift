@@ -1181,8 +1181,8 @@ const HomeScreen = () => {
               </View>
             )}
 
-            {/* Suggestions Section */}
-            <View style={styles.section}>
+            {/* Suggestions Section - COMMENTED OUT FOR NOW */}
+            {/* <View style={styles.section}>
               <Text style={styles.sectionTitle}>Suggestions</Text>
               <View style={styles.suggestionCard}>
                 <Ionicons name="calendar" size={24} color="#5d1289" />
@@ -1193,10 +1193,46 @@ const HomeScreen = () => {
                   </Text>
                 </View>
               </View>
+            </View> */}
+
+            {/* Cayman Kind Notice */}
+            <View style={styles.section}>
+              <View style={styles.caymanKindCard}>
+                <View style={styles.caymanKindHeader}>
+                  <Ionicons name="heart" size={22} color="#5d1289" />
+                  <Text style={styles.caymanKindLabel}>Cayman Kind</Text>
+                </View>
+                <Text style={styles.caymanKindText}>
+                  Treat everyone with respect and courtesy while using the platform. Kindness keeps things smooth, and standards keep everyone safe.                </Text>
+                <Text style={styles.caymanKindSubtext}>
+                  Be respectful. Be friendly. Be part of Cayman Kind!
+                </Text>
+              </View>
             </View>
 
             {/* Tourist Destinations Carousel */}
             <DestinationCards onDestinationPress={handleDestinationPress} />
+
+            {/* List Your Business Section */}
+            <View style={styles.section}>
+              <View style={styles.listBusinessCard}>
+                <View style={styles.listBusinessContent}>
+                  <View style={styles.listBusinessIconContainer}>
+                    <Ionicons name="storefront" size={32} color="#5d1289" />
+                  </View>
+                  <View style={styles.listBusinessTextContainer}>
+                    <Text style={styles.listBusinessTitle}>List Your Business With Us</Text>
+                    <Text style={styles.listBusinessDescription}>
+                      Get your business discovered by visitors and locals exploring the Cayman Islands
+                    </Text>
+                    <View style={styles.comingSoonBadge}>
+                      <Ionicons name="time-outline" size={14} color="#5d1289" />
+                      <Text style={styles.comingSoonText}>Coming Soon</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
           </ScrollView>
         </SafeAreaView>
       )}
@@ -1595,6 +1631,89 @@ const styles = StyleSheet.create({
   suggestionDescription: {
     fontSize: 14,
     color: '#666',
+  },
+  // Cayman Kind Card Styles
+  caymanKindCard: {
+    backgroundColor: '#f8f4fb',
+    borderRadius: 16,
+    padding: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#5d1289',
+  },
+  caymanKindHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  caymanKindLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#5d1289',
+    marginLeft: 8,
+  },
+  caymanKindText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#333',
+    marginBottom: 8,
+  },
+  caymanKindSubtext: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: '#5d1289',
+    fontWeight: '500',
+  },
+  // List Your Business Styles
+  listBusinessCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#e8e0f0',
+    borderStyle: 'dashed',
+  },
+  listBusinessContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  listBusinessIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f0e6f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  listBusinessTextContainer: {
+    flex: 1,
+  },
+  listBusinessTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 6,
+  },
+  listBusinessDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  comingSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0e6f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  comingSoonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#5d1289',
+    marginLeft: 6,
   },
 
   // Modal Styles

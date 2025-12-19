@@ -48,7 +48,7 @@ export default function AboutScreen() {
           <Text style={styles.sectionTitle}>Our Mission</Text>
           <Text style={styles.paragraph}>
             To create a sustainable, community-driven transportation network that reduces traffic congestion, lowers carbon
-            emissions, and makes mobility more affordable for everyone in Cayman.
+            emissions, reduces drink-driving, provides a safe way to travel, and makes mobility more affordable for everyone in Cayman.
           </Text>
         </View>
 
@@ -80,10 +80,7 @@ export default function AboutScreen() {
             <Ionicons name="mail-outline" size={20} color="#5d1289ff" />
             <Text style={styles.contactText}>info@drift-global.com</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.contactItem}>
-            <Ionicons name="globe-outline" size={20} color="#5d1289ff" />
-            <Text style={styles.contactText}>www.driftcayman.com</Text>
-          </TouchableOpacity>
+          
         </View>
 
         {/* Legal Links */}

@@ -43,7 +43,9 @@ interface ActiveDriver {
     licensePlate: string;
   };
   status: string;
+  registrationStatus: string;
   profilePhotoUrl?: string;
+  documentsNeedingResubmission?: string[];
 }
 
 export default function ActiveDriversScreen() {
@@ -58,19 +60,27 @@ export default function ActiveDriversScreen() {
 
   const loadDrivers = async () => {
     try {
-      // Try querying by registrationStatus first (primary field)
       const driversRef = collection(db, 'drivers');
-      let driversQuery = query(driversRef, where('registrationStatus', '==', 'approved'));
-      let snapshot = await getDocs(driversQuery);
 
-      // If no results, try querying by status field (fallback for older documents)
-      if (snapshot.empty) {
+      // Get all approved drivers
+      let approvedQuery = query(driversRef, where('registrationStatus', '==', 'approved'));
+      let approvedSnapshot = await getDocs(approvedQuery);
+
+      // Also get drivers needing reapproval (updated vehicle/documents)
+      let reapprovalQuery = query(driversRef, where('registrationStatus', '==', 'pending_reapproval'));
+      let reapprovalSnapshot = await getDocs(reapprovalQuery);
+
+      // Fallback for older documents using 'status' field
+      if (approvedSnapshot.empty) {
         console.log('🔄 No drivers found with registrationStatus, trying status field...');
-        driversQuery = query(driversRef, where('status', '==', 'approved'));
-        snapshot = await getDocs(driversQuery);
+        approvedQuery = query(driversRef, where('status', '==', 'approved'));
+        approvedSnapshot = await getDocs(approvedQuery);
       }
 
-      const driversList: ActiveDriver[] = snapshot.docs.map((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+      // Combine both snapshots
+      const allDocs = [...approvedSnapshot.docs, ...reapprovalSnapshot.docs];
+
+      const driversList: ActiveDriver[] = allDocs.map((driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
         const data = driverDoc.data();
         return {
           id: driverDoc.id,
@@ -87,14 +97,24 @@ export default function ActiveDriversScreen() {
             licensePlate: data.vehicle?.licensePlate || '',
           },
           status: data.registrationStatus || data.status || 'active',
+          registrationStatus: data.registrationStatus || data.status || 'approved',
           profilePhotoUrl: data.profilePhotoUrl,
+          documentsNeedingResubmission: data.documentsNeedingResubmission || [],
         };
       });
 
-      // Sort by createdAt client-side to avoid needing a composite index
+      // Sort: pending_reapproval first (needs attention), then by createdAt
       driversList.sort((a, b) => {
-        const docA = snapshot.docs.find(d => d.id === a.id);
-        const docB = snapshot.docs.find(d => d.id === b.id);
+        // Prioritize pending_reapproval drivers
+        if (a.registrationStatus === 'pending_reapproval' && b.registrationStatus !== 'pending_reapproval') {
+          return -1;
+        }
+        if (b.registrationStatus === 'pending_reapproval' && a.registrationStatus !== 'pending_reapproval') {
+          return 1;
+        }
+        // Then sort by createdAt
+        const docA = allDocs.find(d => d.id === a.id);
+        const docB = allDocs.find(d => d.id === b.id);
         const dateA = docA?.data()?.createdAt?.toDate?.() || new Date(0);
         const dateB = docB?.data()?.createdAt?.toDate?.() || new Date(0);
         return dateB.getTime() - dateA.getTime();
@@ -115,36 +135,65 @@ export default function ActiveDriversScreen() {
     loadDrivers();
   };
 
-  const renderDriver = ({ item }: { item: ActiveDriver }) => (
-    <TouchableOpacity
-      style={styles.driverCard}
-      onPress={() => router.push({
-        pathname: '/(admin)/drivers/review/[driverId]',
-        params: { driverId: item.id }
-      })}
-    >
-      <View style={styles.driverHeader}>
-        {item.profilePhotoUrl ? (
-          <Image source={{ uri: item.profilePhotoUrl }} style={styles.profilePhoto} />
-        ) : (
-          <View style={styles.profilePhotoPlaceholder}>
-            <Text style={styles.profilePhotoText}>
-              {item.firstName[0]}{item.lastName[0]}
+  const getStatusBadge = (driver: ActiveDriver) => {
+    if (driver.registrationStatus === 'pending_reapproval') {
+      return {
+        color: Colors.warning,
+        text: 'Needs Review',
+      };
+    }
+    return {
+      color: Colors.success,
+      text: 'Active',
+    };
+  };
+
+  const renderDriver = ({ item }: { item: ActiveDriver }) => {
+    const badge = getStatusBadge(item);
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.driverCard,
+          item.registrationStatus === 'pending_reapproval' && styles.driverCardNeedsReview,
+        ]}
+        onPress={() => router.push({
+          pathname: '/(admin)/drivers/review/[driverId]',
+          params: { driverId: item.id }
+        })}
+      >
+        <View style={styles.driverHeader}>
+          {item.profilePhotoUrl ? (
+            <Image source={{ uri: item.profilePhotoUrl }} style={styles.profilePhoto} />
+          ) : (
+            <View style={styles.profilePhotoPlaceholder}>
+              <Text style={styles.profilePhotoText}>
+                {item.firstName[0]}{item.lastName[0]}
+              </Text>
+            </View>
+          )}
+          <View style={styles.driverInfo}>
+            <Text style={styles.driverName}>{item.firstName} {item.lastName}</Text>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={14} color={Colors.warning} />
+              <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+              <Text style={styles.tripsText}>• {item.totalTrips} trips</Text>
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: `${badge.color}15` }]}>
+            <Text style={[styles.statusText, { color: badge.color }]}>{badge.text}</Text>
+          </View>
+        </View>
+
+        {/* Show documents needing review */}
+        {item.registrationStatus === 'pending_reapproval' && item.documentsNeedingResubmission && item.documentsNeedingResubmission.length > 0 && (
+          <View style={styles.resubmissionInfo}>
+            <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+            <Text style={styles.resubmissionText}>
+              Updated documents need review: {item.documentsNeedingResubmission.join(', ')}
             </Text>
           </View>
         )}
-        <View style={styles.driverInfo}>
-          <Text style={styles.driverName}>{item.firstName} {item.lastName}</Text>
-          <View style={styles.ratingRow}>
-            <Ionicons name="star" size={14} color={Colors.warning} />
-            <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-            <Text style={styles.tripsText}>• {item.totalTrips} trips</Text>
-          </View>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: `${Colors.success}15` }]}>
-          <Text style={[styles.statusText, { color: Colors.success }]}>Active</Text>
-        </View>
-      </View>
 
       <View style={styles.driverDetails}>
         <View style={styles.detailRow}>
@@ -170,12 +219,13 @@ export default function ActiveDriversScreen() {
         </View>
       </View>
 
-      <View style={styles.actionRow}>
-        <Text style={styles.viewDetailsText}>View Details</Text>
-        <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.actionRow}>
+          <Text style={styles.viewDetailsText}>View Details</Text>
+          <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -190,7 +240,12 @@ export default function ActiveDriversScreen() {
 
       {/* Stats */}
       <View style={styles.statsBar}>
-        <Text style={styles.statsText}>{drivers.length} Active Drivers</Text>
+        <Text style={styles.statsText}>
+          {drivers.length} Drivers
+          {drivers.filter(d => d.registrationStatus === 'pending_reapproval').length > 0 &&
+            ` (${drivers.filter(d => d.registrationStatus === 'pending_reapproval').length} need review)`
+          }
+        </Text>
       </View>
 
       {/* Drivers List */}
@@ -271,6 +326,26 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.md,
     ...Shadows.sm,
+  },
+  driverCardNeedsReview: {
+    borderWidth: 2,
+    borderColor: Colors.warning,
+    backgroundColor: Colors.warning + '08',
+  },
+  resubmissionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warning + '15',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  resubmissionText: {
+    flex: 1,
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.warning,
   },
   driverHeader: {
     flexDirection: 'row',

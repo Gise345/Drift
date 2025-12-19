@@ -90,9 +90,10 @@ export default function UploadPhotoScreen() {
     try {
       setUploading(true);
 
-      // Create a unique filename and path
-      const filename = `driver_profile_${user.id}_${Date.now()}.jpg`;
-      const storagePath = `profile-photos/${filename}`;
+      // Create a unique filename and path that matches storage rules
+      const filename = `profile_${Date.now()}.jpg`;
+      // Use drivers/{userId}/profile/ path to match storage security rules
+      const storagePath = `drivers/${user.id}/profile/${filename}`;
 
       // Upload file using cross-platform helper
       const downloadURL = await uploadImageToStorage(imageUri, storagePath);

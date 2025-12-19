@@ -30,6 +30,7 @@ import {
   resendEmailVerification,
   checkEmailVerification,
   signOutUser,
+  getCurrentUser,
 } from '@/src/services/firebase-auth-service';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, doc, updateDoc } from '@react-native-firebase/firestore';
@@ -64,7 +65,6 @@ export default function EmailVerificationScreen() {
       if (isVerified) {
         // Update Firestore document to reflect verified status
         try {
-          const { getCurrentUser } = await import('@/src/services/firebase-auth-service');
           const currentUser = getCurrentUser();
           if (currentUser) {
             const userRef = doc(db, 'users', currentUser.uid);

@@ -273,25 +273,31 @@ export default function FindingDriverScreen() {
       if (tripId) {
         console.log('🚫 No drivers available - processing cancellation for trip:', tripId);
 
-        // Fetch trip data directly from Firestore to ensure we have paymentMethod
-        let paymentMethod: string | undefined;
+        // Fetch trip data directly from Firestore to get paymentIntentId
+        let paymentIntentId: string | undefined;
         try {
           const tripRef = doc(firebaseDb, 'trips', tripId);
           const tripSnap = await getDoc(tripRef);
-          if (tripSnap.exists) {
+          if (tripSnap.exists()) {
             const tripData = tripSnap.data();
-            paymentMethod = tripData?.paymentMethod;
-            console.log('📄 Trip data fetched, paymentMethod:', paymentMethod);
+            // Get paymentIntentId directly (new format) or parse from paymentMethod (legacy format)
+            paymentIntentId = tripData?.paymentIntentId;
+            if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
+              paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+            }
+            console.log('📄 Trip data fetched, paymentIntentId:', paymentIntentId);
           }
         } catch (fetchError) {
           console.error('⚠️ Failed to fetch trip data:', fetchError);
           // Try using currentTrip as fallback
-          paymentMethod = currentTrip?.paymentMethod;
+          paymentIntentId = (currentTrip as any)?.paymentIntentId;
+          if (!paymentIntentId && currentTrip?.paymentMethod?.startsWith('stripe:')) {
+            paymentIntentId = currentTrip.paymentMethod.replace('stripe:', '');
+          }
         }
 
         // Release the payment authorization
-        if (paymentMethod && paymentMethod.startsWith('stripe:')) {
-          const paymentIntentId = paymentMethod.replace('stripe:', '');
+        if (paymentIntentId) {
           console.log('💰 Releasing payment authorization - no drivers found');
           console.log('   PaymentIntent ID:', paymentIntentId);
 
@@ -303,14 +309,14 @@ export default function FindingDriverScreen() {
             // Continue with cancellation even if payment release fails
           }
         } else {
-          console.log('⚠️ No Stripe payment method found on trip:', paymentMethod);
+          console.log('⚠️ No payment intent ID found on trip');
         }
 
         // Cancel with correct reason - NO_DRIVERS_AVAILABLE, not rider cancelled
         console.log('📝 Cancelling trip with NO_DRIVERS_AVAILABLE reason');
         await cancelTrip(
           tripId,
-          'SYSTEM', // System-initiated, not rider
+          'RIDER', // System-initiated on behalf of rider (no drivers available)
           'No drivers available after multiple attempts',
           'NO_DRIVERS_AVAILABLE' // CORRECT reason type
         );
@@ -378,6 +384,63 @@ export default function FindingDriverScreen() {
         clearInterval(timerRef.current);
       }
 
+      // Try to release payment authorization as a safety measure
+      // (in case it wasn't released by whatever cancelled the trip)
+      const releasePaymentIfNeeded = async () => {
+        try {
+          const tripId = currentTrip?.id;
+          if (!tripId) {
+            console.log('⚠️ No trip ID for payment release');
+            return;
+          }
+
+          console.log('🔍 Fetching trip data for payment release:', tripId);
+          const tripRef = doc(firebaseDb, 'trips', tripId);
+          const tripSnap = await getDoc(tripRef);
+
+          if (!tripSnap.exists()) {
+            console.log('⚠️ Trip document not found');
+            return;
+          }
+
+          const tripData = tripSnap.data();
+          let paymentIntentId = tripData?.paymentIntentId;
+          if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
+            paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+          }
+
+          console.log('📋 Trip payment info:', {
+            paymentIntentId: paymentIntentId || 'NOT FOUND',
+            paymentStatus: tripData?.paymentStatus,
+            status: tripData?.status,
+          });
+
+          // Try to release payment if we have a payment intent ID
+          // Don't check paymentStatus - let the Cloud Function handle the logic
+          if (paymentIntentId) {
+            console.log('🔄 Attempting to release payment authorization:', paymentIntentId);
+            try {
+              const result = await releasePaymentAuthorization(paymentIntentId, tripId, 'Trip cancelled');
+              console.log('✅ Payment release result:', result);
+            } catch (e: any) {
+              // Log the full error for debugging
+              console.error('❌ Payment release error:', {
+                message: e?.message,
+                code: e?.code,
+                details: e?.details,
+              });
+            }
+          } else {
+            console.log('⚠️ No payment intent ID found on trip - cannot release payment');
+          }
+        } catch (error: any) {
+          console.error('❌ Error in releasePaymentIfNeeded:', error?.message || error);
+        }
+      };
+
+      // Execute payment release (don't await - let it run in background)
+      releasePaymentIfNeeded();
+
       clearBookingFlow();
       Alert.alert(
         'Trip Cancelled',
@@ -398,24 +461,30 @@ export default function FindingDriverScreen() {
         if (tripId) {
           console.log('🚫 Rider cancelling trip:', tripId);
 
-          // Fetch trip data directly from Firestore to ensure we have paymentMethod
-          let paymentMethod: string | undefined;
+          // Fetch trip data directly from Firestore to get paymentIntentId
+          let paymentIntentId: string | undefined;
           try {
             const tripRef = doc(firebaseDb, 'trips', tripId);
             const tripSnap = await getDoc(tripRef);
-            if (tripSnap.exists) {
+            if (tripSnap.exists()) {
               const tripData = tripSnap.data();
-              paymentMethod = tripData?.paymentMethod;
-              console.log('📄 Trip data fetched, paymentMethod:', paymentMethod);
+              // Get paymentIntentId directly (new format) or parse from paymentMethod (legacy format)
+              paymentIntentId = tripData?.paymentIntentId;
+              if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
+                paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+              }
+              console.log('📄 Trip data fetched, paymentIntentId:', paymentIntentId);
             }
           } catch (fetchError) {
             console.error('⚠️ Failed to fetch trip data:', fetchError);
-            paymentMethod = currentTrip?.paymentMethod;
+            paymentIntentId = (currentTrip as any)?.paymentIntentId;
+            if (!paymentIntentId && currentTrip?.paymentMethod?.startsWith('stripe:')) {
+              paymentIntentId = currentTrip.paymentMethod.replace('stripe:', '');
+            }
           }
 
           // Release payment authorization before cancelling
-          if (paymentMethod && paymentMethod.startsWith('stripe:')) {
-            const paymentIntentId = paymentMethod.replace('stripe:', '');
+          if (paymentIntentId) {
             console.log('💰 Releasing payment authorization - rider cancelled');
             console.log('   PaymentIntent ID:', paymentIntentId);
 
@@ -547,7 +616,7 @@ export default function FindingDriverScreen() {
               <View style={styles.retryBadge}>
                 <Ionicons name="refresh" size={14} color={Colors.warning} />
                 <Text style={styles.retryText}>
-                  Attempt {retryCount + 1} of {MAX_RETRY_ATTEMPTS}
+                  Attempt {retryCount + 1} of {TOTAL_MAX_RETRIES}
                 </Text>
               </View>
             )}

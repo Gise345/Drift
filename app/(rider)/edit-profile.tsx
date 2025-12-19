@@ -96,9 +96,10 @@ export default function EditProfileScreen() {
     try {
       setUploadingPhoto(true);
 
-      // Create a unique filename and path
-      const filename = `profile_${user.id}_${Date.now()}.jpg`;
-      const storagePath = `profile-photos/${filename}`;
+      // Create a unique filename and path that matches storage rules
+      const filename = `profile_${Date.now()}.jpg`;
+      // Use users/{userId}/profile/ path to match storage security rules
+      const storagePath = `users/${user.id}/profile/${filename}`;
 
       // Upload file using cross-platform helper
       const downloadURL = await uploadImageToStorage(uri, storagePath);

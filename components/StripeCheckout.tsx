@@ -6,7 +6,7 @@
  * EXPO SDK 52 Compatible
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -117,6 +117,8 @@ export function StripeCheckout({
   const [platformPayAvailable, setPlatformPayAvailable] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  // Use ref to store paymentIntentId reliably (state updates are async)
+  const paymentIntentIdRef = useRef<string | null>(null);
 
   // Check if platform pay (Google Pay / Apple Pay) is supported on this device
   useEffect(() => {
@@ -192,8 +194,9 @@ export function StripeCheckout({
         customerId: paymentData.customerId,
       });
 
-      // Save payment intent ID for later use in onSuccess
+      // Save payment intent ID for later use in onSuccess (use ref for reliable access)
       setPaymentIntentId(paymentData.paymentIntentId);
+      paymentIntentIdRef.current = paymentData.paymentIntentId;
 
       // Save client secret for platform pay
       setClientSecret(paymentData.clientSecret);
@@ -289,7 +292,10 @@ export function StripeCheckout({
       // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
       // The actual capture happens when driver accepts the ride
       // Return the actual paymentIntentId and 'requires_capture' status
-      onSuccess(paymentIntentId || 'unknown', 'requires_capture', {
+      // Use ref for reliable access since state updates are async
+      const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
+      console.log('💳 Returning paymentIntentId to app:', intentId);
+      onSuccess(intentId, 'requires_capture', {
         amount,
         currency,
       });
@@ -366,7 +372,10 @@ export function StripeCheckout({
       console.log('✅ Platform Pay authorized successfully (requires capture)');
 
       // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
-      onSuccess(paymentIntentId || 'unknown', 'requires_capture', {
+      // Use ref for reliable access since state updates are async
+      const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
+      console.log('💳 Platform Pay returning paymentIntentId to app:', intentId);
+      onSuccess(intentId, 'requires_capture', {
         amount,
         currency,
         method: preferredMethod,

@@ -56,16 +56,7 @@ export default function ContactSupportScreen() {
   ];
 
   const supportOptions: SupportOption[] = [
-    {
-      id: 'phone',
-      title: 'Call Support',
-      subtitle: '+1 (345) 945-RIDE (7433)',
-      icon: 'call',
-      action: () => {
-        Linking.openURL('tel:+13459457433');
-      },
-      color: Colors.success[500],
-    },
+   
     {
       id: 'email',
       title: 'Email Us',
@@ -76,20 +67,11 @@ export default function ContactSupportScreen() {
       },
       color: Colors.primary[500],
     },
-    {
-      id: 'whatsapp',
-      title: 'WhatsApp',
-      subtitle: 'Chat with us on WhatsApp',
-      icon: 'logo-whatsapp',
-      action: () => {
-        Linking.openURL('https://wa.me/13459457433');
-      },
-      color: Colors.success[600],
-    },
+   
     {
       id: 'hours',
       title: 'Support Hours',
-      subtitle: 'Mon-Sun: 6:00 AM - 11:00 PM',
+      subtitle: 'Mon-Sun: 8:00 AM - 5:00 PM',
       icon: 'time',
       action: () => {},
       color: Colors.gray[500],
@@ -323,7 +305,7 @@ export default function ContactSupportScreen() {
             <TouchableOpacity
               style={styles.socialButton}
               onPress={() =>
-                Linking.openURL('https://facebook.com/driftcayman')
+                Linking.openURL('https://www.facebook.com/share/1Bjdp59K2i/')
               }
             >
               <Ionicons
@@ -335,7 +317,7 @@ export default function ContactSupportScreen() {
             <TouchableOpacity
               style={styles.socialButton}
               onPress={() =>
-                Linking.openURL('https://instagram.com/driftcayman')
+                Linking.openURL('https://www.instagram.com/drift.cayman/')
               }
             >
               <Ionicons
@@ -344,16 +326,7 @@ export default function ContactSupportScreen() {
                 color={Colors.primary[500]}
               />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.socialButton}
-              onPress={() => Linking.openURL('https://twitter.com/driftcayman')}
-            >
-              <Ionicons
-                name="logo-twitter"
-                size={24}
-                color={Colors.primary[500]}
-              />
-            </TouchableOpacity>
+            
           </View>
         </View>
       </ScrollView>

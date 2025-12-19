@@ -107,7 +107,7 @@ export default function RiderTermsScreen() {
           <Text style={styles.paragraph}>
             To use the Platform as a Rider, you must:
           </Text>
-          <Text style={styles.bulletPoint}>• Be at least 18 years of age</Text>
+          <Text style={styles.bulletPoint}>• Be at least 16 years of age</Text>
           <Text style={styles.bulletPoint}>• Have the legal capacity to enter into binding contracts</Text>
           <Text style={styles.bulletPoint}>• Provide accurate and complete registration information</Text>
           <Text style={styles.bulletPoint}>• Maintain the security of your account credentials</Text>

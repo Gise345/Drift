@@ -106,23 +106,32 @@ export default function ReportIssueScreen() {
 
     setIsSubmitting(true);
 
+    const userId = user?.id || (user as any)?.uid;
+    console.log('Submitting report for user:', userId);
+
     try {
       // Save report to Firestore using modular API
       const supportTicketsRef = collection(db, 'support_tickets');
-      await addDoc(supportTicketsRef, {
+      const reportData = {
         tripId: manualTripId.trim(),
-        riderId: user?.uid,
-        riderEmail: user?.email,
-        driverName: driverName as string,
-        issueType: issueType as string,
+        riderId: userId,
+        riderEmail: user?.email || null,
+        riderName: user?.name || null,
+        driverName: (driverName as string) || null,
+        issueType: (issueType as string) || 'other',
         issueCategory: issueConfig.title,
         selectedOption,
-        additionalDetails: additionalDetails.trim(),
+        additionalDetails: additionalDetails.trim() || null,
         status: 'open',
         priority: issueType === 'safety_concern' ? 'high' : 'normal',
+        source: 'rider_app',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      console.log('Report data:', JSON.stringify(reportData, null, 2));
+      await addDoc(supportTicketsRef, reportData);
+      console.log('Report submitted successfully');
 
       Alert.alert(
         'Report Submitted',
@@ -134,8 +143,8 @@ export default function ReportIssueScreen() {
           },
         ]
       );
-    } catch (error) {
-      console.error('Error submitting report:', error);
+    } catch (error: any) {
+      console.error('Error submitting report:', error?.message || error, error?.code);
       Alert.alert('Error', 'Failed to submit your report. Please try again.');
     } finally {
       setIsSubmitting(false);

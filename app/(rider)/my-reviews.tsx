@@ -65,8 +65,8 @@ export default function MyReviewsScreen() {
           driverId: data.driverId,
           driverName: data.driverName || 'Driver',
           rating: data.rating || 0,
-          feedback: data.feedback,
-          tags: data.tags,
+          feedback: data.feedback || data.comment || null, // Support both field names
+          tags: data.tags || data.issues || [], // Support both field names
           tripId: data.tripId,
           createdAt: data.createdAt?.toDate() || new Date(),
         };

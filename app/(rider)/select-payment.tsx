@@ -126,7 +126,8 @@ export default function SelectPaymentScreen() {
     }
   };
 
-  // Payment methods - Apple Pay and Google Pay disabled in test mode
+  // Payment methods - Apple Pay and Google Pay temporarily disabled
+  // TODO: Re-enable after testing in preview environment
   const paymentMethods: PaymentMethod[] = [
     {
       id: 'stripe-new',
@@ -136,22 +137,23 @@ export default function SelectPaymentScreen() {
       icon: 'card',
       connected: true,
     },
-    {
-      id: 'apple-pay',
-      type: 'apple_pay',
-      name: 'Apple Pay',
-      details: isStripeTestMode ? 'Not available in test mode' : 'Quick and secure via Stripe',
-      icon: 'logo-apple',
-      connected: !isStripeTestMode, // Disabled in test mode
-    },
-    {
-      id: 'google-pay',
-      type: 'google_pay',
-      name: 'Google Pay',
-      details: isStripeTestMode ? 'Not available in test mode' : 'Fast checkout via Stripe',
-      icon: 'logo-google',
-      connected: !isStripeTestMode, // Disabled in test mode
-    },
+    // COMMENTED OUT - Apple Pay and Google Pay temporarily disabled
+    // {
+    //   id: 'apple-pay',
+    //   type: 'apple_pay',
+    //   name: 'Apple Pay',
+    //   details: isStripeTestMode ? 'Not available in test mode' : 'Quick and secure via Stripe',
+    //   icon: 'logo-apple',
+    //   connected: !isStripeTestMode, // Disabled in test mode
+    // },
+    // {
+    //   id: 'google-pay',
+    //   type: 'google_pay',
+    //   name: 'Google Pay',
+    //   details: isStripeTestMode ? 'Not available in test mode' : 'Fast checkout via Stripe',
+    //   icon: 'logo-google',
+    //   connected: !isStripeTestMode, // Disabled in test mode
+    // },
   ];
 
   const handleSelectPayment = (paymentId: string) => {

@@ -835,9 +835,14 @@ export async function cancelTrip(
     let paymentHandled = false;
     let paymentAction = 'none';
 
-    if (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:')) {
-      const paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
-      const currentPaymentStatus = tripData.paymentStatus;
+    // Get paymentIntentId - check direct field first, then legacy format
+    let paymentIntentId = tripData?.paymentIntentId;
+    if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
+      paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+    }
+
+    if (paymentIntentId) {
+      const currentPaymentStatus = tripData?.paymentStatus;
 
       // Determine if payment was captured (trip was accepted) or just authorized
       const wasPaymentCaptured = currentPaymentStatus === 'CAPTURED' ||

@@ -107,11 +107,12 @@ export default function DriverReviewScreen() {
 
       const driverData = driverDoc.data();
 
-      // Allow reviewing pending and needs_resubmission applications
-      if (driverData?.registrationStatus !== 'pending' && driverData?.registrationStatus !== 'needs_resubmission') {
+      // Allow reviewing: pending, needs_resubmission, pending_reapproval, and approved (for document review)
+      const reviewableStatuses = ['pending', 'needs_resubmission', 'pending_reapproval', 'approved'];
+      if (!reviewableStatuses.includes(driverData?.registrationStatus)) {
         Alert.alert(
-          'Already Reviewed',
-          `This driver has already been ${driverData?.registrationStatus || 'processed'}. The list will refresh.`,
+          'Cannot Review',
+          `This driver has been ${driverData?.registrationStatus || 'processed'} and cannot be reviewed.`,
           [{ text: 'OK', onPress: () => router.back() }]
         );
         return;
@@ -612,61 +613,77 @@ export default function DriverReviewScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Action Buttons */}
-      <View style={styles.actionButtonsContainer}>
-        {hasRejectedDocuments() && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.resubmitButton]}
-            onPress={handleRequestResubmission}
-            disabled={processing}
-          >
-            <Ionicons name="refresh" size={20} color={Colors.white} />
-            <Text style={styles.actionButtonText}>Request Resubmission</Text>
-          </TouchableOpacity>
-        )}
+      {/* Action Buttons - Only show for pending applications, not for already approved drivers */}
+      {driver?.registrationStatus !== 'approved' && (
+        <View style={styles.actionButtonsContainer}>
+          {hasRejectedDocuments() && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.resubmitButton]}
+              onPress={handleRequestResubmission}
+              disabled={processing}
+            >
+              <Ionicons name="refresh" size={20} color={Colors.white} />
+              <Text style={styles.actionButtonText}>Request Resubmission</Text>
+            </TouchableOpacity>
+          )}
 
-        <View style={styles.actionButtonsRow}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={handleRejectApplication}
-            disabled={processing}
-          >
-            {processing ? (
-              <ActivityIndicator color={Colors.white} size="small" />
-            ) : (
-              <>
-                <Ionicons name="close-circle" size={20} color={Colors.white} />
-                <Text style={styles.actionButtonText}>Reject All</Text>
-              </>
+          <View style={styles.actionButtonsRow}>
+            {/* Only show Reject All for new pending applications, not for reapproval */}
+            {driver?.registrationStatus !== 'pending_reapproval' && (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rejectButton]}
+                onPress={handleRejectApplication}
+                disabled={processing}
+              >
+                {processing ? (
+                  <ActivityIndicator color={Colors.white} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle" size={20} color={Colors.white} />
+                    <Text style={styles.actionButtonText}>Reject All</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              styles.approveButton,
-              !allDocumentsApproved() && styles.buttonDisabled,
-            ]}
-            onPress={handleFinalApproval}
-            disabled={processing || !allDocumentsApproved()}
-          >
-            {processing ? (
-              <ActivityIndicator color={Colors.white} size="small" />
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={20} color={Colors.white} />
-                <Text style={styles.actionButtonText}>Approve Driver</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.approveButton,
+                !allDocumentsApproved() && styles.buttonDisabled,
+                driver?.registrationStatus === 'pending_reapproval' && { flex: 1 },
+              ]}
+              onPress={handleFinalApproval}
+              disabled={processing || !allDocumentsApproved()}
+            >
+              {processing ? (
+                <ActivityIndicator color={Colors.white} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.white} />
+                  <Text style={styles.actionButtonText}>
+                    {driver?.registrationStatus === 'pending_reapproval' ? 'Re-Approve Driver' : 'Approve Driver'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {!allDocumentsApproved() && (
+            <Text style={styles.approvalHint}>
+              Verify all required documents to enable final approval
+            </Text>
+          )}
         </View>
+      )}
 
-        {!allDocumentsApproved() && (
-          <Text style={styles.approvalHint}>
-            Verify all required documents to enable final approval
-          </Text>
-        )}
-      </View>
+      {/* View-only mode message for already approved drivers */}
+      {driver?.registrationStatus === 'approved' && (
+        <View style={styles.viewOnlyContainer}>
+          <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+          <Text style={styles.viewOnlyText}>This driver is already approved. View-only mode.</Text>
+        </View>
+      )}
 
       {/* Rejection Reason Modal */}
       <Modal
@@ -1193,6 +1210,25 @@ const styles = StyleSheet.create({
     color: Colors.gray[500],
     textAlign: 'center',
     marginTop: Spacing.sm,
+  },
+  viewOnlyContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.success + '15',
+    padding: Spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Colors.success + '30',
+    gap: Spacing.sm,
+  },
+  viewOnlyText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.success,
   },
 
   // Modal Styles
