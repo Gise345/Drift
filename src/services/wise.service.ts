@@ -16,11 +16,19 @@ const auth = getAuth(app);
 
 /**
  * Helper to get fresh auth token before API calls
+ * Throws an error if user is not authenticated
  */
-async function refreshToken(): Promise<void> {
+async function ensureAuthenticated(): Promise<void> {
   const user = auth.currentUser;
-  if (user) {
+  if (!user) {
+    throw new Error('You must be logged in to perform this action. Please sign out and sign back in.');
+  }
+  // Refresh the token to ensure it's valid
+  try {
     await user.getIdToken(true);
+  } catch (error) {
+    console.error('Error refreshing auth token:', error);
+    throw new Error('Your session has expired. Please sign out and sign back in.');
   }
 }
 
@@ -98,7 +106,7 @@ export const WiseService = {
     payoutMethodId: string
   ): Promise<WiseRecipientResult> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const createWiseRecipient = httpsCallable<
         { driverId: string; payoutMethodId: string },
@@ -123,7 +131,7 @@ export const WiseService = {
     reference?: string
   ): Promise<WisePayoutResult> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const processWisePayout = httpsCallable<
         { driverId: string; amount: number; reference?: string },
@@ -144,7 +152,7 @@ export const WiseService = {
    */
   async processBatchPayouts(payouts: BatchPayoutItem[]): Promise<BatchPayoutResult> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const processBatchWisePayouts = httpsCallable<
         { payouts: BatchPayoutItem[] },
@@ -164,7 +172,7 @@ export const WiseService = {
    */
   async getTransferStatus(wiseTransferId: number): Promise<WiseTransferStatus> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const getWiseTransferStatus = httpsCallable<
         { wiseTransferId: number },
@@ -189,7 +197,7 @@ export const WiseService = {
     wiseStatus: string;
   }> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const syncWisePayoutStatus = httpsCallable<
         { payoutId: string },
@@ -210,7 +218,7 @@ export const WiseService = {
    */
   async getBalance(): Promise<{ success: boolean; balances: WiseBalance[] }> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const getWiseBalance = httpsCallable<
         Record<string, never>,
@@ -233,7 +241,7 @@ export const WiseService = {
     accountNumber: string
   ): Promise<ValidationResult> {
     try {
-      await refreshToken();
+      await ensureAuthenticated();
 
       const validateWiseAccount = httpsCallable<
         { sortCode: string; accountNumber: string },

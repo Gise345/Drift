@@ -1,0 +1,15 @@
+# This file ensures the images folder is tracked by git
+# Add the following images to this folder:
+#
+# Required images:
+# - drift-logo.png (your logo)
+# - drift-logo-white.png (white version for dark backgrounds)
+# - favicon.png (16x16 or 32x32)
+# - apple-touch-icon.png (180x180)
+# - drift-og-image.png (1200x630 - for social sharing)
+# - google-play-badge.png (download from Google Play branding)
+# - app-store-badge.png (download from Apple App Store branding)
+# - app-mockup.png (phone mockup showing your app)
+# - phone-hand.png (hand holding phone with app)
+# - driver-hero.png (happy driver image)
+# - app-screenshot.png (screenshot of your app)

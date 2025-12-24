@@ -18,6 +18,10 @@ export {
   confirmStripeSetupIntent,
   updateDriverEarnings,
   chargeAdditionalAmount,
+  // New verification flow functions
+  verifyCardForRide,
+  cancelVerificationHold,
+  chargeCardForRide,
   processTripIssueRefund,
   stripeWebhook,
   cancelStripePaymentAuth,

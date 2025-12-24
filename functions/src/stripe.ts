@@ -139,7 +139,7 @@ export const createStripePaymentIntent = onCall(callableOptions, async (request)
 
       const stripe = getStripe();
       const data = request.data as PaymentIntentRequest;
-      const { amount, currency = 'USD', description, metadata } = data;
+      const { amount, currency = 'GBP', description, metadata } = data;
 
       if (!amount || amount <= 0) {
         throw new HttpsError('invalid-argument', 'Invalid amount');
@@ -1075,7 +1075,7 @@ export const chargeAdditionalAmount = onCall(callableOptions, async (request) =>
       const amountInCents = Math.round(amount * 100);
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountInCents,
-        currency: 'usd',
+        currency: 'gbp',
         customer: customerId,
         payment_method: paymentMethodId as string,
         description: description || `Drift ${type === 'tip' ? 'Tip' : 'Extra Stop'} - Trip ${tripId}`,
@@ -1100,7 +1100,7 @@ export const chargeAdditionalAmount = onCall(callableOptions, async (request) =>
         paymentIntentId: paymentIntent.id,
         amount,
         amountInCents,
-        currency: 'USD',
+        currency: 'GBP',
         status: paymentIntent.status,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -1143,6 +1143,291 @@ export const chargeAdditionalAmount = onCall(callableOptions, async (request) =>
       }
 
       const message = error instanceof Error ? error.message : 'Failed to process payment';
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * VERIFY CARD FOR RIDE
+ * Verifies the customer's card has sufficient funds by creating a small
+ * authorization hold (£1), then immediately canceling it.
+ * This ensures the card is valid and has funds before the ride request is created.
+ *
+ * The actual charge happens when a driver accepts the ride.
+ */
+interface VerifyCardRequest {
+  actualAmount: number;
+  currency?: string;
+  metadata?: Record<string, string>;
+}
+
+export const verifyCardForRide = onCall(callableOptions, async (request) => {
+    try {
+      // Verify authentication
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const stripe = getStripe();
+      const data = request.data as VerifyCardRequest;
+      const { actualAmount, currency = 'GBP', metadata } = data;
+      const userId = request.auth.uid;
+
+      console.log('🔍 Verifying card for ride:', { actualAmount, currency, userId });
+
+      // Get or create customer
+      const userDoc = await db.collection('users').doc(userId).get();
+      const userData = userDoc.data();
+      let customerId = userData?.stripeCustomerId;
+
+      if (!customerId) {
+        // Create new customer
+        const customer = await stripe.customers.create({
+          email: request.auth.token.email || undefined,
+          metadata: { firebaseUserId: userId },
+        });
+        customerId = customer.id;
+        await db.collection('users').doc(userId).set(
+          { stripeCustomerId: customerId },
+          { merge: true }
+        );
+      }
+
+      // Check if customer has a default payment method
+      const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+      let defaultPaymentMethodId = customer.invoice_settings?.default_payment_method as string | null;
+
+      // If no default, try to get any saved card
+      if (!defaultPaymentMethodId) {
+        const paymentMethods = await stripe.paymentMethods.list({
+          customer: customerId,
+          type: 'card',
+          limit: 1,
+        });
+        if (paymentMethods.data.length > 0) {
+          defaultPaymentMethodId = paymentMethods.data[0].id;
+        }
+      }
+
+      // Create ephemeral key for the customer
+      const ephemeralKey = await stripe.ephemeralKeys.create(
+        { customer: customerId },
+        { apiVersion: '2024-06-20' }
+      );
+
+      // Create a small verification PaymentIntent (£1 to verify funds)
+      // This will be canceled immediately after confirmation
+      const verificationAmount = 100; // £1.00 in pence
+      const verificationIntent = await stripe.paymentIntents.create({
+        amount: verificationAmount,
+        currency: currency.toLowerCase(),
+        customer: customerId,
+        description: 'Card verification for Drift ride',
+        metadata: {
+          userId,
+          type: 'verification',
+          actualAmount: actualAmount.toString(),
+          ...metadata,
+        },
+        payment_method_types: ['card'],
+        capture_method: 'manual', // Authorization only
+        // If we have a saved card, attach it
+        ...(defaultPaymentMethodId && { payment_method: defaultPaymentMethodId }),
+      });
+
+      // Store the verification record
+      await db.collection('card_verifications').doc(verificationIntent.id).set({
+        userId,
+        customerId,
+        verificationIntentId: verificationIntent.id,
+        actualAmount,
+        currency,
+        status: 'pending',
+        metadata: metadata || {},
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log('✅ Card verification intent created:', verificationIntent.id);
+
+      return {
+        verified: false, // Will be true after Payment Sheet confirms
+        customerId,
+        verificationIntentId: verificationIntent.id,
+        clientSecret: verificationIntent.client_secret,
+        ephemeralKey: ephemeralKey.secret,
+        actualAmount,
+      };
+    } catch (error: unknown) {
+      console.error('❌ Error verifying card:', error);
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      // Handle specific Stripe errors
+      if (error instanceof Stripe.errors.StripeCardError) {
+        throw new HttpsError('failed-precondition', error.message || 'Card verification failed');
+      }
+
+      const message = error instanceof Error ? error.message : 'Card verification failed';
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * CANCEL VERIFICATION HOLD
+ * Called after Payment Sheet confirms the verification to cancel the hold
+ * This releases the £1 hold on the customer's card
+ */
+export const cancelVerificationHold = onCall(callableOptions, async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const stripe = getStripe();
+      const { verificationIntentId } = request.data as { verificationIntentId: string };
+
+      if (!verificationIntentId) {
+        throw new HttpsError('invalid-argument', 'Verification intent ID is required');
+      }
+
+      console.log('🚫 Canceling verification hold:', verificationIntentId);
+
+      // Cancel the verification intent to release the hold
+      await stripe.paymentIntents.cancel(verificationIntentId, {
+        cancellation_reason: 'abandoned',
+      });
+
+      // Update the verification record
+      await db.collection('card_verifications').doc(verificationIntentId).update({
+        status: 'verified_and_released',
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log('✅ Verification hold released');
+
+      return { success: true, status: 'verified' };
+    } catch (error: unknown) {
+      console.error('❌ Error canceling verification hold:', error);
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      const message = error instanceof Error ? error.message : 'Failed to release verification hold';
+      throw new HttpsError('internal', message);
+    }
+  }
+);
+
+/**
+ * CHARGE CARD FOR RIDE
+ * Called when a driver accepts the ride - charges the actual ride amount
+ * Uses the customer's default/saved payment method
+ */
+interface ChargeCardRequest {
+  customerId: string;
+  amount: number;
+  tripId: string;
+  currency?: string;
+}
+
+export const chargeCardForRide = onCall(callableOptions, async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const stripe = getStripe();
+      const data = request.data as ChargeCardRequest;
+      const { customerId, amount, tripId, currency = 'GBP' } = data;
+      const userId = request.auth.uid;
+
+      if (!customerId || !amount || !tripId) {
+        throw new HttpsError('invalid-argument', 'Customer ID, amount, and trip ID are required');
+      }
+
+      console.log('💰 Charging card for ride:', { customerId, amount, tripId });
+
+      // Get customer's default payment method
+      const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+      let paymentMethodId = customer.invoice_settings?.default_payment_method as string | null;
+
+      // If no default, try to get any saved card
+      if (!paymentMethodId) {
+        const paymentMethods = await stripe.paymentMethods.list({
+          customer: customerId,
+          type: 'card',
+          limit: 1,
+        });
+        if (paymentMethods.data.length === 0) {
+          throw new HttpsError('failed-precondition', 'No payment method on file');
+        }
+        paymentMethodId = paymentMethods.data[0].id;
+      }
+
+      // Create and immediately capture the payment
+      const amountInCents = Math.round(amount * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountInCents,
+        currency: currency.toLowerCase(),
+        customer: customerId,
+        payment_method: paymentMethodId as string,
+        description: `Drift ride - Trip ${tripId}`,
+        metadata: {
+          userId,
+          tripId,
+          type: 'ride_payment',
+        },
+        capture_method: 'automatic', // Immediate capture
+        confirm: true, // Confirm immediately
+        off_session: true, // Customer not present
+      });
+
+      // Save payment record
+      await db.collection('stripe_payments').doc(paymentIntent.id).set({
+        userId,
+        tripId,
+        type: 'ride_payment',
+        paymentIntentId: paymentIntent.id,
+        amount,
+        amountInCents,
+        currency,
+        status: paymentIntent.status,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Update trip with payment info
+      await db.collection('trips').doc(tripId).update({
+        paymentIntentId: paymentIntent.id,
+        paymentStatus: paymentIntent.status === 'succeeded' ? 'PAID' : 'PENDING',
+        paymentCapturedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log('✅ Ride payment successful:', paymentIntent.id, paymentIntent.status);
+
+      return {
+        success: paymentIntent.status === 'succeeded',
+        paymentIntentId: paymentIntent.id,
+        status: paymentIntent.status,
+        amount,
+      };
+    } catch (error: unknown) {
+      console.error('❌ Error charging card for ride:', error);
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      // Handle Stripe card errors
+      if (error instanceof Stripe.errors.StripeCardError) {
+        throw new HttpsError('failed-precondition', error.message || 'Card was declined');
+      }
+
+      const message = error instanceof Error ? error.message : 'Payment failed';
       throw new HttpsError('internal', message);
     }
   }

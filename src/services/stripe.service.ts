@@ -46,7 +46,7 @@ export interface StripeSetupIntentResult {
  */
 export async function createStripePaymentIntent(
   amount: number,
-  currency: string = 'USD',
+  currency: string = 'GBP',
   description?: string,
   metadata?: Record<string, any>
 ): Promise<StripePaymentIntentResult> {
@@ -202,6 +202,165 @@ export async function refundStripePayment(
   } catch (error: any) {
     console.error('❌ Failed to process refund:', error);
     throw new Error(error.message || 'Failed to process refund');
+  }
+}
+
+/**
+ * Verify Card Has Sufficient Funds
+ * Creates a small authorization hold to verify the card is valid and has funds,
+ * then immediately cancels it. This is used when rider presses "Pay" - we verify
+ * the card but don't actually charge until a driver accepts.
+ *
+ * Flow:
+ * 1. Create a small PaymentIntent with manual capture (£0.50)
+ * 2. Payment Sheet confirms it (places hold to verify funds)
+ * 3. We immediately cancel it (releases hold)
+ * 4. If successful, card is valid - actual charge happens when driver accepts
+ *
+ * @param actualAmount The actual ride amount to store for later charging
+ * @param metadata Additional metadata to store for the ride
+ */
+export async function verifyCardAndPreauthorize(
+  actualAmount: number,
+  currency: string = 'GBP',
+  metadata?: Record<string, any>
+): Promise<{
+  verified: boolean;
+  customerId: string;
+  verificationIntentId: string;
+  clientSecret: string;
+  ephemeralKey: string;
+  actualAmount: number;
+}> {
+  try {
+    console.log('🔍 Verifying card has sufficient funds...');
+    console.log('   Actual ride amount:', actualAmount, currency);
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    // Call the verification function
+    const verifyCard = httpsCallable(firebaseFunctions, 'verifyCardForRide');
+
+    const result = await verifyCard({
+      actualAmount,
+      currency,
+      metadata,
+    });
+
+    const data = result.data as {
+      verified: boolean;
+      customerId: string;
+      verificationIntentId: string;
+      clientSecret: string;
+      ephemeralKey: string;
+      actualAmount: number;
+    };
+
+    console.log('✅ Card verification result:', {
+      verified: data.verified,
+      customerId: data.customerId,
+      verificationIntentId: data.verificationIntentId,
+    });
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Card verification failed:', error);
+    throw new Error(error.message || 'Card verification failed. Please check your card details.');
+  }
+}
+
+/**
+ * Charge Verified Card for Ride
+ * Called when a driver accepts the ride - charges the actual ride amount
+ * using the customer's verified payment method
+ *
+ * @param customerId The Stripe customer ID
+ * @param amount The ride amount to charge
+ * @param tripId The trip ID for metadata
+ */
+export async function chargeVerifiedCardForRide(
+  customerId: string,
+  amount: number,
+  tripId: string,
+  currency: string = 'GBP'
+): Promise<{
+  success: boolean;
+  paymentIntentId: string;
+  status: string;
+  amount: number;
+}> {
+  try {
+    console.log('💰 Charging verified card for ride:', { amount, tripId, customerId });
+
+    // Ensure user is authenticated and token is fresh
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    const chargeCard = httpsCallable(firebaseFunctions, 'chargeCardForRide');
+
+    const result = await chargeCard({
+      customerId,
+      amount,
+      tripId,
+      currency,
+    });
+
+    const data = result.data as {
+      success: boolean;
+      paymentIntentId: string;
+      status: string;
+      amount: number;
+    };
+
+    console.log('✅ Ride payment result:', {
+      success: data.success,
+      paymentIntentId: data.paymentIntentId,
+      status: data.status,
+    });
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Failed to charge card for ride:', error);
+    throw new Error(error.message || 'Payment failed. Please try again.');
+  }
+}
+
+/**
+ * Cancel Verification Hold
+ * Called after Payment Sheet confirms the card verification to release the £1 hold
+ */
+export async function cancelVerificationHold(
+  verificationIntentId: string
+): Promise<{ success: boolean; status: string }> {
+  try {
+    console.log('🚫 Canceling verification hold:', verificationIntentId);
+
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await user.getIdToken(true);
+
+    const cancelHold = httpsCallable(firebaseFunctions, 'cancelVerificationHold');
+
+    const result = await cancelHold({ verificationIntentId });
+
+    const data = result.data as { success: boolean; status: string };
+
+    console.log('✅ Verification hold canceled:', data);
+
+    return data;
+  } catch (error: any) {
+    console.error('❌ Failed to cancel verification hold:', error);
+    throw new Error(error.message || 'Failed to release verification hold');
   }
 }
 

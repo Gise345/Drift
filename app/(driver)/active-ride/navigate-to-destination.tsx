@@ -85,14 +85,18 @@ export default function NavigateToDestination() {
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
   const [currentStep, setCurrentStep] = useState<NavigationStep | null>(null);
   const [currentLocation, setCurrentLocation] = useState<RouteCoordinate | null>(null);
+  const [currentHeading, setCurrentHeading] = useState<number>(0);
   const [isSheetMinimized, setIsSheetMinimized] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [tripStartTime] = useState(new Date());
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState<number>(0); // Speed in m/s
+  const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
   const lastRouteRecalculation = useRef<number>(0);
   const hasHandledCancellationRef = useRef(false);
+  const lastCameraUpdate = useRef<number>(0);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
+  const CAMERA_UPDATE_INTERVAL = 500; // Update camera every 500ms for smooth following
 
   // Stop request state
   const [showStopRequestModal, setShowStopRequestModal] = useState(false);
@@ -457,16 +461,36 @@ export default function NavigateToDestination() {
           (currentTrip as any)?.stops
         );
 
-        // Start watching position
+        // Start watching position - faster updates for smoother navigation
         locationSubscription = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 3000,
-            distanceInterval: 10,
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 1000, // Update every 1 second for smooth following
+            distanceInterval: 5, // Update every 5 meters for responsive navigation
           },
           async (loc) => {
             const { latitude, longitude, heading, speed } = loc.coords;
             setCurrentLocation({ latitude, longitude });
+
+            // Update heading for car rotation
+            if (heading !== null && heading >= 0) {
+              setCurrentHeading(heading);
+            }
+
+            // Auto-follow camera with heading orientation (like Google Maps navigation)
+            const now = Date.now();
+            if (isAutoFollowEnabled && mapRef.current && now - lastCameraUpdate.current >= CAMERA_UPDATE_INTERVAL) {
+              lastCameraUpdate.current = now;
+              mapRef.current.animateCamera(
+                {
+                  center: { latitude, longitude },
+                  heading: heading || 0,
+                  pitch: 45, // Tilted view for navigation
+                  zoom: 17, // Close zoom for navigation
+                },
+                { duration: 500 } // Smooth 500ms animation
+              );
+            }
 
             // Record route history for safety/investigation purposes
             addRouteHistoryPoint({ latitude, longitude });
@@ -682,11 +706,17 @@ export default function NavigateToDestination() {
 
   const handleCenterMap = () => {
     if (currentLocation && mapRef.current) {
-      mapRef.current.animateToRegion({
-        ...currentLocation,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
+      // Re-enable auto-follow and center with navigation view
+      setIsAutoFollowEnabled(true);
+      mapRef.current.animateCamera(
+        {
+          center: currentLocation,
+          heading: currentHeading,
+          pitch: 45,
+          zoom: 17,
+        },
+        { duration: 500 }
+      );
     }
   };
 
@@ -719,6 +749,12 @@ export default function NavigateToDestination() {
         showsMyLocationButton={false}
         showsCompass={false}
         followsUserLocation={false}
+        onPanDrag={() => {
+          // Disable auto-follow when user manually pans the map
+          if (isAutoFollowEnabled) {
+            setIsAutoFollowEnabled(false);
+          }
+        }}
       >
         {/* Stop Markers */}
         {(currentTrip as any)?.stops?.map((stop: any, index: number) => (
@@ -812,8 +848,18 @@ export default function NavigateToDestination() {
 
       {/* Map Controls */}
       <View style={styles.mapControls}>
-        <TouchableOpacity style={styles.mapControlButton} onPress={handleCenterMap}>
-          <Ionicons name="locate" size={22} color={Colors.gray[700]} />
+        <TouchableOpacity
+          style={[
+            styles.mapControlButton,
+            isAutoFollowEnabled && styles.mapControlButtonActive
+          ]}
+          onPress={handleCenterMap}
+        >
+          <Ionicons
+            name={isAutoFollowEnabled ? "navigate-circle" : "locate"}
+            size={22}
+            color={isAutoFollowEnabled ? Colors.white : Colors.gray[700]}
+          />
         </TouchableOpacity>
         <TouchableOpacity style={styles.mapControlButton} onPress={handleOpenMaps}>
           <Ionicons name="navigate" size={22} color={Colors.primary} />
@@ -1124,6 +1170,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.md,
+  },
+  mapControlButtonActive: {
+    backgroundColor: Colors.primary,
   },
 
   // Destination Marker

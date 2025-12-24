@@ -20,8 +20,8 @@ import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
 import type { PricingResult } from '@/src/stores/carpool-store';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 
-// KYD to USD conversion rate (fixed rate for Cayman Islands)
-const KYD_TO_USD_RATE = 1.20; // 1 KYD = 1.20 USD approximately
+// KYD to GBP conversion rate (adjusted so bank statement matches KYD price)
+const KYD_TO_GBP_RATE = 0.873; // 1 KYD ≈ 0.873 GBP
 
 // Helper to check if current time has a pricing surcharge
 const getTimePricingInfo = (): { isActive: boolean; message: string } => {
@@ -191,10 +191,10 @@ export default function VehicleSelectionScreen() {
     return `$${amount.toFixed(2)} KYD`;
   };
 
-  // Get USD equivalent
-  const getUSDEquivalent = (kydAmount: number): string => {
-    const usd = kydAmount * KYD_TO_USD_RATE;
-    return `≈ $${usd.toFixed(2)} USD`;
+  // Get GBP equivalent
+  const getGBPEquivalent = (kydAmount: number): string => {
+    const gbp = kydAmount * KYD_TO_GBP_RATE;
+    return `≈ £${gbp.toFixed(2)} GBP`;
   };
 
   const handleVehicleSelect = (vehicleId: string) => {
@@ -356,7 +356,7 @@ export default function VehicleSelectionScreen() {
               <View style={styles.mainPriceContainer}>
                 <Text style={styles.mainPriceLabel}>Your Contribution</Text>
                 <Text style={styles.mainPrice}>{formatKYD(finalPrice)}</Text>
-                <Text style={styles.usdEquivalent}>{getUSDEquivalent(finalPrice)}</Text>
+                <Text style={styles.gbpEquivalent}>{getGBPEquivalent(finalPrice)}</Text>
               </View>
 
               {/* Price Range */}
@@ -505,7 +505,7 @@ export default function VehicleSelectionScreen() {
             <Ionicons name="information-circle" size={18} color={Colors.info} />
             <Text style={styles.currencyNoticeText}>
               All prices shown in <Text style={styles.currencyBold}>KYD (Cayman Islands Dollar)</Text>.
-              Payment will be processed in USD at the current exchange rate.
+              Payment will be processed in GBP. Rate may vary slightly at time of payment via Stripe.
             </Text>
           </View>
 
@@ -528,7 +528,7 @@ export default function VehicleSelectionScreen() {
               </View>
               <View style={styles.selectedPriceContainer}>
                 <Text style={styles.selectedPrice}>{formatKYD(finalPrice)}</Text>
-                <Text style={styles.selectedUsd}>{getUSDEquivalent(finalPrice)}</Text>
+                <Text style={styles.selectedGbp}>{getGBPEquivalent(finalPrice)}</Text>
               </View>
             </View>
           )}
@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
     color: Colors.purple,
   },
-  usdEquivalent: {
+  gbpEquivalent: {
     fontSize: Typography.fontSize.sm,
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],
@@ -961,7 +961,7 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
     color: Colors.purple,
   },
-  selectedUsd: {
+  selectedGbp: {
     fontSize: Typography.fontSize.xs,
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],

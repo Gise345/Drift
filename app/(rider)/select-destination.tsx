@@ -652,7 +652,7 @@ const SelectDestinationScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header with Gradient */}
       <LinearGradient
         colors={['#d8d3ec', '#FFFFFF']}
@@ -819,7 +819,7 @@ const SelectDestinationScreen = () => {
 
       {/* Route Info Card */}
       {!loading && routeCoordinates.length > 0 && (
-        <View style={[styles.infoCard, { bottom: insets.bottom + 16 }]}>
+        <View style={[styles.infoCard, { bottom: 16 }]}>
           {/* Stops List */}
           {stops && stops.length > 0 && (
             <View style={styles.stopsContainer}>

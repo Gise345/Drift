@@ -77,6 +77,8 @@ export default function DriverHomeScreen() {
   const acceptedRequestId = useRef<string | null>(null);
   // Track if we're currently processing an accept
   const isAccepting = useRef(false);
+  // Location subscription for continuous tracking while online
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
 
   // Animation values for status card
   const statusCardAnimation = useRef(new Animated.Value(1)).current;
@@ -342,6 +344,72 @@ export default function DriverHomeScreen() {
       shownRequestIds.current.clear();
     }
   }, [isOnline]);
+
+  // Continuous location tracking while driver is online
+  // Updates driver location in Firebase every 10 seconds so admin map can show live drivers
+  useEffect(() => {
+    const startLocationTracking = async () => {
+      try {
+        // Check for foreground permission first
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('⚠️ Location permission not granted for tracking');
+          return;
+        }
+
+        console.log('🟢 Starting continuous location tracking for online driver');
+
+        // Start watching location - update every 10 seconds or 50 meters
+        const subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000, // 10 seconds
+            distanceInterval: 50, // 50 meters
+          },
+          (location) => {
+            // Update driver location in store (which updates Firebase)
+            updateLocation({
+              lat: location.coords.latitude,
+              lng: location.coords.longitude,
+              heading: location.coords.heading || 0,
+              speed: location.coords.speed || 0,
+            });
+
+            // Also update the map region
+            setRegion({
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            });
+          }
+        );
+
+        locationSubscriptionRef.current = subscription;
+      } catch (error) {
+        console.error('❌ Error starting location tracking:', error);
+      }
+    };
+
+    const stopLocationTracking = () => {
+      if (locationSubscriptionRef.current) {
+        console.log('🔴 Stopping continuous location tracking');
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
+    };
+
+    if (isOnline) {
+      startLocationTracking();
+    } else {
+      stopLocationTracking();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      stopLocationTracking();
+    };
+  }, [isOnline, updateLocation]);
 
   // Listen for incoming ride requests
   useEffect(() => {

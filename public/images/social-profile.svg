@@ -1,0 +1,18 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="profileGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6"/>
+      <stop offset="100%" style="stop-color:#5d1289"/>
+    </linearGradient>
+    <radialGradient id="glowGradient" cx="70%" cy="30%" r="50%">
+      <stop offset="0%" style="stop-color:rgba(255,255,255,0.2)"/>
+      <stop offset="100%" style="stop-color:rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <circle cx="200" cy="200" r="200" fill="url(#profileGradient)"/>
+  <circle cx="200" cy="200" r="200" fill="url(#glowGradient)"/>
+  <g transform="translate(70, 85)">
+    <path d="M220 70c-5-15-18-25-35-25H75C58 45 45 55 40 70L10 145v100c0 8.3 6.7 15 15 15h15c8.3 0 15-6.7 15-15v-15h150v15c0 8.3 6.7 15 15 15h15c8.3 0 15-6.7 15-15v-100L220 70zM65 195c-12.4 0-22.5-10.1-22.5-22.5S52.6 150 65 150s22.5 10.1 22.5 22.5S77.4 195 65 195zm130 0c-12.4 0-22.5-10.1-22.5-22.5S182.6 150 195 150s22.5 10.1 22.5 22.5S207.4 195 195 195zM40 130l20-60h140l20 60H40z" fill="white"/>
+  </g>
+  <text x="200" y="340" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="900" fill="white" text-anchor="middle">DRIFT</text>
+</svg>

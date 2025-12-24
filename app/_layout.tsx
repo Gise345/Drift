@@ -1,11 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { useAuthStore } from '@/src/stores/auth-store';
+import { useAuthStore, hasRole } from '@/src/stores/auth-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import { AutoUpdate } from '@/src/components/AutoUpdate';
 import { initializeMonitoring } from '@/src/services/firebase-monitoring-service';
+import { DebugLogViewer } from '@/components/DebugLogViewer';
+import { debugLogger } from '@/src/utils/debug-logger';
 
 // Stripe publishable key from environment
 const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -75,14 +77,19 @@ function parseTrackingUrl(url: string): string | null {
 const BACKGROUND_THRESHOLD_MS = 5 * 60 * 1000;
 
 export default function RootLayout() {
-  const { initialize } = useAuthStore();
+  const { initialize, user } = useAuthStore();
   const router = useRouter();
+
+  // Check if current user is an admin (for debug log viewer access)
+  const isAdmin = user?.roles?.includes('ADMIN') || false;
 
   // Track when app goes to background for stale connection handling
   const appState = useRef(AppState.currentState);
   const backgroundTimestamp = useRef<number | null>(null);
 
   useEffect(() => {
+    // Initialize debug logger first to capture all logs
+    debugLogger.init();
     // Initialize auth on app start
     initialize();
     // Initialize Firebase monitoring (Analytics, Crashlytics, Performance)
@@ -215,6 +222,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AutoUpdate />
       {content}
+      {/* Debug Log Viewer - Only for admins, triple tap top-right corner to open */}
+      {isAdmin && <DebugLogViewer />}
     </SafeAreaProvider>
   );
 }

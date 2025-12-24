@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { createStripePaymentIntent, confirmStripePayment } from '@/src/services/stripe.service';
+import { createStripePaymentIntent, confirmStripePayment, verifyCardAndPreauthorize, cancelVerificationHold } from '@/src/services/stripe.service';
 
 // Check if we're in Expo Go (where native Stripe won't work)
 // In EAS dev builds, appOwnership is 'standalone' or undefined
@@ -96,18 +96,27 @@ interface StripeCheckoutProps {
   onError: (error: Error) => void;
   /** Preferred payment method - 'apple_pay', 'google_pay', or 'card' (default) */
   preferredMethod?: 'apple_pay' | 'google_pay' | 'card';
+  /**
+   * Verification mode - when true:
+   * - Creates a small £1 authorization to verify the card has funds
+   * - Immediately cancels the hold after verification
+   * - Returns customerId for later charging when driver accepts
+   * - The actual charge happens when driver accepts the ride
+   */
+  isVerification?: boolean;
 }
 
 export function StripeCheckout({
   visible,
   amount,
-  currency = 'USD',
+  currency = 'GBP',
   description,
   metadata,
   onSuccess,
   onCancel,
   onError,
   preferredMethod = 'card',
+  isVerification = false,
 }: StripeCheckoutProps) {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { isPlatformPaySupported, confirmPlatformPayPayment } = usePlatformPay();
@@ -117,8 +126,12 @@ export function StripeCheckout({
   const [platformPayAvailable, setPlatformPayAvailable] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [verificationIntentId, setVerificationIntentId] = useState<string | null>(null);
   // Use ref to store paymentIntentId reliably (state updates are async)
   const paymentIntentIdRef = useRef<string | null>(null);
+  const customerIdRef = useRef<string | null>(null);
+  const verificationIntentIdRef = useRef<string | null>(null);
 
   // Check if platform pay (Google Pay / Apple Pay) is supported on this device
   useEffect(() => {
@@ -142,20 +155,32 @@ export function StripeCheckout({
     if (visible) {
       if (isExpoGo || !stripeAvailable) {
         // Show message that Stripe doesn't work in Expo Go
+        const simulateText = isVerification ? 'Simulate Verification' : 'Simulate Payment';
         Alert.alert(
           'Development Mode',
-          `Stripe payments are not available.\n\nDebug: ${STRIPE_DEBUG_INFO}\n\nFor now, we'll simulate a successful payment.`,
+          `Stripe payments are not available.\n\nDebug: ${STRIPE_DEBUG_INFO}\n\nFor now, we'll simulate a successful ${isVerification ? 'verification' : 'payment'}.`,
           [
             { text: 'Cancel', onPress: onCancel, style: 'cancel' },
             {
-              text: 'Simulate Payment',
+              text: simulateText,
               onPress: () => {
-                // Simulate authorization (not capture) to match real flow
-                onSuccess('simulated_payment_' + Date.now(), 'requires_capture', {
-                  amount,
-                  currency,
-                  simulated: true,
-                });
+                if (isVerification) {
+                  // Simulate verification - return customerId for later charging
+                  onSuccess('simulated_customer_' + Date.now(), 'verified', {
+                    amount,
+                    currency,
+                    simulated: true,
+                    customerId: 'simulated_customer_' + Date.now(),
+                    isVerification: true,
+                  });
+                } else {
+                  // Simulate authorization (not capture) to match real flow
+                  onSuccess('simulated_payment_' + Date.now(), 'requires_capture', {
+                    amount,
+                    currency,
+                    simulated: true,
+                  });
+                }
               }
             },
           ]
@@ -174,32 +199,62 @@ export function StripeCheckout({
       setLoading(true);
       setStatus('creating');
 
-      console.log('🔵 Creating Stripe payment intent:', {
-        amount,
-        currency,
-        description,
-        metadata,
-      });
+      let paymentData: any;
 
-      // Create payment intent
-      const paymentData = await createStripePaymentIntent(
-        amount,
-        currency,
-        description,
-        metadata
-      );
+      if (isVerification) {
+        // VERIFICATION MODE: Create a small verification intent to check card funds
+        console.log('🔍 Creating Stripe verification intent:', {
+          actualAmount: amount,
+          currency,
+          description,
+          metadata,
+        });
 
-      console.log('✅ Payment intent created:', {
-        paymentIntentId: paymentData.paymentIntentId,
-        customerId: paymentData.customerId,
-      });
+        paymentData = await verifyCardAndPreauthorize(
+          amount, // Store actual amount for later
+          currency,
+          metadata
+        );
 
-      // Save payment intent ID for later use in onSuccess (use ref for reliable access)
-      setPaymentIntentId(paymentData.paymentIntentId);
-      paymentIntentIdRef.current = paymentData.paymentIntentId;
+        console.log('✅ Verification intent created:', {
+          verificationIntentId: paymentData.verificationIntentId,
+          customerId: paymentData.customerId,
+        });
 
-      // Save client secret for platform pay
-      setClientSecret(paymentData.clientSecret);
+        // Save customer ID and verification intent ID for later
+        setCustomerId(paymentData.customerId);
+        customerIdRef.current = paymentData.customerId;
+        setVerificationIntentId(paymentData.verificationIntentId);
+        verificationIntentIdRef.current = paymentData.verificationIntentId;
+        setClientSecret(paymentData.clientSecret);
+      } else {
+        // NORMAL MODE: Create full payment intent
+        console.log('🔵 Creating Stripe payment intent:', {
+          amount,
+          currency,
+          description,
+          metadata,
+        });
+
+        paymentData = await createStripePaymentIntent(
+          amount,
+          currency,
+          description,
+          metadata
+        );
+
+        console.log('✅ Payment intent created:', {
+          paymentIntentId: paymentData.paymentIntentId,
+          customerId: paymentData.customerId,
+        });
+
+        // Save payment intent ID for later use in onSuccess (use ref for reliable access)
+        setPaymentIntentId(paymentData.paymentIntentId);
+        paymentIntentIdRef.current = paymentData.paymentIntentId;
+
+        // Save client secret for platform pay
+        setClientSecret(paymentData.clientSecret);
+      }
 
       // Check if we're using test/sandbox Stripe keys
       const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -287,18 +342,43 @@ export function StripeCheckout({
 
       setStatus('confirming');
 
-      console.log('✅ Payment authorized successfully (requires capture)');
+      if (isVerification) {
+        // VERIFICATION MODE: Cancel the verification hold and return customerId
+        console.log('✅ Card verified successfully - canceling verification hold...');
 
-      // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
-      // The actual capture happens when driver accepts the ride
-      // Return the actual paymentIntentId and 'requires_capture' status
-      // Use ref for reliable access since state updates are async
-      const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
-      console.log('💳 Returning paymentIntentId to app:', intentId);
-      onSuccess(intentId, 'requires_capture', {
-        amount,
-        currency,
-      });
+        const verIntentId = verificationIntentIdRef.current || verificationIntentId;
+        if (verIntentId) {
+          try {
+            await cancelVerificationHold(verIntentId);
+            console.log('✅ Verification hold released');
+          } catch (cancelError) {
+            console.warn('⚠️ Failed to cancel verification hold (will expire naturally):', cancelError);
+          }
+        }
+
+        const custId = customerIdRef.current || customerId || 'unknown';
+        console.log('💳 Card verified, returning customerId:', custId);
+        onSuccess(custId, 'verified', {
+          amount,
+          currency,
+          customerId: custId,
+          isVerification: true,
+        });
+      } else {
+        // NORMAL MODE: Payment authorized
+        console.log('✅ Payment authorized successfully (requires capture)');
+
+        // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
+        // The actual capture happens when driver accepts the ride
+        // Return the actual paymentIntentId and 'requires_capture' status
+        // Use ref for reliable access since state updates are async
+        const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
+        console.log('💳 Returning paymentIntentId to app:', intentId);
+        onSuccess(intentId, 'requires_capture', {
+          amount,
+          currency,
+        });
+      }
     } catch (error: any) {
       console.error('❌ Stripe payment error:', error);
 
@@ -369,17 +449,44 @@ export function StripeCheckout({
       }
 
       setStatus('confirming');
-      console.log('✅ Platform Pay authorized successfully (requires capture)');
 
-      // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
-      // Use ref for reliable access since state updates are async
-      const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
-      console.log('💳 Platform Pay returning paymentIntentId to app:', intentId);
-      onSuccess(intentId, 'requires_capture', {
-        amount,
-        currency,
-        method: preferredMethod,
-      });
+      if (isVerification) {
+        // VERIFICATION MODE: Cancel the verification hold and return customerId
+        console.log('✅ Platform Pay verified card - canceling verification hold...');
+
+        const verIntentId = verificationIntentIdRef.current || verificationIntentId;
+        if (verIntentId) {
+          try {
+            await cancelVerificationHold(verIntentId);
+            console.log('✅ Verification hold released');
+          } catch (cancelError) {
+            console.warn('⚠️ Failed to cancel verification hold (will expire naturally):', cancelError);
+          }
+        }
+
+        const custId = customerIdRef.current || customerId || 'unknown';
+        console.log('💳 Platform Pay verified, returning customerId:', custId);
+        onSuccess(custId, 'verified', {
+          amount,
+          currency,
+          method: preferredMethod,
+          customerId: custId,
+          isVerification: true,
+        });
+      } else {
+        // NORMAL MODE: Payment authorized
+        console.log('✅ Platform Pay authorized successfully (requires capture)');
+
+        // Payment is now AUTHORIZED but not captured (using capture_method: 'manual')
+        // Use ref for reliable access since state updates are async
+        const intentId = paymentIntentIdRef.current || paymentIntentId || 'unknown';
+        console.log('💳 Platform Pay returning paymentIntentId to app:', intentId);
+        onSuccess(intentId, 'requires_capture', {
+          amount,
+          currency,
+          method: preferredMethod,
+        });
+      }
     } catch (error: any) {
       console.error('❌ Platform Pay error:', error);
 
@@ -460,7 +567,7 @@ export function StripeCheckout({
           <View style={styles.amountContainer}>
             <Text style={styles.amountLabel}>Amount to Pay</Text>
             <Text style={styles.amount}>
-              {currency} ${amount.toFixed(2)}
+              {currency === 'GBP' ? '£' : '$'}{amount.toFixed(2)} {currency}
             </Text>
             {description && (
               <Text style={styles.description}>{description}</Text>
@@ -547,7 +654,7 @@ export function StripeCheckout({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="card" size={20} color={Colors.white} />
-                  <Text style={styles.payButtonText}>Pay ${amount.toFixed(2)}</Text>
+                  <Text style={styles.payButtonText}>Pay {currency === 'GBP' ? '£' : '$'}{amount.toFixed(2)}</Text>
                 </TouchableOpacity>
               )}
 

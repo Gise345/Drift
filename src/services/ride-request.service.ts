@@ -145,10 +145,11 @@ export function listenForRideRequests(
           return;
         }
 
-        // Skip requests where payment is not authorized/completed
-        // AUTHORIZED = payment hold successful, ready for driver
+        // Skip requests where payment is not authorized/verified/completed
+        // VERIFIED = new flow (card verified, charge when driver accepts)
+        // AUTHORIZED = legacy flow (payment hold, capture when driver accepts)
         // COMPLETED = legacy status (for backwards compatibility)
-        const validPaymentStatuses = ['AUTHORIZED', 'COMPLETED', 'requires_capture'];
+        const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'COMPLETED', 'requires_capture'];
         if (!validPaymentStatuses.includes(data.paymentStatus)) {
           console.log('⏭️ Skipping unpaid request:', doc.id, 'paymentStatus:', data.paymentStatus);
           return;
@@ -321,22 +322,80 @@ export async function acceptRideRequest(
       updatedAt: serverTimestamp(),
     });
 
-    // 💰 CAPTURE PAYMENT - Now that driver has accepted, charge the customer
-    // The payment was only authorized (held) until now
-    console.log('💰 Payment capture check - tripData.paymentMethod:', tripData?.paymentMethod);
-    console.log('💰 Payment capture check - tripData.paymentIntentId:', tripData?.paymentIntentId);
-    console.log('💰 Payment capture check - tripData.paymentStatus:', tripData?.paymentStatus);
+    // 💰 CHARGE/CAPTURE PAYMENT - Now that driver has accepted, charge the customer
+    console.log('💰 Payment check - tripData.paymentFlow:', tripData?.paymentFlow);
+    console.log('💰 Payment check - tripData.paymentStatus:', tripData?.paymentStatus);
+    console.log('💰 Payment check - tripData.stripeCustomerId:', tripData?.stripeCustomerId);
+    console.log('💰 Payment check - tripData.paymentIntentId:', tripData?.paymentIntentId);
 
-    // Get paymentIntentId from either the separate field or from paymentMethod
-    let paymentIntentId: string | null = null;
-    if (tripData?.paymentIntentId) {
-      paymentIntentId = tripData.paymentIntentId;
-    } else if (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:')) {
-      paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
-    }
+    // Determine which payment flow to use
+    const useVerificationFlow = tripData?.paymentFlow === 'verification' && tripData?.stripeCustomerId;
+    const useAuthorizationFlow = tripData?.paymentIntentId || (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:'));
 
-    if (paymentIntentId) {
-      console.log('💰 Capturing payment for trip:', tripId, 'PaymentIntent:', paymentIntentId);
+    if (useVerificationFlow) {
+      // NEW VERIFICATION FLOW: Card was verified, now charge the actual amount
+      console.log('💰 Using VERIFICATION flow - charging customer:', tripData.stripeCustomerId);
+
+      const chargeAmount = tripData?.lockedContribution || tripData?.pricing?.suggestedContribution || 0;
+      console.log('💰 Charge amount:', chargeAmount);
+
+      // Retry charge up to 3 times with exponential backoff
+      let chargeSuccess = false;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= 3 && !chargeSuccess; attempt++) {
+        try {
+          console.log(`💰 Payment charge attempt ${attempt}/3`);
+          const chargeCard = httpsCallable(firebaseFunctions, 'chargeCardForRide');
+          const result = await chargeCard({
+            customerId: tripData.stripeCustomerId,
+            amount: chargeAmount,
+            tripId,
+            currency: 'GBP',
+          });
+
+          const resultData = result.data as any;
+          if (resultData.success || resultData.status === 'succeeded') {
+            chargeSuccess = true;
+            console.log('✅ Payment charged successfully:', resultData.paymentIntentId);
+
+            // Update trip with payment info
+            await updateDoc(tripRef, {
+              paymentStatus: 'CAPTURED',
+              paymentIntentId: resultData.paymentIntentId,
+              paymentCapturedAt: serverTimestamp(),
+            });
+          }
+        } catch (paymentError: any) {
+          lastError = paymentError;
+          console.error(`⚠️ Payment charge attempt ${attempt} failed:`, paymentError?.message || paymentError);
+
+          // Wait before retry (exponential backoff: 1s, 2s, 4s)
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt - 1) * 1000));
+          }
+        }
+      }
+
+      if (!chargeSuccess) {
+        console.error('❌ All payment charge attempts failed for trip:', tripId);
+        // Update trip to mark payment as needing retry
+        await updateDoc(tripRef, {
+          paymentStatus: 'CHARGE_FAILED',
+          paymentError: lastError?.message || 'Failed to charge payment after 3 attempts',
+        });
+        // Don't throw - ride is still accepted, payment can be manually retried
+      }
+    } else if (useAuthorizationFlow) {
+      // LEGACY AUTHORIZATION FLOW: Payment was authorized (held), now capture it
+      let paymentIntentId: string | null = null;
+      if (tripData?.paymentIntentId) {
+        paymentIntentId = tripData.paymentIntentId;
+      } else if (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:')) {
+        paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+      }
+
+      console.log('💰 Using AUTHORIZATION flow - capturing payment:', paymentIntentId);
 
       // Retry capture up to 3 times with exponential backoff
       let captureSuccess = false;
@@ -384,7 +443,8 @@ export async function acceptRideRequest(
       }
     } else {
       console.log('⚠️ No Stripe payment found for trip:', tripId);
-      console.log('  - paymentMethod:', tripData?.paymentMethod);
+      console.log('  - paymentFlow:', tripData?.paymentFlow);
+      console.log('  - stripeCustomerId:', tripData?.stripeCustomerId);
       console.log('  - paymentIntentId:', tripData?.paymentIntentId);
     }
 
@@ -502,10 +562,18 @@ export async function completeTrip(
     // Only update payment status if not already captured
     // Keep CAPTURED status, only change if AUTHORIZED or CAPTURE_FAILED
     if (currentPaymentStatus !== 'CAPTURED' && currentPaymentStatus !== 'succeeded') {
+      // Get paymentIntentId - check direct field first (new format), then legacy format
+      let paymentIntentId: string | null = null;
+      if (tripData?.paymentIntentId) {
+        paymentIntentId = tripData.paymentIntentId;
+      } else if (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:')) {
+        paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+      }
+
       // Try to capture payment if it wasn't captured before
-      if (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:')) {
-        const paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+      if (paymentIntentId) {
         console.log('💰 Attempting to capture payment on trip completion:', paymentIntentId);
+        console.log('💰 Current payment status:', currentPaymentStatus);
 
         try {
           const capturePayment = httpsCallable(firebaseFunctions, 'captureStripePayment');
@@ -519,6 +587,8 @@ export async function completeTrip(
             updateData.paymentStatus = 'CAPTURED';
             updateData.paymentCapturedAt = serverTimestamp();
             console.log('✅ Payment captured on trip completion');
+          } else {
+            console.log('⚠️ Unexpected capture result:', resultData);
           }
         } catch (paymentError: any) {
           console.error('⚠️ Failed to capture payment on trip completion:', paymentError?.message);
@@ -526,6 +596,7 @@ export async function completeTrip(
           updateData.paymentError = paymentError?.message || 'Failed to capture payment';
         }
       } else {
+        console.log('⚠️ No paymentIntentId found on trip, cannot capture payment');
         updateData.paymentStatus = 'PENDING';
       }
     } else {
@@ -841,13 +912,21 @@ export async function cancelTrip(
       paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
     }
 
-    if (paymentIntentId) {
+    // Check for verification flow (no payment to release - charge happens on accept)
+    const isVerificationFlow = tripData?.paymentFlow === 'verification';
+    const wasPaymentCaptured = tripData?.paymentStatus === 'CAPTURED' ||
+                               tripData?.paymentStatus === 'COMPLETED' ||
+                               tripData?.paymentStatus === 'succeeded';
+
+    if (isVerificationFlow && !wasPaymentCaptured) {
+      // NEW VERIFICATION FLOW: No payment was made yet, nothing to release
+      console.log('💰 Verification flow - no payment to release (charge only on driver accept)');
+      paymentAction = 'none_needed';
+      paymentHandled = true;
+    } else if (paymentIntentId) {
       const currentPaymentStatus = tripData?.paymentStatus;
 
-      // Determine if payment was captured (trip was accepted) or just authorized
-      const wasPaymentCaptured = currentPaymentStatus === 'CAPTURED' ||
-                                 currentPaymentStatus === 'COMPLETED' ||
-                                 currentPaymentStatus === 'succeeded';
+      // Determine if payment was just authorized (legacy flow)
       const wasPaymentAuthorized = currentPaymentStatus === 'AUTHORIZED' ||
                                     currentPaymentStatus === 'requires_capture';
 
@@ -901,6 +980,11 @@ export async function cancelTrip(
         // Continue with cancellation even if payment handling fails
         paymentAction = 'failed';
       }
+    } else if (isVerificationFlow) {
+      // Verification flow with no paymentIntentId means no driver accepted yet
+      console.log('💰 Verification flow with no payment - nothing to handle');
+      paymentAction = 'none_needed';
+      paymentHandled = true;
     }
 
     // Update trip with cancellation details
@@ -1399,8 +1483,11 @@ async function cleanupStaleRiderTripsInternal(
       if (ageMs > maxAgeMs) {
         console.log('🧹 Auto-expiring stale trip:', tripDoc.id);
 
-        // Release payment authorization if exists
-        if (data.paymentIntentId && data.paymentStatus !== 'CAPTURED') {
+        // Check payment flow type
+        const isVerificationFlow = data.paymentFlow === 'verification';
+
+        // Release payment authorization if using legacy flow with authorized payment
+        if (!isVerificationFlow && data.paymentIntentId && data.paymentStatus !== 'CAPTURED') {
           try {
             const cancelAuth = httpsCallable(firebaseFunctions, 'cancelStripePaymentAuth');
             await cancelAuth({
@@ -1412,13 +1499,16 @@ async function cleanupStaleRiderTripsInternal(
           } catch (paymentError) {
             console.warn('⚠️ Failed to release payment auth:', paymentError);
           }
+        } else if (isVerificationFlow) {
+          console.log('💰 Verification flow - no payment to release for expired trip:', tripDoc.id);
         }
 
         await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
           status: 'EXPIRED',
           expiredAt: serverTimestamp(),
           expiredReason: `No driver accepted within ${maxAgeMinutes} minutes`,
-          paymentStatus: data.paymentIntentId ? 'CANCELLED' : data.paymentStatus,
+          // Only mark as CANCELLED if there was actually a payment to cancel
+          paymentStatus: (!isVerificationFlow && data.paymentIntentId) ? 'CANCELLED' : data.paymentStatus,
           updatedAt: serverTimestamp(),
         });
         cleanedCount++;
@@ -1643,8 +1733,11 @@ export async function cleanupStaleRiderTrips(
         console.log('🧹 Cleaning up stale REQUESTED trip:', tripDoc.id,
           'Age:', Math.round(ageMs / 60000), 'minutes');
 
-        // Release payment authorization if exists
-        if (data.paymentIntentId && data.paymentStatus !== 'CAPTURED') {
+        // Check payment flow type
+        const isVerificationFlow = data.paymentFlow === 'verification';
+
+        // Release payment authorization if using legacy flow with authorized payment
+        if (!isVerificationFlow && data.paymentIntentId && data.paymentStatus !== 'CAPTURED') {
           try {
             const cancelAuth = httpsCallable(firebaseFunctions, 'cancelStripePaymentAuth');
             await cancelAuth({
@@ -1656,13 +1749,16 @@ export async function cleanupStaleRiderTrips(
           } catch (paymentError) {
             console.warn('⚠️ Failed to release payment auth:', paymentError);
           }
+        } else if (isVerificationFlow) {
+          console.log('💰 Verification flow - no payment to release for expired trip:', tripDoc.id);
         }
 
         await updateDoc(doc(firebaseDb, 'trips', tripDoc.id), {
           status: 'EXPIRED',
           expiredAt: serverTimestamp(),
           expiredReason: `No driver accepted within ${maxAgeMinutes} minutes`,
-          paymentStatus: data.paymentIntentId ? 'CANCELLED' : data.paymentStatus,
+          // Only mark as CANCELLED if there was actually a payment to cancel
+          paymentStatus: (!isVerificationFlow && data.paymentIntentId) ? 'CANCELLED' : data.paymentStatus,
           updatedAt: serverTimestamp(),
         });
         cleanedCount++;

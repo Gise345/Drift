@@ -7,6 +7,7 @@ import {
   Linking,
   Alert,
   Platform,
+  BackHandler,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { router } from 'expo-router';
@@ -42,9 +43,12 @@ export default function DriverArrivingScreen() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
+  const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
   const hasNavigatedRef = React.useRef(false);
   const lastRouteFetch = useRef<number>(0);
-  const ROUTE_FETCH_INTERVAL = 15000; // Fetch new route every 15 seconds
+  const lastCameraUpdate = useRef<number>(0);
+  const ROUTE_FETCH_INTERVAL = 10000; // Fetch new route every 10 seconds for smoother updates
+  const CAMERA_UPDATE_INTERVAL = 1000; // Update camera every 1 second
 
   // If no current trip, redirect back
   if (!currentTrip) {
@@ -103,6 +107,18 @@ export default function DriverArrivingScreen() {
     }
   }, [currentTrip?.status]);
 
+  // Handle back button - go directly to home instead of through stack
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // During an active trip, back button should go to home
+      // The active trip card will appear on home screen
+      router.replace('/(rider)');
+      return true; // Prevent default back behavior
+    });
+
+    return () => backHandler.remove();
+  }, []);
+
   useEffect(() => {
     // Countdown ETA (backup - status change should trigger navigation first)
     if (eta > 0) {
@@ -115,8 +131,41 @@ export default function DriverArrivingScreen() {
   // Fetch route and update ETA when driver location changes
   useEffect(() => {
     if (currentTrip?.driverLocation && currentTrip?.pickup) {
-      // Fetch route from Google Directions API periodically
       const now = Date.now();
+
+      // Auto-follow the driver's location
+      if (isAutoFollowEnabled && mapRef.current && now - lastCameraUpdate.current >= CAMERA_UPDATE_INTERVAL) {
+        lastCameraUpdate.current = now;
+
+        // Calculate heading from driver to pickup for camera orientation
+        const driverLat = currentTrip.driverLocation.latitude;
+        const driverLng = currentTrip.driverLocation.longitude;
+        const pickupLat = currentTrip.pickup.coordinates.latitude;
+        const pickupLng = currentTrip.pickup.coordinates.longitude;
+
+        // Calculate bearing from driver to pickup
+        const dLon = (pickupLng - driverLng) * Math.PI / 180;
+        const lat1 = driverLat * Math.PI / 180;
+        const lat2 = pickupLat * Math.PI / 180;
+        const y = Math.sin(dLon) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+        // Use driver's heading if available, otherwise use bearing to pickup
+        const heading = currentTrip.driverLocation.heading || bearing;
+
+        mapRef.current.animateCamera(
+          {
+            center: { latitude: driverLat, longitude: driverLng },
+            heading: heading,
+            pitch: 45,
+            zoom: 16,
+          },
+          { duration: 800 }
+        );
+      }
+
+      // Fetch route from Google Directions API periodically
       if (now - lastRouteFetch.current >= ROUTE_FETCH_INTERVAL) {
         lastRouteFetch.current = now;
         fetchRouteFromDriverToPickup(
@@ -133,7 +182,7 @@ export default function DriverArrivingScreen() {
         calculateFallbackETA(currentTrip.driverLocation, currentTrip.pickup.coordinates);
       }
     }
-  }, [currentTrip?.driverLocation]);
+  }, [currentTrip?.driverLocation, isAutoFollowEnabled]);
 
   // Initial route fetch when component mounts with driver location
   useEffect(() => {
@@ -291,6 +340,25 @@ export default function DriverArrivingScreen() {
     setShowShareModal(true);
   };
 
+  const handleCenterOnDriver = () => {
+    if (currentTrip?.driverLocation && mapRef.current) {
+      setIsAutoFollowEnabled(true);
+      const heading = currentTrip.driverLocation.heading || 0;
+      mapRef.current.animateCamera(
+        {
+          center: {
+            latitude: currentTrip.driverLocation.latitude,
+            longitude: currentTrip.driverLocation.longitude,
+          },
+          heading: heading,
+          pitch: 45,
+          zoom: 16,
+        },
+        { duration: 500 }
+      );
+    }
+  };
+
   // Calculate map region to show both driver and pickup
   const driverLat = currentTrip.driverLocation?.latitude || currentTrip.pickup.coordinates.latitude;
   const driverLng = currentTrip.driverLocation?.longitude || currentTrip.pickup.coordinates.longitude;
@@ -322,6 +390,12 @@ export default function DriverArrivingScreen() {
         provider={PROVIDER_GOOGLE}
         initialRegion={mapRegion}
         showsUserLocation={true}
+        onPanDrag={() => {
+          // Disable auto-follow when user manually pans the map
+          if (isAutoFollowEnabled) {
+            setIsAutoFollowEnabled(false);
+          }
+        }}
       >
         {/* Driver Marker */}
         {currentTrip.driverLocation && (
@@ -380,6 +454,21 @@ export default function DriverArrivingScreen() {
           <Ionicons name="share-social" size={24} color="#5d1289" />
         </TouchableOpacity>
       </View>
+
+      {/* Center on Driver Button */}
+      <TouchableOpacity
+        style={[
+          styles.centerButton,
+          isAutoFollowEnabled && styles.centerButtonActive
+        ]}
+        onPress={handleCenterOnDriver}
+      >
+        <Ionicons
+          name={isAutoFollowEnabled ? "navigate-circle" : "locate"}
+          size={22}
+          color={isAutoFollowEnabled ? "white" : "#5d1289"}
+        />
+      </TouchableOpacity>
 
       {/* ETA Banner */}
       <View style={styles.etaBanner}>
@@ -760,6 +849,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 8,
+  },
+  // Center on Driver Button
+  centerButton: {
+    position: 'absolute',
+    right: 16,
+    top: Platform.OS === 'ios' ? 240 : 220,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  centerButtonActive: {
+    backgroundColor: '#5d1289',
   },
   pickupMarker: {
     width: 48,

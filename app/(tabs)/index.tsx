@@ -197,7 +197,7 @@ const HomeScreen = () => {
 
   /**
    * Check if rider has an active trip and restore it
-   * Only restore trips that are IN_PROGRESS (paid and actively happening)
+   * Restores ALL active trip statuses so rider can resume their trip
    */
   const checkForActiveTrip = async () => {
     try {
@@ -209,12 +209,19 @@ const HomeScreen = () => {
       const activeTrip = await getActiveRiderTrip(currentUser.id);
 
       if (activeTrip) {
-        // Only restore trips that are IN_PROGRESS (paid and active)
-        // Other statuses (REQUESTED, DRIVER_ARRIVING, etc.) are handled by their respective screens
-        if (activeTrip.status === 'IN_PROGRESS') {
+        // Restore any active trip status - rider may have closed app mid-trip
+        const activeStatuses = [
+          'ACCEPTED',
+          'DRIVER_ASSIGNED',
+          'DRIVER_ARRIVING',
+          'DRIVER_ARRIVED',
+          'IN_PROGRESS',
+        ];
+
+        if (activeStatuses.includes(activeTrip.status)) {
           setCurrentTrip(activeTrip as Trip);
         } else {
-          // Don't show on home screen - user will be on the appropriate screen already
+          // Trip is completed, cancelled, or in a non-active state
           setCurrentTrip(null);
         }
       } else {
@@ -228,14 +235,27 @@ const HomeScreen = () => {
 
   /**
    * Navigate to the appropriate screen based on trip status
-   * Only for trips that are IN_PROGRESS (paid and actively happening)
+   * Handles all active trip statuses
    */
   const navigateToActiveTrip = () => {
     if (!currentTrip) return;
 
-    // Only navigate for trips that are in progress (paid)
-    if (currentTrip.status === 'IN_PROGRESS') {
-      router.push('/(rider)/trip-in-progress');
+    // Navigate to the appropriate screen based on trip status
+    switch (currentTrip.status) {
+      case 'ACCEPTED':
+      case 'DRIVER_ASSIGNED':
+      case 'DRIVER_ARRIVING':
+        router.push('/(rider)/driver-arriving');
+        break;
+      case 'DRIVER_ARRIVED':
+        router.push('/(rider)/driver-arriving');
+        break;
+      case 'IN_PROGRESS':
+        router.push('/(rider)/trip-in-progress');
+        break;
+      default:
+        // For any other status, try trip-in-progress
+        router.push('/(rider)/trip-in-progress');
     }
   };
 
@@ -1036,8 +1056,8 @@ const HomeScreen = () => {
               </View>
             </TouchableOpacity>
 
-            {/* Active Trip Card - Shows only if rider has a trip IN_PROGRESS (paid and active) */}
-            {currentTrip && currentTrip.status === 'IN_PROGRESS' && (
+            {/* Active Trip Card - Shows for all active trip statuses */}
+            {currentTrip && ['ACCEPTED', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(currentTrip.status) && (
               <TouchableOpacity
                 style={styles.activeTripCard}
                 onPress={navigateToActiveTrip}
@@ -1048,7 +1068,13 @@ const HomeScreen = () => {
                     <Ionicons name="car" size={24} color="#5d1289" />
                   </View>
                   <View style={styles.activeTripInfo}>
-                    <Text style={styles.activeTripTitle}>Trip in progress</Text>
+                    <Text style={styles.activeTripTitle}>
+                      {currentTrip.status === 'IN_PROGRESS'
+                        ? 'Trip in progress'
+                        : currentTrip.status === 'DRIVER_ARRIVED'
+                        ? 'Driver has arrived'
+                        : 'Driver on the way'}
+                    </Text>
                     <Text style={styles.activeTripDestination} numberOfLines={1}>
                       To: {currentTrip.destination?.address || 'Destination'}
                     </Text>

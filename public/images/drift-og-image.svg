@@ -1,0 +1,66 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6"/>
+      <stop offset="100%" style="stop-color:#5d1289"/>
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="100%" style="stop-color:#DDD6FE"/>
+    </linearGradient>
+    <radialGradient id="circleGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:rgba(255,255,255,0.2)"/>
+      <stop offset="100%" style="stop-color:rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bgGradient)"/>
+  <circle cx="1100" cy="100" r="200" fill="url(#circleGlow)"/>
+  <circle cx="100" cy="530" r="150" fill="url(#circleGlow)"/>
+  <circle cx="900" cy="500" r="100" fill="url(#circleGlow)"/>
+  <path d="M0 500 Q300 450 600 500 T1200 500 L1200 630 L0 630 Z" fill="rgba(255,255,255,0.05)"/>
+  <g transform="translate(100, 180)">
+    <circle cx="60" cy="60" r="60" fill="rgba(255,255,255,0.15)"/>
+    <path d="M90 45c-1.5-4.5-5.5-7.5-10.5-7.5h-39c-5 0-9 3-10.5 7.5L22.5 67.5v30c0 2.5 2 4.5 4.5 4.5h4.5c2.5 0 4.5-2 4.5-4.5V93h48v4.5c0 2.5 2 4.5 4.5 4.5h4.5c2.5 0 4.5-2 4.5-4.5v-30L90 45zM34.5 82.5c-3.75 0-6.75-3-6.75-6.75s3-6.75 6.75-6.75 6.75 3 6.75 6.75-3 6.75-6.75 6.75zm51 0c-3.75 0-6.75-3-6.75-6.75s3-6.75 6.75-6.75 6.75 3 6.75 6.75-3 6.75-6.75 6.75zM27 63l6.75-20.25h52.5L93 63H27z" fill="white"/>
+  </g>
+  <text x="240" y="230" font-family="Arial, sans-serif" font-size="100" font-weight="900" fill="white">Drift</text>
+  <text x="100" y="320" font-family="Arial, sans-serif" font-size="36" font-weight="400" fill="rgba(255,255,255,0.9)">The Easiest Way to Get Around</text>
+  <text x="100" y="390" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="white">Cayman Islands</text>
+  <g transform="translate(100, 450)">
+    <g transform="translate(0, 0)">
+      <circle cx="15" cy="15" r="15" fill="rgba(255,255,255,0.2)"/>
+      <path d="M15 8 L15 22 M8 15 L22 15" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      <text x="45" y="22" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.9)">Safe Rides</text>
+    </g>
+    <g transform="translate(200, 0)">
+      <circle cx="15" cy="15" r="15" fill="rgba(255,255,255,0.2)"/>
+      <path d="M15 5 L15 15 L22 15" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+      <text x="45" y="22" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.9)">24/7 Service</text>
+    </g>
+    <g transform="translate(400, 0)">
+      <circle cx="15" cy="15" r="15" fill="rgba(255,255,255,0.2)"/>
+      <path d="M8 15 L12 19 L22 9" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+      <text x="45" y="22" font-family="Arial, sans-serif" font-size="20" fill="rgba(255,255,255,0.9)">Local Drivers</text>
+    </g>
+  </g>
+  <g transform="translate(750, 180)">
+    <rect x="0" y="0" width="320" height="400" rx="40" fill="rgba(0,0,0,0.3)"/>
+    <rect x="10" y="10" width="300" height="380" rx="35" fill="#1F2937"/>
+    <rect x="20" y="50" width="280" height="330" rx="5" fill="#374151"/>
+    <rect x="30" y="60" width="260" height="200" rx="5" fill="#4B5563"/>
+    <path d="M80 160 Q160 100 240 180" stroke="#8B5CF6" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <circle cx="80" cy="160" r="8" fill="#10B981"/>
+    <circle cx="240" cy="180" r="8" fill="#8B5CF6"/>
+    <rect x="30" y="270" width="260" height="100" rx="10" fill="white"/>
+    <text x="50" y="300" font-family="Arial, sans-serif" font-size="14" fill="#374151">Your destination</text>
+    <text x="50" y="325" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">Seven Mile Beach</text>
+    <rect x="50" y="340" width="100" height="20" rx="5" fill="#8B5CF6"/>
+    <text x="70" y="355" font-family="Arial, sans-serif" font-size="12" font-weight="600" fill="white">Book Ride</text>
+    <rect x="120" y="15" width="80" height="25" rx="12" fill="black"/>
+  </g>
+  <g transform="translate(780, 520)">
+    <rect x="0" y="0" width="200" height="50" rx="8" fill="white"/>
+    <text x="20" y="32" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#111827">Download on</text>
+    <text x="120" y="32" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#8B5CF6">Google Play</text>
+  </g>
+  <text x="100" y="580" font-family="Arial, sans-serif" font-size="24" font-weight="600" fill="rgba(255,255,255,0.7)">drift-global.com</text>
+</svg>

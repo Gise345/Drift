@@ -13,6 +13,7 @@ import {
   Alert,
   Animated,
   Easing,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,8 +27,8 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/consta
 import { firebaseDb } from '@/src/config/firebase';
 import { doc, getDoc } from '@react-native-firebase/firestore';
 
-// KYD to USD conversion rate
-const KYD_TO_USD_RATE = 1.20;
+// KYD to GBP conversion rate (adjusted so bank statement matches KYD price)
+const KYD_TO_GBP_RATE = 0.873; // 1 KYD ≈ 0.873 GBP
 
 // Request timeout and retry settings
 const REQUEST_TIMEOUT_SECONDS = 60; // 60 seconds to find a driver
@@ -69,7 +70,7 @@ export default function FindingDriverScreen() {
 
   // Format price
   const formatKYD = (amount: number) => `$${amount.toFixed(2)} KYD`;
-  const formatUSD = (amount: number) => `$${(amount * KYD_TO_USD_RATE).toFixed(2)} USD`;
+  const formatGBP = (amount: number) => `£${(amount * KYD_TO_GBP_RATE).toFixed(2)} GBP`;
 
   // Animation effects
   useEffect(() => {
@@ -463,39 +464,82 @@ export default function FindingDriverScreen() {
 
           // Fetch trip data directly from Firestore to get paymentIntentId
           let paymentIntentId: string | undefined;
+          let paymentFlow: string | undefined;
+          let paymentStatus: string | undefined;
+
           try {
             const tripRef = doc(firebaseDb, 'trips', tripId);
             const tripSnap = await getDoc(tripRef);
             if (tripSnap.exists()) {
               const tripData = tripSnap.data();
+
+              // Log full payment details for debugging
+              console.log('📄 Trip payment data:', {
+                paymentIntentId: tripData?.paymentIntentId || 'NOT SET',
+                paymentMethod: tripData?.paymentMethod || 'NOT SET',
+                paymentFlow: tripData?.paymentFlow || 'NOT SET',
+                paymentStatus: tripData?.paymentStatus || 'NOT SET',
+                stripeCustomerId: tripData?.stripeCustomerId || 'NOT SET',
+              });
+
               // Get paymentIntentId directly (new format) or parse from paymentMethod (legacy format)
               paymentIntentId = tripData?.paymentIntentId;
+              paymentFlow = tripData?.paymentFlow;
+              paymentStatus = tripData?.paymentStatus;
+
               if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
                 paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
+                console.log('📄 PaymentIntentId from legacy format:', paymentIntentId);
               }
-              console.log('📄 Trip data fetched, paymentIntentId:', paymentIntentId);
+            } else {
+              console.log('⚠️ Trip document not found in Firestore:', tripId);
             }
           } catch (fetchError) {
             console.error('⚠️ Failed to fetch trip data:', fetchError);
+            // Try using currentTrip as fallback
             paymentIntentId = (currentTrip as any)?.paymentIntentId;
             if (!paymentIntentId && currentTrip?.paymentMethod?.startsWith('stripe:')) {
               paymentIntentId = currentTrip.paymentMethod.replace('stripe:', '');
             }
           }
 
-          // Release payment authorization before cancelling
-          if (paymentIntentId) {
-            console.log('💰 Releasing payment authorization - rider cancelled');
-            console.log('   PaymentIntent ID:', paymentIntentId);
+          // Skip payment release for verification flow (no payment held)
+          if (paymentFlow === 'verification') {
+            console.log('💰 Verification flow - no payment to release');
+          } else if (paymentIntentId) {
+            // Only release if payment was authorized but not captured
+            const shouldRelease = paymentStatus === 'AUTHORIZED' ||
+                                  paymentStatus === 'requires_capture' ||
+                                  !paymentStatus; // Also try if status unknown
 
-            try {
-              const result = await releasePaymentAuthorization(paymentIntentId, tripId, 'Rider cancelled while searching');
-              console.log('✅ Payment authorization released:', result);
-            } catch (paymentError: any) {
-              console.error('⚠️ Failed to release payment:', paymentError?.message || paymentError);
+            if (shouldRelease) {
+              console.log('💰 Releasing payment authorization - rider cancelled');
+              console.log('   PaymentIntent ID:', paymentIntentId);
+              console.log('   Payment Status:', paymentStatus);
+
+              try {
+                const result = await releasePaymentAuthorization(paymentIntentId, tripId, 'Rider cancelled while searching');
+                console.log('✅ Payment authorization released:', result);
+              } catch (paymentError: any) {
+                // Log full error details
+                console.error('⚠️ Failed to release payment:', {
+                  message: paymentError?.message || 'Unknown error',
+                  code: paymentError?.code,
+                  details: paymentError?.details,
+                });
+                // Continue with cancellation - cancelTrip will also try to release
+              }
+            } else if (paymentStatus === 'CAPTURED' || paymentStatus === 'succeeded') {
+              console.log('💰 Payment already captured - cancellation may require refund');
+            } else {
+              console.log('💰 Skipping payment release - status:', paymentStatus);
             }
+          } else {
+            console.log('⚠️ No paymentIntentId found on trip - cannot release payment');
+            console.log('   This may indicate payment was not stored correctly');
           }
 
+          // Cancel the trip (this will also try to release payment as a backup)
           await cancelTrip(
             tripId,
             'RIDER',
@@ -526,6 +570,17 @@ export default function FindingDriverScreen() {
       );
     }
   };
+
+  // Handle back button - show cancel confirmation
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Show cancel confirmation when back is pressed
+      handleCancel();
+      return true; // Prevent default back behavior
+    });
+
+    return () => backHandler.remove();
+  }, [currentTrip?.id]);
 
   // Rotation interpolation
   const spin = rotateAnim.interpolate({
@@ -675,8 +730,8 @@ export default function FindingDriverScreen() {
                     <Text style={styles.priceKYD}>
                       {lockedContribution ? formatKYD(lockedContribution) : '--'}
                     </Text>
-                    <Text style={styles.priceUSD}>
-                      {lockedContribution ? formatUSD(lockedContribution) : ''}
+                    <Text style={styles.priceGBP}>
+                      {lockedContribution ? formatGBP(lockedContribution) : ''}
                     </Text>
                   </View>
                 </View>
@@ -894,7 +949,7 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.bold,
     color: Colors.purple,
   },
-  priceUSD: {
+  priceGBP: {
     fontSize: Typography.fontSize.xs,
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],

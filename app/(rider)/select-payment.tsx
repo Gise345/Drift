@@ -1,7 +1,7 @@
 /**
  * SELECT PAYMENT SCREEN
  * Production implementation with Stripe integration
- * Shows KYD pricing with USD conversion
+ * Shows KYD pricing with GBP conversion
  *
  * EXPO SDK 52 - Firebase + Stripe
  */
@@ -28,8 +28,8 @@ import { StripeService, StripePaymentMethod } from '@/src/services/stripe.servic
 import { firebaseAuth } from '@/src/config/firebase';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 
-// KYD to USD conversion rate (fixed rate for Cayman Islands)
-const KYD_TO_USD_RATE = 1.20; // 1 KYD = 1.20 USD approximately
+// KYD to GBP conversion rate (adjusted so bank statement matches KYD price)
+const KYD_TO_GBP_RATE = 0.873; // 1 KYD ≈ 0.873 GBP
 
 // Check if we're using Stripe test keys (Google Pay/Apple Pay don't work properly with test keys)
 const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -73,18 +73,18 @@ export default function SelectPaymentScreen() {
     return `$${amount.toFixed(2)} KYD`;
   };
 
-  // Get USD equivalent
-  const getUSDAmount = (kydAmount: number): number => {
-    return Math.round(kydAmount * KYD_TO_USD_RATE * 100) / 100;
+  // Get GBP equivalent
+  const getGBPAmount = (kydAmount: number): number => {
+    return Math.round(kydAmount * KYD_TO_GBP_RATE * 100) / 100;
   };
 
-  const formatUSD = (amount: number): string => {
-    return `$${amount.toFixed(2)} USD`;
+  const formatGBP = (amount: number): string => {
+    return `£${amount.toFixed(2)} GBP`;
   };
 
   // Get the locked contribution amount (this is what will be charged)
   const chargeAmountKYD = lockedContribution || 0;
-  const chargeAmountUSD = getUSDAmount(chargeAmountKYD);
+  const chargeAmountGBP = getGBPAmount(chargeAmountKYD);
 
   // Load saved Stripe payment methods
   // Wait for both user state AND Firebase auth to be ready
@@ -198,15 +198,26 @@ export default function SelectPaymentScreen() {
 
   const createTripRequest = async (paymentDetails?: {
     paymentIntentId?: string;
+    customerId?: string;
     status?: string;
     paymentMethod?: string;
     paymentMethodType?: 'card' | 'google_pay' | 'apple_pay';
     cardBrand?: string;
     cardLast4?: string;
+    isVerification?: boolean;
   }) => {
     if (!user || !pickupLocation || !destination || !lockedContribution) return;
 
     setLoading(true);
+
+    // Log payment details for debugging
+    console.log('💳 Creating trip with payment details:', {
+      paymentIntentId: paymentDetails?.paymentIntentId || 'NOT SET',
+      customerId: paymentDetails?.customerId || 'NOT SET',
+      status: paymentDetails?.status || 'NOT SET',
+      isVerification: paymentDetails?.isVerification || false,
+      paymentMethodType: paymentDetails?.paymentMethodType || 'NOT SET',
+    });
 
     try {
       // Determine the payment method display name
@@ -236,7 +247,8 @@ export default function SelectPaymentScreen() {
       setSelectedPaymentMethod(paymentMethodDisplay);
 
       // Create trip in Firebase with status "REQUESTED"
-      const tripId = await createTrip({
+      // Build the trip data with proper payment info
+      const tripData: any = {
         riderId: user.id,
         riderName: user.name || 'Rider',
         riderPhoto: user.profilePhoto,
@@ -266,7 +278,7 @@ export default function SelectPaymentScreen() {
         // Use locked contribution - this is the exact amount
         estimatedCost: lockedContribution,
         estimatedCostKYD: lockedContribution,
-        estimatedCostUSD: chargeAmountUSD,
+        estimatedCostGBP: chargeAmountGBP,
         // Store human-readable payment method name
         paymentMethod: paymentMethodDisplay,
         // Also store detailed payment method info for reference
@@ -275,20 +287,39 @@ export default function SelectPaymentScreen() {
           brand: paymentDetails.cardBrand,
           last4: paymentDetails.cardLast4,
         } : undefined,
-        ...(paymentDetails?.paymentIntentId ? {
-          paymentIntentId: paymentDetails.paymentIntentId, // Store separately for reliability
-          // Payment is now AUTHORIZED (held) but not captured yet
-          // It will be CAPTURED when driver accepts the ride
-          // If no driver found, the authorization will be RELEASED (not charged)
-          paymentStatus: paymentDetails.status === 'requires_capture' ? 'AUTHORIZED' :
-                        paymentDetails.status === 'succeeded' ? 'CAPTURED' : 'PENDING',
-        } : {}),
         // Women-only ride request
         womenOnlyRide: womenOnlyRide || false,
         requestedAt: new Date(),
-      });
+      };
 
-      console.log('Trip created in Firebase:', tripId);
+      // Add payment info based on flow type
+      if (paymentDetails?.isVerification && paymentDetails?.customerId) {
+        // VERIFICATION FLOW - Store customerId for later charging
+        tripData.stripeCustomerId = paymentDetails.customerId;
+        tripData.paymentStatus = 'VERIFIED';
+        tripData.paymentFlow = 'verification';
+        console.log('💳 Using VERIFICATION flow, customerId:', paymentDetails.customerId);
+      } else if (paymentDetails?.paymentIntentId) {
+        // AUTHORIZATION FLOW - Store paymentIntentId for capture/release
+        tripData.paymentIntentId = paymentDetails.paymentIntentId;
+        tripData.paymentStatus = paymentDetails.status === 'requires_capture' ? 'AUTHORIZED' :
+                                  paymentDetails.status === 'succeeded' ? 'CAPTURED' : 'PENDING';
+        tripData.paymentFlow = 'authorization';
+        console.log('💳 Using AUTHORIZATION flow, paymentIntentId:', paymentDetails.paymentIntentId);
+        console.log('💳 Payment status:', tripData.paymentStatus);
+      } else {
+        console.log('⚠️ No payment info provided to trip creation');
+      }
+
+      const tripId = await createTrip(tripData);
+
+      console.log('✅ Trip created in Firebase:', tripId);
+      console.log('📄 Trip payment fields stored:', {
+        paymentIntentId: tripData.paymentIntentId || 'NOT SET',
+        paymentStatus: tripData.paymentStatus || 'NOT SET',
+        paymentFlow: tripData.paymentFlow || 'NOT SET',
+        stripeCustomerId: tripData.stripeCustomerId || 'NOT SET',
+      });
 
       // Navigate to finding driver screen
       router.replace('/(rider)/finding-driver');
@@ -321,14 +352,20 @@ export default function SelectPaymentScreen() {
       paymentMethodType = 'apple_pay';
     }
 
+    // Check if this was a verification (new flow) or authorization (legacy flow)
+    const isVerification = details?.isVerification === true;
+
     // Create trip with payment details
     await createTripRequest({
-      paymentIntentId,
+      // For verification: paymentIntentId is actually the customerId
+      paymentIntentId: isVerification ? undefined : paymentIntentId,
+      customerId: isVerification ? details?.customerId || paymentIntentId : undefined,
       status,
       paymentMethod: 'stripe',
       paymentMethodType,
       cardBrand: details?.brand,
       cardLast4: details?.last4,
+      isVerification,
     });
   };
 
@@ -408,19 +445,19 @@ export default function SelectPaymentScreen() {
               <Text style={styles.mainAmount}>{formatKYD(chargeAmountKYD)}</Text>
             </View>
 
-            {/* USD Conversion Notice */}
+            {/* GBP Conversion Notice */}
             <View style={styles.conversionContainer}>
               <View style={styles.conversionRow}>
                 <View style={styles.conversionIcon}>
                   <Ionicons name="swap-horizontal" size={16} color={Colors.white} />
                 </View>
                 <View style={styles.conversionInfo}>
-                  <Text style={styles.conversionLabel}>You will be charged in USD</Text>
-                  <Text style={styles.conversionAmount}>{formatUSD(chargeAmountUSD)}</Text>
+                  <Text style={styles.conversionLabel}>You will be charged in GBP</Text>
+                  <Text style={styles.conversionAmount}>{formatGBP(chargeAmountGBP)}</Text>
                 </View>
               </View>
               <Text style={styles.conversionNote}>
-                Rate: 1 KYD = {KYD_TO_USD_RATE.toFixed(2)} USD
+                Rate: 1 KYD ≈ {KYD_TO_GBP_RATE.toFixed(2)} GBP. May vary slightly at time of payment via Stripe.
               </Text>
             </View>
 
@@ -526,9 +563,9 @@ export default function SelectPaymentScreen() {
           <View style={styles.currencyNotice}>
             <Ionicons name="information-circle" size={18} color={Colors.info} />
             <Text style={styles.currencyNoticeText}>
-              Stripe does not support KYD currency. Your card will be charged{' '}
-              <Text style={styles.currencyBold}>{formatUSD(chargeAmountUSD)}</Text>{' '}
-              (equivalent to {formatKYD(chargeAmountKYD)}).
+              Your card will be charged approximately{' '}
+              <Text style={styles.currencyBold}>{formatGBP(chargeAmountGBP)}</Text>{' '}
+              (equivalent to {formatKYD(chargeAmountKYD)}). Rate may vary slightly via Stripe.
             </Text>
           </View>
 
@@ -549,8 +586,8 @@ export default function SelectPaymentScreen() {
               <Text style={styles.bottomKYD}>{formatKYD(chargeAmountKYD)}</Text>
             </View>
             <View style={styles.bottomRight}>
-              <Text style={styles.bottomUSDLabel}>Charged as</Text>
-              <Text style={styles.bottomUSD}>{formatUSD(chargeAmountUSD)}</Text>
+              <Text style={styles.bottomGBPLabel}>Charged as</Text>
+              <Text style={styles.bottomGBP}>{formatGBP(chargeAmountGBP)}</Text>
             </View>
           </View>
 
@@ -574,7 +611,7 @@ export default function SelectPaymentScreen() {
                 <>
                   <Ionicons name="shield-checkmark" size={20} color={Colors.white} />
                   <Text style={styles.confirmButtonText}>
-                    Pay {formatUSD(chargeAmountUSD)}
+                    Pay {formatGBP(chargeAmountGBP)}
                   </Text>
                 </>
               )}
@@ -587,12 +624,12 @@ export default function SelectPaymentScreen() {
           </View>
         </View>
 
-        {/* Stripe Checkout Modal */}
+        {/* Stripe Checkout Modal - Uses verification mode to check card funds */}
         {showStripeCheckout && lockedContribution && (
           <StripeCheckout
             visible={showStripeCheckout}
-            amount={chargeAmountUSD} // Charge in USD
-            currency="USD"
+            amount={chargeAmountGBP} // Actual ride amount in GBP (stored for later charging)
+            currency="GBP"
             description={`Drift Carpool: ${(pickupLocation as any)?.placeName || pickupLocation?.address || 'Pickup'} to ${(destination as any)?.placeName || destination?.address || 'Destination'}`}
             onSuccess={handleStripeSuccess}
             onCancel={handleStripeCancel}
@@ -601,13 +638,17 @@ export default function SelectPaymentScreen() {
               selectedPayment === 'apple-pay' ? 'apple_pay' :
               selectedPayment === 'google-pay' ? 'google_pay' : 'card'
             }
+            // TODO: Enable verification mode once IAM policies are set up
+            // For now, use legacy authorization flow
+            // isVerification={true}
+            isVerification={false}
             metadata={{
               userId: user?.id,
               pickup: (pickupLocation as any)?.placeName || pickupLocation?.address,
               destination: (destination as any)?.placeName || destination?.address,
               vehicleType,
               amountKYD: chargeAmountKYD,
-              amountUSD: chargeAmountUSD,
+              amountGBP: chargeAmountGBP,
             }}
           />
         )}
@@ -923,12 +964,12 @@ const styles = StyleSheet.create({
   bottomRight: {
     alignItems: 'flex-end',
   },
-  bottomUSDLabel: {
+  bottomGBPLabel: {
     fontSize: Typography.fontSize.xs,
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[500],
   },
-  bottomUSD: {
+  bottomGBP: {
     fontSize: Typography.fontSize.lg,
     fontFamily: Typography.fontFamily.bold,
     color: Colors.black,

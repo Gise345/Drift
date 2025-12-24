@@ -30,7 +30,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, doc, getDoc, updateDoc, arrayUnion, serverTimestamp } from '@react-native-firebase/firestore';
+import { getFirestore, doc, getDoc, updateDoc, arrayUnion, serverTimestamp, collection, getDocs, query, where } from '@react-native-firebase/firestore';
 import { updateDriverRegistrationStatus, updateDocumentStatus } from '@/src/services/driver-registration.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
@@ -51,12 +51,24 @@ interface DocumentStatus {
   rejectionReason?: string;
 }
 
+interface PayoutMethod {
+  id: string;
+  type: string;
+  accountHolderName: string;
+  sortCode: string;
+  accountNumber: string;
+  isDefault: boolean;
+  bankName?: string;
+  createdAt?: Date;
+}
+
 export default function DriverReviewScreen() {
   const router = useRouter();
   const { driverId } = useLocalSearchParams();
   const { user } = useAuthStore();
   const [driver, setDriver] = useState<any>(null);
   const [documents, setDocuments] = useState<any>(null);
+  const [payoutMethods, setPayoutMethods] = useState<PayoutMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [processingDoc, setProcessingDoc] = useState<string | null>(null);
@@ -142,6 +154,26 @@ export default function DriverReviewScreen() {
       if (docsSnapshot.exists()) {
         setDocuments(docsSnapshot.data());
       }
+
+      // Load payout methods (Wise accounts)
+      const payoutMethodsRef = collection(db, 'drivers', driverId as string, 'payoutMethods');
+      const payoutMethodsQuery = query(payoutMethodsRef, where('type', '==', 'wise'));
+      const payoutMethodsSnapshot = await getDocs(payoutMethodsQuery);
+
+      const methods: PayoutMethod[] = payoutMethodsSnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          type: data.type,
+          accountHolderName: data.accountHolderName || '',
+          sortCode: data.sortCode || '',
+          accountNumber: data.accountNumber || '',
+          isDefault: data.isDefault || false,
+          bankName: data.bankName,
+          createdAt: data.createdAt?.toDate?.() || null,
+        };
+      });
+      setPayoutMethods(methods);
 
       console.log('✅ Driver data loaded successfully');
     } catch (error: any) {
@@ -599,14 +631,39 @@ export default function DriverReviewScreen() {
           )}
         </View>
 
-        {/* Bank Details */}
+        {/* Wise Payout Methods */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bank Details</Text>
-          <View style={styles.card}>
-            <InfoRow label="Account Holder" value={driver?.bankDetails?.accountHolderName} />
-            <InfoRow label="Bank Name" value={driver?.bankDetails?.bankName} />
-            <InfoRow label="Account Number" value={`****${driver?.bankDetails?.accountNumber?.slice(-4)}`} />
-          </View>
+          <Text style={styles.sectionTitle}>Payout Methods (Wise)</Text>
+          {payoutMethods.length > 0 ? (
+            payoutMethods.map((method) => (
+              <View key={method.id} style={styles.payoutMethodCard}>
+                <View style={styles.payoutMethodHeader}>
+                  <View style={styles.wiseLogoSmall}>
+                    <Text style={styles.wiseLogoTextSmall}>W</Text>
+                  </View>
+                  <View style={styles.payoutMethodInfo}>
+                    <Text style={styles.payoutMethodName}>{method.accountHolderName}</Text>
+                    {method.isDefault && (
+                      <View style={styles.defaultBadge}>
+                        <Text style={styles.defaultBadgeText}>Default</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.payoutMethodDetails}>
+                  <InfoRow label="Sort Code" value={method.sortCode} />
+                  <InfoRow label="Account Number" value={method.accountNumber} />
+                  {method.bankName && <InfoRow label="Bank" value={method.bankName} />}
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.noPayoutMethod}>
+              <Ionicons name="wallet-outline" size={32} color={Colors.gray[400]} />
+              <Text style={styles.noPayoutMethodText}>No payout method added</Text>
+              <Text style={styles.noPayoutMethodSubtext}>Driver hasn't set up their Wise account yet</Text>
+            </View>
+          )}
         </View>
 
         {/* Spacer for bottom buttons */}
@@ -1317,5 +1374,79 @@ const styles = StyleSheet.create({
   previewImage: {
     width: SCREEN_WIDTH - 40,
     height: '80%',
+  },
+
+  // Payout Method Styles
+  payoutMethodCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.md,
+    ...Shadows.sm,
+  },
+  payoutMethodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  wiseLogoSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#9FE870',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  wiseLogoTextSmall: {
+    fontSize: Typography.fontSize.lg,
+    fontFamily: Typography.fontFamily.bold,
+    color: '#163300',
+  },
+  payoutMethodInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  payoutMethodName: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.black,
+  },
+  defaultBadge: {
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  defaultBadgeText: {
+    fontSize: Typography.fontSize.xs,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.primary,
+  },
+  payoutMethodDetails: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray[100],
+    paddingTop: Spacing.md,
+  },
+  noPayoutMethod: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    ...Shadows.sm,
+  },
+  noPayoutMethodText: {
+    fontSize: Typography.fontSize.base,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.gray[600],
+    marginTop: Spacing.md,
+  },
+  noPayoutMethodSubtext: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.medium,
+    color: Colors.gray[400],
+    marginTop: Spacing.xs,
   },
 });

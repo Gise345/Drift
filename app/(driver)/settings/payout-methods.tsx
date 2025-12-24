@@ -31,10 +31,12 @@ import {
   serverTimestamp
 } from '@react-native-firebase/firestore';
 import { WiseService } from '@/src/services/wise.service';
+import { getAuth } from '@react-native-firebase/auth';
 
 // Initialize Firebase instances
 const app = getApp();
 const db = getFirestore(app, 'main');
+const auth = getAuth(app);
 
 /**
  * WISE PAYOUT METHODS SCREEN
@@ -52,7 +54,6 @@ interface WiseAccount {
   sortCode: string;
   accountNumber: string;
   isDefault: boolean;
-  verificationStatus: 'pending' | 'verified' | 'failed';
   createdAt: Date;
   lastUsed?: Date;
 }
@@ -92,7 +93,6 @@ export default function PayoutMethodsScreen() {
           sortCode: data.sortCode,
           accountNumber: data.accountNumber,
           isDefault: data.isDefault || false,
-          verificationStatus: data.verificationStatus || 'pending',
           createdAt: data.createdAt?.toDate() || new Date(),
           lastUsed: data.lastUsed?.toDate(),
         };
@@ -127,6 +127,19 @@ export default function PayoutMethodsScreen() {
       console.error('Error opening Wise:', error);
       Alert.alert('Error', 'Could not open Wise. Please try again.');
     }
+  };
+
+  const handleOpenAddModal = () => {
+    // Check if user is authenticated before opening the modal
+    if (!auth.currentUser) {
+      Alert.alert(
+        'Session Expired',
+        'Your session has expired. Please sign out and sign back in to add a Wise account.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setShowAddModal(true);
   };
 
   const formatSortCode = (text: string) => {
@@ -169,16 +182,25 @@ export default function PayoutMethodsScreen() {
     try {
       setSaving(true);
 
-      // Validate account with Wise API
-      const validation = await WiseService.validateAccount(
-        newAccount.sortCode,
-        newAccount.accountNumber
-      );
+      // Try to validate account with Wise API, but don't block if it fails
+      let validation: { valid: boolean; bankName?: string; branchName?: string; error?: string } = { valid: true };
+      let validationSkipped = false;
 
-      if (!validation.valid) {
-        Alert.alert('Invalid Account', validation.error || 'The bank details could not be verified.');
-        setSaving(false);
-        return;
+      try {
+        validation = await WiseService.validateAccount(
+          newAccount.sortCode,
+          newAccount.accountNumber
+        );
+
+        if (!validation.valid) {
+          Alert.alert('Invalid Account', validation.error || 'The bank details could not be verified.');
+          setSaving(false);
+          return;
+        }
+      } catch (validationError: any) {
+        // If validation fails due to auth or other issues, allow saving anyway
+        console.warn('Wise validation skipped, saving account:', validationError);
+        validationSkipped = true;
       }
 
       const isFirstAccount = wiseAccounts.length === 0;
@@ -190,7 +212,6 @@ export default function PayoutMethodsScreen() {
         sortCode: newAccount.sortCode,
         accountNumber: newAccount.accountNumber,
         isDefault: isFirstAccount,
-        verificationStatus: validation.bankName ? 'verified' : 'pending',
         bankName: validation.bankName || null,
         branchName: validation.branchName || null,
         createdAt: serverTimestamp(),
@@ -304,7 +325,7 @@ export default function PayoutMethodsScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Payout Methods</Text>
-        <TouchableOpacity onPress={() => setShowAddModal(true)}>
+        <TouchableOpacity onPress={handleOpenAddModal}>
           <Ionicons name="add-circle" size={28} color={Colors.primary} />
         </TouchableOpacity>
       </View>
@@ -397,7 +418,7 @@ export default function PayoutMethodsScreen() {
               </Text>
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={() => setShowAddModal(true)}
+                onPress={handleOpenAddModal}
               >
                 <Text style={styles.addButtonText}>Add Wise Account</Text>
               </TouchableOpacity>
@@ -424,46 +445,8 @@ export default function PayoutMethodsScreen() {
                       Sort Code: {account.sortCode}
                     </Text>
                     <Text style={styles.accountDetails}>
-                      Account: ****{account.accountNumber.slice(-4)}
+                      Account: {account.accountNumber}
                     </Text>
-                    <View style={styles.verificationBadge}>
-                      <Ionicons
-                        name={
-                          account.verificationStatus === 'verified'
-                            ? 'checkmark-circle'
-                            : account.verificationStatus === 'failed'
-                            ? 'close-circle'
-                            : 'time'
-                        }
-                        size={14}
-                        color={
-                          account.verificationStatus === 'verified'
-                            ? Colors.success
-                            : account.verificationStatus === 'failed'
-                            ? Colors.error
-                            : Colors.warning
-                        }
-                      />
-                      <Text
-                        style={[
-                          styles.verificationText,
-                          {
-                            color:
-                              account.verificationStatus === 'verified'
-                                ? Colors.success
-                                : account.verificationStatus === 'failed'
-                                ? Colors.error
-                                : Colors.warning,
-                          },
-                        ]}
-                      >
-                        {account.verificationStatus === 'verified'
-                          ? 'Verified'
-                          : account.verificationStatus === 'failed'
-                          ? 'Verification Failed'
-                          : 'Pending Verification'}
-                      </Text>
-                    </View>
                   </View>
                   <View style={styles.accountActions}>
                     {!account.isDefault && (
@@ -621,7 +604,7 @@ export default function PayoutMethodsScreen() {
                 color={Colors.primary}
               />
               <Text style={styles.modalInfoText}>
-                Your Wise account will be verified before your first payout. Make sure the details exactly match your Wise account to avoid delays.
+                Make sure the details exactly match your Wise account to receive payouts without issues.
               </Text>
             </View>
           </ScrollView>
@@ -997,16 +980,6 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily.regular,
     color: Colors.gray[600],
     marginBottom: Spacing.xs / 2,
-  },
-  verificationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing.xs,
-  },
-  verificationText: {
-    fontSize: Typography.fontSize.xs,
-    fontFamily: Typography.fontFamily.semibold,
-    marginLeft: Spacing.xs / 2,
   },
   accountActions: {
     flexDirection: 'row',

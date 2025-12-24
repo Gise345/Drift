@@ -1,0 +1,51 @@
+<svg width="400" height="800" viewBox="0 0 400 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#374151"/>
+      <stop offset="100%" style="stop-color:#1F2937"/>
+    </linearGradient>
+  </defs>
+  <!-- Phone frame -->
+  <rect x="0" y="0" width="400" height="800" rx="50" fill="#111827"/>
+  <rect x="10" y="10" width="380" height="780" rx="45" fill="#1F2937"/>
+  <!-- Screen -->
+  <rect x="20" y="60" width="360" height="680" rx="5" fill="url(#screenGrad)"/>
+  <!-- Status bar -->
+  <text x="40" y="45" font-family="Arial" font-size="14" fill="#9CA3AF">9:41</text>
+  <circle cx="340" cy="40" r="8" fill="#10B981"/>
+  <!-- Notch -->
+  <rect x="140" y="15" width="120" height="30" rx="15" fill="#000"/>
+  <!-- Map area -->
+  <rect x="30" y="80" width="340" height="300" rx="10" fill="#4B5563"/>
+  <!-- Map details -->
+  <path d="M100 200 Q200 120 300 230" stroke="#8B5CF6" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <circle cx="100" cy="200" r="12" fill="#10B981"/>
+  <circle cx="100" cy="200" r="6" fill="white"/>
+  <circle cx="300" cy="230" r="12" fill="#8B5CF6"/>
+  <circle cx="300" cy="230" r="6" fill="white"/>
+  <!-- Road lines -->
+  <line x1="50" y1="150" x2="350" y2="150" stroke="#6B7280" stroke-width="2"/>
+  <line x1="50" y1="250" x2="350" y2="250" stroke="#6B7280" stroke-width="2"/>
+  <line x1="150" y1="100" x2="150" y2="350" stroke="#6B7280" stroke-width="2"/>
+  <!-- Bottom card -->
+  <rect x="30" y="400" width="340" height="320" rx="20" fill="white"/>
+  <!-- Card content -->
+  <text x="50" y="440" font-family="Arial" font-size="14" fill="#6B7280">Where to?</text>
+  <rect x="50" y="455" width="300" height="50" rx="10" fill="#F3F4F6"/>
+  <text x="70" y="487" font-family="Arial" font-size="16" fill="#9CA3AF">Enter destination</text>
+  <!-- Saved places -->
+  <g transform="translate(50, 530)">
+    <circle cx="20" cy="20" r="20" fill="#DDD6FE"/>
+    <text x="55" y="18" font-family="Arial" font-size="14" font-weight="bold" fill="#111827">Home</text>
+    <text x="55" y="35" font-family="Arial" font-size="12" fill="#6B7280">Add home address</text>
+  </g>
+  <g transform="translate(50, 590)">
+    <circle cx="20" cy="20" r="20" fill="#DDD6FE"/>
+    <text x="55" y="18" font-family="Arial" font-size="14" font-weight="bold" fill="#111827">Work</text>
+    <text x="55" y="35" font-family="Arial" font-size="12" fill="#6B7280">Add work address</text>
+  </g>
+  <!-- Drift branding -->
+  <text x="150" y="690" font-family="Arial" font-size="24" font-weight="bold" fill="#8B5CF6">Drift</text>
+  <!-- Home indicator -->
+  <rect x="150" y="760" width="100" height="5" rx="3" fill="#374151"/>
+</svg>

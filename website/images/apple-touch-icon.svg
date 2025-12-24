@@ -1,0 +1,22 @@
+<svg width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="appGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6"/>
+      <stop offset="100%" style="stop-color:#5d1289"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="180" height="180" rx="40" fill="url(#appGradient)"/>
+
+  <!-- Subtle glow -->
+  <circle cx="140" cy="40" r="60" fill="rgba(255,255,255,0.1)"/>
+
+  <!-- Car icon - centered and larger -->
+  <g transform="translate(30, 45)">
+    <path d="M105 35c-2.5-7.5-9-12.5-17.5-12.5H32.5C24 22.5 17.5 27.5 15 35L0 72.5v50c0 4.2 3.3 7.5 7.5 7.5h7.5c4.2 0 7.5-3.3 7.5-7.5V115h75v7.5c0 4.2 3.3 7.5 7.5 7.5h7.5c4.2 0 7.5-3.3 7.5-7.5v-50L105 35zM27.5 97.5c-6.2 0-11.25-5-11.25-11.25S21.25 75 27.5 75s11.25 5 11.25 11.25S33.75 97.5 27.5 97.5zm65 0c-6.2 0-11.25-5-11.25-11.25S86.25 75 92.5 75s11.25 5 11.25 11.25S98.75 97.5 92.5 97.5zM15 65l10-30h70l10 30H15z" fill="white"/>
+  </g>
+
+  <!-- Drift text at bottom -->
+  <text x="90" y="165" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="900" fill="white" text-anchor="middle">DRIFT</text>
+</svg>
