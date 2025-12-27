@@ -117,7 +117,9 @@
       "Bash(cmd /c \"cd /d C:\\\\Drift && firebase deploy --only hosting\")",
       "Bash(cmd /c \"cd /d C:\\\\Drift && firebase deploy --only hosting 2>&1\")",
       "Bash(cmd /c \"dir /b C:\\\\Drift\\\\public\")",
-      "WebFetch(domain:drift-global.com)"
+      "WebFetch(domain:drift-global.com)",
+      "WebFetch(domain:www.caymancompass.com)",
+      "Bash(cmd /c:*)"
     ],
     "deny": [],
     "ask": []

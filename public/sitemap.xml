@@ -1,39 +1,164 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+  <!-- Main Pages -->
   <url>
     <loc>https://drift-global.com/</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://drift-global.com/#how-it-works</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://drift-global.com/#features</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://drift-global.com/#download</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://drift-global.com/#drive</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://drift-global.com/#faq</loc>
-    <lastmod>2024-12-23</lastmod>
+    <lastmod>2024-12-26</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://drift-global.com/privacy.html</loc>
+    <lastmod>2024-12-17</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://drift-global.com/terms.html</loc>
+    <lastmod>2024-12-17</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://drift-global.com/delete-account.html</loc>
+    <lastmod>2024-12-08</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+
+  <!-- Blog Section -->
+  <url>
+    <loc>https://drift-global.com/blog/</loc>
+    <lastmod>2024-12-26</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <!-- Blog Articles with News Schema -->
+  <url>
+    <loc>https://drift-global.com/blog/drift-launches-cayman-islands.html</loc>
+    <lastmod>2024-12-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-20</news:publication_date>
+      <news:title>Drift Launches: Cayman Islands Gets Its First Modern Carpooling Platform</news:title>
+      <news:keywords>Drift, Cayman Islands, carpooling, transportation, launch, Grand Cayman</news:keywords>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://drift-global.com/blog/airport-transfer-guide-grand-cayman.html</loc>
+    <lastmod>2024-12-18</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-18</news:publication_date>
+      <news:title>Complete Guide: Airport Transfers in Grand Cayman</news:title>
+      <news:keywords>Owen Roberts Airport, Grand Cayman, airport transfer, Seven Mile Beach, transportation</news:keywords>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://drift-global.com/blog/top-10-destinations-grand-cayman.html</loc>
+    <lastmod>2024-12-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-15</news:publication_date>
+      <news:title>Top 10 Must-Visit Destinations in Grand Cayman</news:title>
+      <news:keywords>Grand Cayman, tourism, attractions, Seven Mile Beach, Stingray City, travel guide</news:keywords>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://drift-global.com/blog/peer-to-peer-transportation-cayman.html</loc>
+    <lastmod>2024-12-12</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-12</news:publication_date>
+      <news:title>Why Peer-to-Peer Transportation is Transforming the Cayman Islands</news:title>
+      <news:keywords>peer to peer, carpooling, transportation, Cayman Islands, sustainability</news:keywords>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://drift-global.com/blog/drive-with-drift-earnings-guide.html</loc>
+    <lastmod>2024-12-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-10</news:publication_date>
+      <news:title>Earn Money Driving with Drift: A Complete Guide for Cayman Drivers</news:title>
+      <news:keywords>Drift driver, earn money, Cayman Islands, flexible work, driving jobs</news:keywords>
+    </news:news>
+  </url>
+
+  <url>
+    <loc>https://drift-global.com/blog/drift-safety-features.html</loc>
+    <lastmod>2024-12-08</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Drift Blog</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2024-12-08</news:publication_date>
+      <news:title>How Drift Keeps You Safe: Our Commitment to Rider and Driver Security</news:title>
+      <news:keywords>Drift safety, rideshare security, Cayman Islands, transportation safety</news:keywords>
+    </news:news>
   </url>
 </urlset>
