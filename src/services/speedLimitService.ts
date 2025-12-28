@@ -47,6 +47,23 @@ const SPEED_UPDATE_INTERVAL = 1000; // 1 second for smoother updates
 const speedLimitCache: Map<string, { speedLimit: number; timestamp: number }> = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Fetch with timeout to prevent slow network hanging
+ */
+async function fetchWithTimeout(url: string, timeoutMs: number = 5000): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    return response;
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+}
+
 // Speed readings buffer for smoothing
 let speedReadingsBuffer: number[] = [];
 
@@ -117,27 +134,28 @@ export async function getSpeedLimit(
   const cacheKey = getCacheKey(latitude, longitude);
 
   // Check cache first
-  const cached = speedLimitCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+  const cachedLimit = speedLimitCache.get(cacheKey);
+  if (cachedLimit && Date.now() - cachedLimit.timestamp < CACHE_DURATION) {
     return {
-      speedLimit: cached.speedLimit,
+      speedLimit: cachedLimit.speedLimit,
       source: 'cached',
+      cached: true,
     };
   }
 
   if (!GOOGLE_ROADS_API_KEY) {
     console.warn('Google Roads API key not configured, using default speed limit');
     return {
-      speedLimit: 35, // Default urban speed limit
+      speedLimit: 40, // Default road speed limit for Cayman Islands
       source: 'default',
     };
   }
 
   try {
-    // Use Google Roads API - Speed Limits endpoint
+    // Use Google Roads API - Speed Limits endpoint (with timeout for slow networks)
     const url = `https://roads.googleapis.com/v1/speedLimits?path=${latitude},${longitude}&key=${GOOGLE_ROADS_API_KEY}`;
 
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, 5000); // 5 second timeout
     const data = await response.json();
 
     if (data.error) {
@@ -175,21 +193,90 @@ export async function getSpeedLimit(
 
 /**
  * Get default speed limit based on location context
- * Uses a simpler heuristic when API data isn't available
+ * Uses a quick lookup without network calls for reliability on slow connections
  */
 async function getDefaultSpeedLimit(
   latitude: number,
   longitude: number
 ): Promise<SpeedLimitResponse> {
   // Cayman Islands typical speed limits:
-  // - Urban areas: 25-30 mph
-  // - Main roads: 40 mph
+  // - Residential/Urban areas: 25 mph
+  // - Town centers: 25-30 mph
+  // - Main roads (Esterly Tibbetts Highway): 40 mph
   // - Highways: 50 mph
 
-  // For now, use a conservative default
-  // In production, could use reverse geocoding to determine road type
+  // Quick geocode lookup with short timeout (don't block on slow networks)
+  if (GOOGLE_ROADS_API_KEY) {
+    try {
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_ROADS_API_KEY}`;
+      const response = await fetchWithTimeout(geocodeUrl, 3000); // 3 second timeout
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.results.length > 0) {
+        // Check address components and formatted address for road type hints
+        const formattedAddress = data.results[0].formatted_address?.toLowerCase() || '';
+        const addressComponents = data.results[0].address_components || [];
+
+        // Look for route/road name
+        const routeComponent = addressComponents.find((c: any) => c.types.includes('route'));
+        const roadName = routeComponent?.long_name?.toLowerCase() || '';
+
+        // Determine speed limit based on road type
+        // Major Cayman highways
+        if (roadName.includes('esterly tibbetts') ||
+            roadName.includes('esterley tibbetts') ||
+            roadName.includes('linford pierson') ||
+            roadName.includes('bypass')) {
+          return { speedLimit: 40, source: 'geocoded', roadName: routeComponent?.long_name };
+        }
+
+        // Highway-class roads
+        if (roadName.includes('highway') ||
+            roadName.includes('queens highway') ||
+            roadName.includes('king\'s highway') ||
+            roadName.includes('bodden town road')) {
+          return { speedLimit: 50, source: 'geocoded', roadName: routeComponent?.long_name };
+        }
+
+        // Main arterial roads
+        if (roadName.includes('west bay road') ||
+            roadName.includes('eastern avenue') ||
+            roadName.includes('shamrock road') ||
+            roadName.includes('north side road')) {
+          return { speedLimit: 40, source: 'geocoded', roadName: routeComponent?.long_name };
+        }
+
+        // School zones - extra cautious
+        if (formattedAddress.includes('school') || roadName.includes('school')) {
+          return { speedLimit: 15, source: 'geocoded', roadName: 'School Zone' };
+        }
+
+        // Residential areas - check for neighborhood indicators
+        if (formattedAddress.includes('close') ||
+            formattedAddress.includes('court') ||
+            formattedAddress.includes('lane') ||
+            (formattedAddress.includes('drive') && !roadName.includes('highway'))) {
+          return { speedLimit: 25, source: 'geocoded', roadName: routeComponent?.long_name };
+        }
+
+        // Town centers - George Town, Bodden Town, etc.
+        const localityComponent = addressComponents.find((c: any) => c.types.includes('locality'));
+        const locality = localityComponent?.long_name?.toLowerCase() || '';
+        if (locality.includes('george town') ||
+            locality.includes('bodden town') ||
+            locality.includes('west bay')) {
+          return { speedLimit: 25, source: 'geocoded', roadName: routeComponent?.long_name };
+        }
+      }
+    } catch (error) {
+      // Timeout or network error - use fast fallback
+      console.log('Speed limit geocoding timeout/error, using default');
+    }
+  }
+
+  // Fast fallback: use 40 mph as a reasonable default for main roads
   return {
-    speedLimit: 35,
+    speedLimit: 40,
     source: 'default',
   };
 }

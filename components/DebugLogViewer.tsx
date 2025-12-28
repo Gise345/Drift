@@ -341,7 +341,8 @@ const styles = StyleSheet.create({
   tapArea: {
     position: 'absolute',
     top: 0,
-    right: 0,
+    left: '50%',
+    marginLeft: -50, // Center the 100px wide area
     width: 100,
     height: 100,
     zIndex: 9998,

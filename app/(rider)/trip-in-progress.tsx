@@ -34,6 +34,7 @@ import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { useSafetyStore } from '@/src/stores/safety-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { SimpleCarMarker } from '@/components/map/CarMarker';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
 import { RiderSpeedingAlertContainer } from '@/components/rider/RiderSpeedingAlert';
@@ -149,8 +150,14 @@ export default function TripInProgressScreen() {
   const BOTTOM_SHEET_MAX_HEIGHT = BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset;
   const BOTTOM_SHEET_MIN_HEIGHT = BOTTOM_SHEET_MIN_HEIGHT_BASE + bottomInset;
 
-  // Animation
-  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset)).current;
+  // Animation - initialize with max height
+  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
+
+  // Sync animated value when insets change or minimize state changes
+  useEffect(() => {
+    const targetHeight = isSheetMinimized ? BOTTOM_SHEET_MIN_HEIGHT : BOTTOM_SHEET_MAX_HEIGHT;
+    sheetHeight.setValue(targetHeight);
+  }, [bottomInset]);
 
   // Get driver info from current trip
   const driver = currentTrip?.driverInfo;
@@ -881,10 +888,14 @@ export default function TripInProgressScreen() {
             }}
             title={driver.name}
             description={`${driver.vehicle.make} ${driver.vehicle.model}`}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat={true}
           >
-            <View style={styles.driverMarker}>
-              <Ionicons name="car" size={24} color="white" />
-            </View>
+            <SimpleCarMarker
+              heading={currentTrip.driverLocation.heading || 0}
+              color="#5d1289"
+              size="medium"
+            />
           </Marker>
         )}
 
@@ -1462,9 +1473,11 @@ const styles = StyleSheet.create({
   },
   sheetHandle: {
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+    minHeight: 48,
   },
   handleBar: {
     width: 40,

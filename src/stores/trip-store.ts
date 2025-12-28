@@ -549,31 +549,70 @@ export const useTripStore = create<TripStore>((set, get) => ({
     }
   },
   
-  updateDriverLocation: async (tripId, location, pickupCoordinates?: { latitude: number; longitude: number }) => {
-    try {
-      const tripRef = doc(firebaseDb, 'trips', tripId);
+  updateDriverLocation: (() => {
+    // Throttle Firebase updates to reduce network usage on slow connections
+    let lastFirebaseUpdate = 0;
+    const FIREBASE_UPDATE_INTERVAL = 2000; // Update Firebase every 2 seconds max
+    let pendingLocation: TripLocation | null = null;
+    let pendingTripId: string | null = null;
+    let updateTimeout: NodeJS.Timeout | null = null;
 
-      // If pickup coordinates are provided, check privacy before broadcasting
-      if (pickupCoordinates) {
-        if (!shouldBroadcastDriverLocation(location, pickupCoordinates)) {
-          // Don't broadcast location yet - privacy delay in effect
-          // Just update the timestamp so rider knows driver is active
-          await updateDoc(tripRef, {
-            updatedAt: serverTimestamp(),
-          });
+    return async (tripId: string, location: TripLocation, pickupCoordinates?: { latitude: number; longitude: number }) => {
+      try {
+        const tripRef = doc(firebaseDb, 'trips', tripId);
+        const now = Date.now();
+
+        // Store the latest location for potential delayed update
+        pendingLocation = location;
+        pendingTripId = tripId;
+
+        // If pickup coordinates are provided, check privacy before broadcasting
+        if (pickupCoordinates) {
+          if (!shouldBroadcastDriverLocation(location, pickupCoordinates)) {
+            return; // Privacy delay in effect
+          }
+        }
+
+        // Throttle Firebase updates
+        if (now - lastFirebaseUpdate < FIREBASE_UPDATE_INTERVAL) {
+          // Schedule a delayed update if not already scheduled
+          if (!updateTimeout) {
+            updateTimeout = setTimeout(async () => {
+              if (pendingLocation && pendingTripId) {
+                try {
+                  const ref = doc(firebaseDb, 'trips', pendingTripId);
+                  await updateDoc(ref, {
+                    driverLocation: pendingLocation,
+                    updatedAt: serverTimestamp(),
+                  });
+                  lastFirebaseUpdate = Date.now();
+                } catch (e) {
+                  console.error('Delayed location update failed:', e);
+                }
+              }
+              updateTimeout = null;
+            }, FIREBASE_UPDATE_INTERVAL - (now - lastFirebaseUpdate));
+          }
           return;
         }
-      }
 
-      // Broadcast location - either privacy delay passed or no pickup coordinates to check
-      await updateDoc(tripRef, {
-        driverLocation: location,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error('Failed to update driver location:', error);
-    }
-  },
+        // Clear any pending timeout since we're updating now
+        if (updateTimeout) {
+          clearTimeout(updateTimeout);
+          updateTimeout = null;
+        }
+
+        // Broadcast location
+        await updateDoc(tripRef, {
+          driverLocation: location,
+          updatedAt: serverTimestamp(),
+        });
+        lastFirebaseUpdate = now;
+      } catch (error) {
+        console.error('Failed to update driver location:', error);
+      }
+    };
+  })(),
 
   /**
    * Reset privacy tracking state - call when ride is completed or cancelled

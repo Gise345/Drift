@@ -496,5 +496,6 @@ export interface SpeedLimitResponse {
   speedLimit: number | null;
   roadName?: string;
   placeId?: string;
-  source: 'google_roads' | 'cached' | 'default';
+  source: 'google_roads' | 'cached' | 'default' | 'geocoded';
+  cached?: boolean;
 }

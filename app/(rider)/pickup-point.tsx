@@ -12,6 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { SimpleCarMarker } from '@/components/map/CarMarker';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useUserStore } from '@/src/stores/user-store';
 import { cancelTrip } from '@/src/services/ride-request.service';
@@ -183,10 +184,14 @@ export default function PickupPointScreen() {
               longitude: pickupLocation.longitude + 0.0002,
             }}
             title={driver.name}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat={true}
           >
-            <View style={styles.driverMarker}>
-              <Ionicons name="car" size={24} color="#FFF" />
-            </View>
+            <SimpleCarMarker
+              heading={currentTrip.driverLocation?.heading || 0}
+              color="#5d1289"
+              size="medium"
+            />
           </Marker>
         </MapView>
 

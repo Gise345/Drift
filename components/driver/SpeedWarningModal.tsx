@@ -10,7 +10,7 @@
  * - Enhanced red-zone warning with persistent display
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -36,6 +36,8 @@ interface SpeedWarningModalProps {
   onDismiss: () => void;
 }
 
+const DISMISS_COUNTDOWN_SECONDS = 5;
+
 export function SpeedWarningModal({
   visible,
   currentSpeed,
@@ -49,6 +51,30 @@ export function SpeedWarningModal({
   const notificationSentRef = useRef(false);
   const excessSpeed = currentSpeed - speedLimit;
   const isRedZone = excessSpeed >= 6; // Red zone: 6+ mph over limit (Cayman law)
+
+  // 5-second countdown before dismiss is available
+  const [dismissCountdown, setDismissCountdown] = useState(DISMISS_COUNTDOWN_SECONDS);
+  const canDismiss = dismissCountdown <= 0;
+
+  // Countdown timer for dismiss button
+  useEffect(() => {
+    if (visible) {
+      // Reset countdown when modal becomes visible
+      setDismissCountdown(DISMISS_COUNTDOWN_SECONDS);
+
+      const countdownInterval = setInterval(() => {
+        setDismissCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(countdownInterval);
+    }
+  }, [visible]);
 
   // Send push notification when visible and app is in background
   useEffect(() => {
@@ -225,14 +251,30 @@ export function SpeedWarningModal({
             </View>
           )}
 
-          {/* Dismiss Button */}
+          {/* Dismiss Button with Countdown */}
           <TouchableOpacity
-            style={[styles.dismissButton, isRedZone && styles.redZoneDismissButton]}
-            onPress={onDismiss}
+            style={[
+              styles.dismissButton,
+              isRedZone && styles.redZoneDismissButton,
+              !canDismiss && styles.dismissButtonDisabled,
+            ]}
+            onPress={canDismiss ? onDismiss : undefined}
+            disabled={!canDismiss}
+            activeOpacity={canDismiss ? 0.7 : 1}
           >
-            <Ionicons name="speedometer" size={20} color={isRedZone ? '#FFFFFF' : '#DC2626'} />
-            <Text style={[styles.dismissText, isRedZone && styles.redZoneDismissText]}>
-              {isRedZone ? 'I Will Slow Down Immediately' : 'I Understand - Slowing Down'}
+            <Ionicons
+              name="speedometer"
+              size={20}
+              color={!canDismiss ? '#9CA3AF' : (isRedZone ? '#FFFFFF' : '#DC2626')}
+            />
+            <Text style={[
+              styles.dismissText,
+              isRedZone && styles.redZoneDismissText,
+              !canDismiss && styles.dismissTextDisabled,
+            ]}>
+              {!canDismiss
+                ? `Wait ${dismissCountdown}s to dismiss...`
+                : (isRedZone ? 'I Will Slow Down Immediately' : 'I Understand - Slowing Down')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -360,6 +402,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   dismissButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     backgroundColor: '#FFFFFF',
     paddingVertical: 16,
     paddingHorizontal: 40,
@@ -370,10 +416,17 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  dismissButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    shadowOpacity: 0.1,
+  },
   dismissText: {
     fontSize: 18,
     fontWeight: '700',
     color: '#DC2626',
+  },
+  dismissTextDisabled: {
+    color: '#9CA3AF',
   },
 
   // Red Zone Styles (10+ mph over limit)

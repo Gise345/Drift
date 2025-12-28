@@ -34,6 +34,7 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { SimpleCarMarker } from '@/components/map/CarMarker';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 import { useRouteDeviation } from '@/src/hooks/useRouteDeviation';
@@ -81,22 +82,26 @@ export default function NavigateToDestination() {
 
   // State
   const [eta, setEta] = useState<number | null>(null);
+  const [googleEta, setGoogleEta] = useState<number | null>(null); // Store Google's ETA
   const [distance, setDistance] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<RouteCoordinate[]>([]);
   const [currentStep, setCurrentStep] = useState<NavigationStep | null>(null);
   const [currentLocation, setCurrentLocation] = useState<RouteCoordinate | null>(null);
   const [currentHeading, setCurrentHeading] = useState<number>(0);
-  const [isSheetMinimized, setIsSheetMinimized] = useState(false);
+  const [isSheetMinimized, setIsSheetMinimized] = useState(true); // Auto-collapsed on start
   const [elapsed, setElapsed] = useState(0);
   const [tripStartTime] = useState(new Date());
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState<number>(0); // Speed in m/s
   const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
+  const [isInitialCameraSet, setIsInitialCameraSet] = useState(false);
   const lastRouteRecalculation = useRef<number>(0);
   const hasHandledCancellationRef = useRef(false);
   const lastCameraUpdate = useRef<number>(0);
+  const lastEtaRefresh = useRef<number>(0);
   const ROUTE_RECALC_COOLDOWN = 10000; // 10 seconds between recalculations
-  const CAMERA_UPDATE_INTERVAL = 500; // Update camera every 500ms for smooth following
+  const CAMERA_UPDATE_INTERVAL = 300; // Update camera every 300ms for smoother following
+  const ETA_REFRESH_INTERVAL = 30000; // Refresh ETA from Google every 30 seconds
 
   // Stop request state
   const [showStopRequestModal, setShowStopRequestModal] = useState(false);
@@ -108,8 +113,18 @@ export default function NavigateToDestination() {
     estimatedAdditionalCost?: number;
   } | null>(null);
 
-  // Animation
-  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT_BASE + bottomInset)).current;
+  // Animation - initialize with min height (auto-collapsed)
+  const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MIN_HEIGHT)).current;
+
+  // Sync animated value when insets change
+  useEffect(() => {
+    const targetHeight = isSheetMinimized ? BOTTOM_SHEET_MIN_HEIGHT : BOTTOM_SHEET_MAX_HEIGHT;
+    Animated.timing(sheetHeight, {
+      toValue: targetHeight,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  }, [bottomInset, BOTTOM_SHEET_MIN_HEIGHT, BOTTOM_SHEET_MAX_HEIGHT]);
 
   // Subscribe to trip updates to detect rider cancellation
   useEffect(() => {
@@ -350,9 +365,12 @@ export default function NavigateToDestination() {
         routeDeviation.setPlannedRoute(points);
         routeDeviation.setDestination(destination);
 
-        // Set ETA and distance
-        setEta(Math.ceil(leg.duration.value / 60));
+        // Set ETA from Google (accurate, traffic-aware) and distance
+        const googleEtaMinutes = Math.ceil(leg.duration.value / 60);
+        setGoogleEta(googleEtaMinutes);
+        setEta(googleEtaMinutes);
         setDistance(leg.distance.value / 1000);
+        lastEtaRefresh.current = Date.now();
 
         // Parse navigation steps
         const steps: NavigationStep[] = leg.steps.map((step: any) => ({
@@ -465,8 +483,8 @@ export default function NavigateToDestination() {
         locationSubscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000, // Update every 1 second for smooth following
-            distanceInterval: 5, // Update every 5 meters for responsive navigation
+            timeInterval: 500, // Update every 500ms for very smooth following
+            distanceInterval: 3, // Update every 3 meters for responsive navigation
           },
           async (loc) => {
             const { latitude, longitude, heading, speed } = loc.coords;
@@ -485,10 +503,10 @@ export default function NavigateToDestination() {
                 {
                   center: { latitude, longitude },
                   heading: heading || 0,
-                  pitch: 45, // Tilted view for navigation
-                  zoom: 17, // Close zoom for navigation
+                  pitch: 50, // More tilted for better road view
+                  zoom: 18, // Closer zoom for navigation
                 },
-                { duration: 500 } // Smooth 500ms animation
+                { duration: 250 } // Faster, smoother animation
               );
             }
 
@@ -513,7 +531,7 @@ export default function NavigateToDestination() {
               speed: speed || 0,
             });
 
-            // Update Firebase
+            // Update Firebase (throttled to reduce network usage)
             if (activeRide.id) {
               updateDriverLocation(activeRide.id, {
                 latitude,
@@ -525,7 +543,7 @@ export default function NavigateToDestination() {
               });
             }
 
-            // Recalculate distance
+            // Recalculate distance locally
             const distanceToDestination = calculateDistance(
               latitude,
               longitude,
@@ -534,12 +552,30 @@ export default function NavigateToDestination() {
             );
             setDistance(distanceToDestination);
 
-            // Simple ETA recalculation
-            const avgSpeed = 30;
-            const newEta = (distanceToDestination / avgSpeed) * 60;
-            setEta(Math.ceil(newEta));
+            // Refresh ETA from Google periodically (every 30 seconds) for accuracy
+            if (now - lastEtaRefresh.current >= ETA_REFRESH_INTERVAL) {
+              fetchRoute(
+                { latitude, longitude },
+                { latitude: activeRide.destination.lat, longitude: activeRide.destination.lng },
+                (currentTrip as any)?.stops
+              );
+            }
           }
         );
+
+        // Set initial camera immediately after getting location
+        if (mapRef.current && !isInitialCameraSet) {
+          setIsInitialCameraSet(true);
+          mapRef.current.animateCamera(
+            {
+              center: initialLocation,
+              heading: 0,
+              pitch: 50,
+              zoom: 18,
+            },
+            { duration: 500 }
+          );
+        }
       } catch (error) {
         console.error('Failed to start tracking:', error);
       }
@@ -745,7 +781,7 @@ export default function NavigateToDestination() {
           latitudeDelta: 0.02,
           longitudeDelta: 0.02,
         }}
-        showsUserLocation
+        showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         followsUserLocation={false}
@@ -756,6 +792,21 @@ export default function NavigateToDestination() {
           }
         }}
       >
+        {/* Driver Car Marker */}
+        {currentLocation && (
+          <Marker
+            coordinate={currentLocation}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat={true}
+          >
+            <SimpleCarMarker
+              heading={currentHeading}
+              color={Colors.primary}
+              size="large"
+            />
+          </Marker>
+        )}
+
         {/* Stop Markers */}
         {(currentTrip as any)?.stops?.map((stop: any, index: number) => (
           <Marker
@@ -846,7 +897,7 @@ export default function NavigateToDestination() {
         </View>
       </View>
 
-      {/* Map Controls */}
+      {/* Map Controls - Center/Follow button only */}
       <View style={styles.mapControls}>
         <TouchableOpacity
           style={[
@@ -860,9 +911,6 @@ export default function NavigateToDestination() {
             size={22}
             color={isAutoFollowEnabled ? Colors.white : Colors.gray[700]}
           />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.mapControlButton} onPress={handleOpenMaps}>
-          <Ionicons name="navigate" size={22} color={Colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -1266,9 +1314,11 @@ const styles = StyleSheet.create({
   },
   sheetHandle: {
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray[100],
+    minHeight: 48,
   },
   handleBar: {
     width: 40,

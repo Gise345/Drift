@@ -30,6 +30,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { SimpleCarMarker } from '@/components/map/CarMarker';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, doc, onSnapshot } from '@react-native-firebase/firestore';
 
@@ -428,11 +429,13 @@ export default function TrackTripScreen() {
               }}
               title="Driver"
               anchor={{ x: 0.5, y: 0.5 }}
-              rotation={trip.driverLocation.heading || 0}
+              flat={true}
             >
-              <View style={styles.driverMarker}>
-                <Ionicons name="car" size={20} color="#fff" />
-              </View>
+              <SimpleCarMarker
+                heading={trip.driverLocation.heading || 0}
+                color="#5d1289"
+                size="medium"
+              />
             </Marker>
           )}
 
