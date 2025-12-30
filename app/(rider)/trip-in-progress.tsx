@@ -347,7 +347,8 @@ export default function TripInProgressScreen() {
           const destination = currentTrip.destination!.coordinates;
           const stops = currentTrip.stops;
 
-          let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+          // Use traffic-aware routing for accurate ETA
+          let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
           // Add waypoints for stops
           if (stops && stops.length > 0) {
@@ -531,7 +532,8 @@ export default function TripInProgressScreen() {
     if (now - lastEtaFetch.current >= ETA_FETCH_INTERVAL && GOOGLE_DIRECTIONS_API_KEY) {
       lastEtaFetch.current = now;
       try {
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${destinationLocation.latitude},${destinationLocation.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+        // Use traffic-aware routing for accurate ETA
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${driverLocation.latitude},${driverLocation.longitude}&destination=${destinationLocation.latitude},${destinationLocation.longitude}&mode=driving&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_API_KEY}`;
         const response = await fetch(url);
         const data = await response.json();
 
@@ -575,7 +577,8 @@ export default function TripInProgressScreen() {
     if (!GOOGLE_DIRECTIONS_API_KEY) return;
 
     try {
-      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      // Use traffic-aware routing for accurate ETA
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -597,7 +600,8 @@ export default function TripInProgressScreen() {
     if (!GOOGLE_DIRECTIONS_API_KEY) return;
 
     try {
-      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      // Use traffic-aware routing for accurate ETA
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
       // Add waypoints for stops
       if (stops && stops.length > 0) {

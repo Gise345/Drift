@@ -337,7 +337,8 @@ export default function NavigateToDestination() {
     }
 
     try {
-      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+      // Use traffic-aware routing for accurate ETA (best practice from Google Routes API docs)
+      let url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_API_KEY}`;
 
       // Add waypoints for uncompleted stops
       if (stops && stops.length > 0) {
@@ -496,6 +497,7 @@ export default function NavigateToDestination() {
             }
 
             // Auto-follow camera with heading orientation (like Google Maps navigation)
+            // Best practice: Match animation duration to update interval for seamless movement
             const now = Date.now();
             if (isAutoFollowEnabled && mapRef.current && now - lastCameraUpdate.current >= CAMERA_UPDATE_INTERVAL) {
               lastCameraUpdate.current = now;
@@ -506,7 +508,7 @@ export default function NavigateToDestination() {
                   pitch: 50, // More tilted for better road view
                   zoom: 18, // Closer zoom for navigation
                 },
-                { duration: 250 } // Faster, smoother animation
+                { duration: CAMERA_UPDATE_INTERVAL } // Match update interval for smooth transitions
               );
             }
 

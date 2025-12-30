@@ -9,7 +9,7 @@
  * EXPO SDK 52 Compatible
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,12 +20,14 @@ import {
   Alert,
   Animated,
   AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { useTripStore } from '@/src/stores/trip-store';
 import { DriftButton } from '@/components/ui/DriftButton';
 import DriftMapView from '@/components/ui/DriftMapView';
 import RideRequestModal from '@/components/modal/RideRequestModal';
@@ -79,6 +81,13 @@ export default function DriverHomeScreen() {
   const isAccepting = useRef(false);
   // Location subscription for continuous tracking while online
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+
+  // App state and trip subscription tracking
+  const appStateRef = useRef(AppState.currentState);
+  const tripUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Get subscribeToTrip from trip store (same as rider uses)
+  const { subscribeToTrip } = useTripStore();
 
   // Animation values for status card
   const statusCardAnimation = useRef(new Animated.Value(1)).current;
@@ -173,54 +182,100 @@ export default function DriverHomeScreen() {
   }, [user?.id]);
 
   // Keep online status persistent - restart listener when app comes to foreground
+  // Also re-check for active trip when app comes to foreground
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      // When app comes back to foreground and driver is online
-      if (nextAppState === 'active' && isOnline && !activeRide) {
-        // Restart listening if we're online but not currently listening
-        const state = useDriverStore.getState();
-        if (!state.rideRequestListener && state.currentLocation) {
-          state.startListeningForRequests();
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      // When app comes back to foreground
+      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('📱 App came to foreground - re-checking active trip...');
+        // Always re-check for active trip when coming to foreground
+        checkForActiveTrip();
+
+        // Also restart listening for requests if online and no active ride
+        if (isOnline && !activeRide) {
+          const state = useDriverStore.getState();
+          if (!state.rideRequestListener && state.currentLocation) {
+            state.startListeningForRequests();
+          }
         }
       }
+      appStateRef.current = nextAppState;
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isOnline, activeRide]);
+  }, [isOnline, activeRide, driver?.id]);
 
-  // Check for active trip on mount (persists across app restart/logout)
+  // Check for active trip on mount
   useEffect(() => {
     if (!hasCheckedActiveTrip && driver?.id) {
       checkForActiveTrip();
     }
   }, [driver?.id, hasCheckedActiveTrip]);
 
+  // Subscribe to active trip updates (like rider does)
+  useEffect(() => {
+    if (activeRide?.id) {
+      console.log('📡 Setting up trip subscription for driver:', activeRide.id);
+
+      // Clean up existing subscription
+      if (tripUnsubscribeRef.current) {
+        tripUnsubscribeRef.current();
+      }
+
+      // Subscribe to real-time updates
+      tripUnsubscribeRef.current = subscribeToTrip(activeRide.id);
+    }
+
+    return () => {
+      if (tripUnsubscribeRef.current) {
+        tripUnsubscribeRef.current();
+        tripUnsubscribeRef.current = null;
+      }
+    };
+  }, [activeRide?.id, subscribeToTrip]);
+
+  // Sync activeRide with trip store's currentTrip (for real-time updates)
+  const { currentTrip } = useTripStore();
+  useEffect(() => {
+    if (currentTrip && activeRide?.id === currentTrip.id) {
+      // Check if trip ended
+      if (['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(currentTrip.status)) {
+        console.log('🚫 Trip ended via subscription:', currentTrip.status);
+        setActiveRide(null);
+        return;
+      }
+
+      // Update activeRide with latest data from Firebase
+      const updatedRide: ActiveRide = {
+        ...activeRide,
+        status: mapTripStatusToRideStatus(currentTrip.status),
+        startedAt: currentTrip.startedAt || activeRide.startedAt,
+      };
+
+      // Only update if status changed
+      if (updatedRide.status !== activeRide.status) {
+        console.log('🔄 Updating active ride status:', updatedRide.status);
+        setActiveRide(updatedRide);
+      }
+    }
+  }, [currentTrip?.status, currentTrip?.id, activeRide?.id]);
+
   /**
    * Check if driver has an active trip and restore it
-   * Only restore trips that are genuinely in progress (IN_PROGRESS status)
-   * or recently accepted (within last 30 minutes)
+   * Called on mount and when app comes to foreground
    */
-  const checkForActiveTrip = async () => {
+  const checkForActiveTrip = useCallback(async () => {
     if (!driver?.id) return;
+
+    console.log('🔍 Checking for active trip for driver:', driver.id);
 
     try {
       const activeTrip = await getActiveDriverTrip(driver.id);
 
       if (activeTrip) {
-        // Only restore trips that are genuinely active:
-        // 1. IN_PROGRESS trips should always be restored (driver is mid-ride)
-        // 2. For other statuses (DRIVER_ARRIVING, DRIVER_ARRIVED), only restore if recently accepted (within 30 min)
-        const isInProgress = activeTrip.status === 'IN_PROGRESS';
-        const acceptedAt = activeTrip.acceptedAt;
-        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        const isRecentlyAccepted = acceptedAt && new Date(acceptedAt) > thirtyMinutesAgo;
-
-        if (!isInProgress && !isRecentlyAccepted) {
-          setHasCheckedActiveTrip(true);
-          return;
-        }
+        console.log('✅ Found active trip:', activeTrip.id, 'Status:', activeTrip.status);
 
         // Get rider info from the trip data
         const riderName = (activeTrip as any).riderName || 'Rider';
@@ -257,16 +312,19 @@ export default function DriverHomeScreen() {
 
         setActiveRide(restoredRide);
       } else {
-        // No active trip found - clear any stale activeRide state
-        setActiveRide(null);
+        console.log('ℹ️ No active trip found');
+        // Only clear if we're re-checking (not initial check)
+        if (hasCheckedActiveTrip) {
+          setActiveRide(null);
+        }
       }
 
       setHasCheckedActiveTrip(true);
     } catch (error) {
-      console.error('Error checking for active trip:', error);
+      console.error('❌ Error checking for active trip:', error);
       setHasCheckedActiveTrip(true);
     }
-  };
+  }, [driver?.id, hasCheckedActiveTrip, setActiveRide]);
 
   /**
    * Map trip status to driver ride status

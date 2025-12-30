@@ -14,6 +14,7 @@ import {
   Animated,
   Dimensions,
   PanResponder,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -154,6 +155,10 @@ const SearchLocationScreen = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
+  // Keyboard state for adjusting results visibility
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const pickupInputRef = useRef<TextInput>(null);
   const destinationInputRef = useRef<TextInput>(null);
@@ -226,6 +231,43 @@ const SearchLocationScreen = () => {
     })
   ).current;
   const stopInputRefs = useRef<(TextInput | null)[]>([]);
+
+  // Keyboard listeners - expand sheet when keyboard appears
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setIsKeyboardVisible(true);
+        // Auto-expand sheet to max height when keyboard appears
+        currentSheetHeight.current = SHEET_MAX_HEIGHT;
+        Animated.timing(sheetHeight, {
+          toValue: SHEET_MAX_HEIGHT,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+        setIsKeyboardVisible(false);
+        // Return to normal height when keyboard hides
+        currentSheetHeight.current = SHEET_MIN_HEIGHT;
+        Animated.timing(sheetHeight, {
+          toValue: SHEET_MIN_HEIGHT,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   useEffect(() => {
     initializeScreen();
@@ -1045,7 +1087,8 @@ const SearchLocationScreen = () => {
 
         <KeyboardAvoidingView
           style={styles.keyboardView}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -1071,142 +1114,194 @@ const SearchLocationScreen = () => {
             }
           ]}
         >
-          {/* Search Card */}
+          {/* Search Card - Compact when keyboard is visible */}
           {!addStopMode && (
             <>
-            <View style={styles.searchCard}>
-              {/* Route line visualization */}
-              <View style={styles.routeLineWrapper}>
-                {renderRouteLine()}
-              </View>
+            <View style={[styles.searchCard, isKeyboardVisible && styles.searchCardCompact]}>
+              {/* Route line visualization - hide when keyboard visible for compact mode */}
+              {!isKeyboardVisible && (
+                <View style={styles.routeLineWrapper}>
+                  {renderRouteLine()}
+                </View>
+              )}
 
               {/* Inputs container */}
               <View style={styles.inputsContainer}>
-                {/* Pickup Input */}
-                <View style={styles.inputRow}>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      ref={pickupInputRef}
-                      style={[
-                        styles.input,
-                        activeInput === 'pickup' && styles.inputActive
-                      ]}
-                      placeholder="Pickup location"
-                      placeholderTextColor="#9ca3af"
-                      value={pickupQuery}
-                      onChangeText={setPickupQuery}
-                      onFocus={() => setActiveInput('pickup')}
-                      returnKeyType="next"
-                    />
-                    {pickupQuery.length > 0 && (
-                      <TouchableOpacity
-                        style={styles.clearButton}
-                        onPress={() => {
-                          setPickupQuery('');
-                          setPickupLocationState(null);
-                        }}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
-                      </TouchableOpacity>
+                {/* Pickup Input - show compact version when keyboard visible and not focused */}
+                {(!isKeyboardVisible || activeInput === 'pickup') && (
+                  <View style={[styles.inputRow, isKeyboardVisible && styles.inputRowCompact]}>
+                    {isKeyboardVisible && (
+                      <View style={[styles.compactDot, { backgroundColor: '#10b981' }]} />
                     )}
-                  </View>
-                </View>
-
-                {/* Stop Inputs */}
-                {stopQueries.map((query, index) => (
-                  <View key={`stop-${index}`} style={styles.inputRow}>
                     <View style={styles.inputWrapper}>
                       <TextInput
-                        ref={(ref) => { stopInputRefs.current[index] = ref; }}
+                        ref={pickupInputRef}
                         style={[
                           styles.input,
-                          activeInput === index && styles.inputActive
+                          activeInput === 'pickup' && styles.inputActive
                         ]}
-                        placeholder={`Stop ${index + 1}`}
+                        placeholder="Pickup location"
                         placeholderTextColor="#9ca3af"
-                        value={query}
-                        onChangeText={(text) => {
-                          const newQueries = [...stopQueries];
-                          newQueries[index] = text;
-                          setStopQueries(newQueries);
-                        }}
-                        onFocus={() => setActiveInput(index)}
-                        returnKeyType="next"
+                        value={pickupQuery}
+                        onChangeText={setPickupQuery}
+                        onFocus={() => setActiveInput('pickup')}
+                        returnKeyType="search"
+                        blurOnSubmit={false}
+                        onSubmitEditing={() => Keyboard.dismiss()}
                       />
-                      <TouchableOpacity
-                        style={styles.clearButton}
-                        onPress={() => handleRemoveStop(index)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Ionicons name="close-circle" size={18} color="#ef4444" />
-                      </TouchableOpacity>
+                      {pickupQuery.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.clearButton}
+                          onPress={() => {
+                            setPickupQuery('');
+                            setPickupLocationState(null);
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
+                )}
+
+                {/* Show pickup summary when keyboard visible and destination focused */}
+                {isKeyboardVisible && activeInput === 'destination' && pickupQuery && (
+                  <TouchableOpacity
+                    style={styles.compactLocationRow}
+                    onPress={() => {
+                      setActiveInput('pickup');
+                      pickupInputRef.current?.focus();
+                    }}
+                  >
+                    <View style={[styles.compactDot, { backgroundColor: '#10b981' }]} />
+                    <Text style={styles.compactLocationText} numberOfLines={1}>{pickupQuery}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                  </TouchableOpacity>
+                )}
+
+                {/* Stop Inputs - hide when keyboard visible unless focused */}
+                {stopQueries.map((query, index) => (
+                  (!isKeyboardVisible || activeInput === index) && (
+                    <View key={`stop-${index}`} style={[styles.inputRow, isKeyboardVisible && styles.inputRowCompact]}>
+                      {isKeyboardVisible && (
+                        <View style={[styles.compactDot, { backgroundColor: '#f59e0b' }]} />
+                      )}
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          ref={(ref) => { stopInputRefs.current[index] = ref; }}
+                          style={[
+                            styles.input,
+                            activeInput === index && styles.inputActive
+                          ]}
+                          placeholder={`Stop ${index + 1}`}
+                          placeholderTextColor="#9ca3af"
+                          value={query}
+                          onChangeText={(text) => {
+                            const newQueries = [...stopQueries];
+                            newQueries[index] = text;
+                            setStopQueries(newQueries);
+                          }}
+                          onFocus={() => setActiveInput(index)}
+                          returnKeyType="next"
+                        />
+                        <TouchableOpacity
+                          style={styles.clearButton}
+                          onPress={() => handleRemoveStop(index)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="close-circle" size={18} color="#ef4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )
                 ))}
 
                 {/* Destination Input */}
-                <View style={styles.inputRow}>
-                  <View style={styles.inputWrapper}>
-                    <TextInput
-                      ref={destinationInputRef}
-                      style={[
-                        styles.input,
-                        activeInput === 'destination' && styles.inputActive
-                      ]}
-                      placeholder="Where to?"
-                      placeholderTextColor="#9ca3af"
-                      value={destinationQuery}
-                      onChangeText={setDestinationQuery}
-                      onFocus={() => setActiveInput('destination')}
-                      autoFocus={!addStopMode}
-                      returnKeyType="done"
-                    />
-                    {destinationQuery.length > 0 && (
+                {(!isKeyboardVisible || activeInput === 'destination') && (
+                  <View style={[styles.inputRow, isKeyboardVisible && styles.inputRowCompact]}>
+                    {isKeyboardVisible && (
+                      <View style={[styles.compactDot, { backgroundColor: '#5d1289' }]} />
+                    )}
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        ref={destinationInputRef}
+                        style={[
+                          styles.input,
+                          activeInput === 'destination' && styles.inputActive
+                        ]}
+                        placeholder="Where to?"
+                        placeholderTextColor="#9ca3af"
+                        value={destinationQuery}
+                        onChangeText={setDestinationQuery}
+                        onFocus={() => setActiveInput('destination')}
+                        returnKeyType="search"
+                        blurOnSubmit={false}
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                      />
+                      {destinationQuery.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.clearButton}
+                          onPress={() => {
+                            setDestinationQuery('');
+                            setDestinationLocationState(null);
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Add Stop Button - hide when keyboard visible */}
+                    {!isKeyboardVisible && stopQueries.length < 2 && (
                       <TouchableOpacity
-                        style={styles.clearButton}
-                        onPress={() => {
-                          setDestinationQuery('');
-                          setDestinationLocationState(null);
-                        }}
+                        style={styles.addStopButton}
+                        onPress={handleAddStop}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                        <Ionicons name="add" size={22} color="#5d1289" />
                       </TouchableOpacity>
                     )}
                   </View>
+                )}
 
-                  {/* Add Stop Button */}
-                  {stopQueries.length < 2 && (
-                    <TouchableOpacity
-                      style={styles.addStopButton}
-                      onPress={handleAddStop}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons name="add" size={22} color="#5d1289" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+                {/* Show destination summary when keyboard visible and pickup focused */}
+                {isKeyboardVisible && activeInput === 'pickup' && destinationQuery && (
+                  <TouchableOpacity
+                    style={styles.compactLocationRow}
+                    onPress={() => {
+                      setActiveInput('destination');
+                      destinationInputRef.current?.focus();
+                    }}
+                  >
+                    <View style={[styles.compactDot, { backgroundColor: '#5d1289' }]} />
+                    <Text style={styles.compactLocationText} numberOfLines={1}>{destinationQuery}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
-            {/* Pin Drop Buttons */}
-            <View style={styles.pinDropButtonRow}>
-              <TouchableOpacity
-                style={styles.pinDropChip}
-                onPress={() => startPinMode('pickup')}
-              >
-                <Ionicons name="location" size={16} color="#10B981" />
-                <Text style={styles.pinDropChipText}>Pin Pickup</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.pinDropChip}
-                onPress={() => startPinMode('destination')}
-              >
-                <Ionicons name="flag" size={16} color="#EF4444" />
-                <Text style={styles.pinDropChipText}>Pin Destination</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Pin Drop Buttons - hide when keyboard visible */}
+            {!isKeyboardVisible && (
+              <View style={styles.pinDropButtonRow}>
+                <TouchableOpacity
+                  style={styles.pinDropChip}
+                  onPress={() => startPinMode('pickup')}
+                >
+                  <Ionicons name="location" size={16} color="#10B981" />
+                  <Text style={styles.pinDropChipText}>Pin Pickup</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.pinDropChip}
+                  onPress={() => startPinMode('destination')}
+                >
+                  <Ionicons name="flag" size={16} color="#EF4444" />
+                  <Text style={styles.pinDropChipText}>Pin Destination</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             </>
           )}
 
@@ -1256,9 +1351,14 @@ const SearchLocationScreen = () => {
 
           {/* Results */}
           <ScrollView
-            style={styles.resultsContainer}
+            style={[
+              styles.resultsContainer,
+              isKeyboardVisible && { maxHeight: SCREEN_HEIGHT - keyboardHeight - 280 }
+            ]}
+            contentContainerStyle={{ paddingBottom: 20 }}
             keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
+            bounces={true}
           >
             {/* Loading */}
             {loading && (
@@ -1379,8 +1479,6 @@ const SearchLocationScreen = () => {
               </View>
             )}
 
-            {/* Bottom spacing */}
-            <View style={{ height: 100 }} />
           </ScrollView>
         </Animated.View>
 
@@ -1619,6 +1717,36 @@ const styles = StyleSheet.create({
         elevation: 4,
       },
     }),
+  },
+  searchCardCompact: {
+    marginTop: 8,
+    marginHorizontal: 12,
+    padding: 12,
+    borderRadius: 12,
+  },
+  inputRowCompact: {
+    height: 48,
+  },
+  compactDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  compactLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  compactLocationText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#4b5563',
+    marginLeft: 6,
   },
   routeLineWrapper: {
     width: 24,

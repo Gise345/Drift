@@ -101,7 +101,7 @@ const convertTrip = (trip: TripData): Trip => {
   let status: 'completed' | 'cancelled' | 'awaiting_action' = 'completed';
   if (trip.status === 'CANCELLED') {
     status = 'cancelled';
-  } else if ((trip.status === 'AWAITING_TIP' || trip.status === 'COMPLETED') && (ratingStatus.canRate || ratingStatus.canTip)) {
+  } else if ((trip.status === 'AWAITING_TIP' || trip.status === 'COMPLETED') && ratingStatus.canRate) {
     status = 'awaiting_action';
   }
 
@@ -239,14 +239,7 @@ export default function ActivityScreen() {
   const handleRateDriver = (trip: Trip) => {
     router.push({
       pathname: '/(rider)/rate-driver',
-      params: { tripId: trip.id }
-    });
-  };
-
-  const handleAddTip = (trip: Trip) => {
-    router.push({
-      pathname: '/(rider)/rate-driver',
-      params: { tripId: trip.id, showTip: 'true' }
+      params: { tripId: trip.id, driverId: trip.driverId || '' }
     });
   };
 
@@ -348,53 +341,35 @@ export default function ActivityScreen() {
         </View>
       </View>
 
-      {/* Action Buttons - Rate & Tip */}
-      {(item.canRate || item.canTip) && (
+      {/* Action Button - Rate Driver Only */}
+      {item.canRate && (
         <View style={styles.actionSection}>
           {/* Countdown Timer */}
           {item.remainingTime && (
             <View style={styles.countdownRow}>
               <Ionicons name="time-outline" size={14} color="#6B7280" />
-              <Text style={styles.countdownText}>{item.remainingTime} to rate & tip</Text>
+              <Text style={styles.countdownText}>{item.remainingTime} to rate</Text>
             </View>
           )}
 
           <View style={styles.actionButtons}>
-            {item.canRate && (
-              <TouchableOpacity
-                style={styles.rateButton}
-                onPress={() => handleRateDriver(item)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="star" size={18} color="#FFF" />
-                <Text style={styles.rateButtonText}>Rate Driver</Text>
-              </TouchableOpacity>
-            )}
-            {item.canTip && (
-              <TouchableOpacity
-                style={[styles.tipButton, !item.canRate && styles.tipButtonFull]}
-                onPress={() => handleAddTip(item)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="cash-outline" size={18} color="#5d1289" />
-                <Text style={styles.tipButtonText}>Add Tip</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.rateButton, { flex: 1 }]}
+              onPress={() => handleRateDriver(item)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="star" size={18} color="#FFF" />
+              <Text style={styles.rateButtonText}>Rate Driver</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Already rated/tipped summary */}
-      {item.hasRated && !item.canTip && item.status !== 'cancelled' && (
+      {/* Already rated summary */}
+      {item.hasRated && item.status !== 'cancelled' && (
         <View style={styles.completedActions}>
           <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-          <Text style={styles.completedActionsText}>
-            {item.hasRated && item.hasTipped
-              ? 'Rated & Tipped'
-              : item.hasRated
-                ? 'Rated'
-                : 'Tipped'}
-          </Text>
+          <Text style={styles.completedActionsText}>Rated</Text>
         </View>
       )}
 
@@ -705,26 +680,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFF',
-  },
-  tipButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFF',
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#5d1289',
-    gap: 6,
-  },
-  tipButtonFull: {
-    flex: 1,
-  },
-  tipButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5d1289',
   },
   completedActions: {
     flexDirection: 'row',

@@ -119,7 +119,8 @@
       "Bash(cmd /c \"dir /b C:\\\\Drift\\\\public\")",
       "WebFetch(domain:drift-global.com)",
       "WebFetch(domain:www.caymancompass.com)",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "WebFetch(domain:docs.expo.dev)"
     ],
     "deny": [],
     "ask": []

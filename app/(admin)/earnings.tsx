@@ -108,28 +108,60 @@ export default function EarningsScreen() {
         approvedDriverDocs.map(async (driverDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
           const data = driverDoc.data();
 
-          // Get driver's total earnings
+          // First try to get earnings from summary doc
           const earningsDocRef = doc(db, 'drivers', driverDoc.id, 'earnings', 'summary');
           const earningsDocSnap = await getDoc(earningsDocRef);
-
           const earningsData = earningsDocSnap.data();
-          const totalEarnings = earningsData?.allTime || 0;
 
-          // Get pending payout amount (not yet paid out)
-          const pendingPayout = earningsData?.pendingPayout || 0;
+          let totalEarnings = earningsData?.allTime || 0;
+          let totalTripsCount = data.totalTrips || 0;
 
-          // Get last payout
+          // If no summary exists or allTime is 0, calculate from completed trips
+          if (totalEarnings === 0) {
+            console.log(`📊 Calculating earnings from trips for driver: ${driverDoc.id}`);
+            const tripsRef = collection(db, 'trips');
+            const tripsQ = query(
+              tripsRef,
+              where('driverId', '==', driverDoc.id),
+              where('status', '==', 'COMPLETED')
+            );
+            const tripsSnapshot = await getDocs(tripsQ);
+
+            tripsSnapshot.docs.forEach((tripDoc) => {
+              const tripData = tripDoc.data();
+              // Driver earnings = 80% of fare (20% platform fee)
+              const tripFare = tripData.finalCost || tripData.estimatedCost || 0;
+              const driverCut = tripFare * 0.8; // 80% to driver
+              totalEarnings += driverCut + (tripData.tip || 0);
+            });
+
+            totalTripsCount = tripsSnapshot.size;
+            console.log(`📊 Calculated: ${totalEarnings} from ${totalTripsCount} trips`);
+          }
+
+          // Get total already paid out
           const payoutsRef = collection(db, 'payouts');
-          const lastPayoutQuery = query(
+          const completedPayoutsQuery = query(
             payoutsRef,
             where('driverId', '==', driverDoc.id),
-            where('status', '==', 'completed'),
-            orderBy('completedAt', 'desc'),
-            limit(1)
+            where('status', '==', 'completed')
           );
-          const lastPayoutSnapshot = await getDocs(lastPayoutQuery);
+          const completedPayoutsSnapshot = await getDocs(completedPayoutsQuery);
 
-          const lastPayout = lastPayoutSnapshot.docs[0]?.data();
+          let totalPaidOut = 0;
+          let lastPayout: any = null;
+
+          completedPayoutsSnapshot.docs.forEach((payoutDoc) => {
+            const payoutData = payoutDoc.data();
+            totalPaidOut += payoutData.amount || 0;
+            // Track the most recent payout
+            if (!lastPayout || (payoutData.completedAt?.toDate() > lastPayout.completedAt?.toDate())) {
+              lastPayout = payoutData;
+            }
+          });
+
+          // Pending payout = total earnings - amount already paid out
+          const pendingPayout = Math.max(0, totalEarnings - totalPaidOut);
 
           return {
             driverId: driverDoc.id,
@@ -138,8 +170,8 @@ export default function EarningsScreen() {
             pendingPayout,
             lastPayout: lastPayout?.completedAt?.toDate(),
             lastPayoutAmount: lastPayout?.amount,
-            totalTrips: data.totalTrips || 0,
-            avgTripEarnings: data.totalTrips > 0 ? totalEarnings / data.totalTrips : 0,
+            totalTrips: totalTripsCount,
+            avgTripEarnings: totalTripsCount > 0 ? totalEarnings / totalTripsCount : 0,
           };
         })
       );

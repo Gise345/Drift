@@ -109,12 +109,23 @@ export default function RateDriverScreen() {
     loadTripData();
   }, [tripId, currentTrip]);
 
-  // Get driver info from trip data or params
+  // Get driver info from trip data or params (prioritize params for reliability)
+  const paramDriverIdStr = typeof paramDriverId === 'string' ? paramDriverId : '';
   const driver = {
-    id: tripData?.driverId || tripData?.driverInfo?.id || (typeof paramDriverId === 'string' ? paramDriverId : '') || currentTrip?.driverId || '',
+    id: paramDriverIdStr || tripData?.driverId || tripData?.driverInfo?.id || currentTrip?.driverId || '',
     name: tripData?.driverInfo?.name || tripData?.driverName || currentTrip?.driverName || 'Driver',
     photo: tripData?.driverInfo?.photo || tripData?.driverPhoto || currentTrip?.driverPhoto || '👤',
   };
+
+  // Debug: Log driver info
+  useEffect(() => {
+    console.log('📝 Rate driver screen - driver info:', {
+      paramDriverId: paramDriverIdStr,
+      tripDataDriverId: tripData?.driverId,
+      tripDataDriverInfoId: tripData?.driverInfo?.id,
+      finalDriverId: driver.id,
+    });
+  }, [tripData, paramDriverIdStr]);
 
   const actualTripId = (typeof tripId === 'string' ? tripId : currentTrip?.id) || '';
 
@@ -136,8 +147,26 @@ export default function RateDriverScreen() {
       return;
     }
 
-    if (!actualTripId || !driver.id || !user?.id) {
-      Alert.alert('Error', 'Missing trip or driver information');
+    // Debug logging
+    console.log('📝 Rating submission debug:', {
+      actualTripId,
+      driverId: driver.id,
+      userId: user?.id,
+      rating,
+    });
+
+    if (!actualTripId) {
+      Alert.alert('Error', 'Missing trip ID. Please try again from Activity tab.');
+      return;
+    }
+
+    if (!driver.id) {
+      Alert.alert('Error', 'Missing driver ID. Please try again from Activity tab.');
+      return;
+    }
+
+    if (!user?.id) {
+      Alert.alert('Error', 'User not logged in. Please log in and try again.');
       return;
     }
 
@@ -161,9 +190,12 @@ export default function RateDriverScreen() {
           onPress: () => router.push('/(tabs)'),
         },
       ]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting rating:', error);
-      Alert.alert('Error', 'Failed to submit rating. Please try again.');
+      Alert.alert(
+        'Error',
+        `Failed to submit rating: ${error?.message || 'Unknown error'}. Please try again.`
+      );
     } finally {
       setLoading(false);
     }

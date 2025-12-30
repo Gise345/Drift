@@ -44,8 +44,10 @@ const SPEED_SMOOTHING_WINDOW = 5; // Number of readings to average
 const SPEED_UPDATE_INTERVAL = 1000; // 1 second for smoother updates
 
 // Cache for speed limits to reduce API calls
+// Best practice: Aggressive caching since speed limits rarely change
 const speedLimitCache: Map<string, { speedLimit: number; timestamp: number }> = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes - speed limits don't change often
+const MAX_CACHE_ENTRIES = 100; // Limit cache size to prevent memory issues
 
 /**
  * Fetch with timeout to prevent slow network hanging
@@ -169,7 +171,12 @@ export async function getSpeedLimit(
       const speedLimitKmh = data.speedLimits[0].speedLimit;
       const speedLimitMph = Math.round(kmhToMph(speedLimitKmh));
 
-      // Cache the result
+      // Cache the result with size management
+      if (speedLimitCache.size >= MAX_CACHE_ENTRIES) {
+        // Remove oldest entry
+        const oldestKey = speedLimitCache.keys().next().value;
+        if (oldestKey) speedLimitCache.delete(oldestKey);
+      }
       speedLimitCache.set(cacheKey, {
         speedLimit: speedLimitMph,
         timestamp: Date.now(),

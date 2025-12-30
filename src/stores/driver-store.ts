@@ -519,6 +519,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       const { updateDriverOnlineStatus } = require('../services/driver-profile.service');
       await updateDriverOnlineStatus(driverId, true);
 
+      // Register push token for background notifications
+      const { registerPushToken } = require('../services/driver-notification.service');
+      await registerPushToken(driverId);
+
       set({ isOnline: true });
       get().startListeningForRequests();
       console.log('🟢 Driver went online - listening for ride requests');
@@ -1014,9 +1018,12 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         isOnline: wasOnline, // Restore online status from Firebase
       });
 
-      // If driver was online, restart listening for requests once location is available
+      // If driver was online, register push token and restart listening for requests
       if (wasOnline) {
-        console.log('🔄 Driver was online - will start listening once location is available');
+        console.log('🔄 Driver was online - registering push token and will start listening once location is available');
+        // Register push token for background notifications
+        const { registerPushToken } = require('../services/driver-notification.service');
+        await registerPushToken(userId);
         // The startListeningForRequests will be called from the driver home screen
         // once the location is updated
       }
