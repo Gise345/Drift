@@ -21,7 +21,6 @@ import { ChatModal } from '@/components/messaging/ChatModal';
 import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
-import { SimpleCarMarker } from '@/components/map/CarMarker';
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -410,11 +409,19 @@ export default function DriverArrivingScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <SimpleCarMarker
-              heading={currentTrip.driverLocation.heading || 0}
-              color="#5d1289"
-              size="medium"
-            />
+            <View style={{
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: '#4285F4',
+              borderWidth: 3,
+              borderColor: 'white',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.25,
+              shadowRadius: 4,
+              elevation: 5,
+            }} />
           </Marker>
         )}
 

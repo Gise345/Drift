@@ -17,7 +17,7 @@ interface CarMarkerProps {
 
 export function CarMarker({
   heading = 0,
-  color = '#5d1289',
+  color = '#4285F4',
   size = 'medium'
 }: CarMarkerProps) {
   const sizeConfig = {
@@ -115,7 +115,7 @@ export function CarMarker({
  */
 export function SimpleCarMarker({
   heading = 0,
-  color = '#5d1289',
+  color = '#4285F4',
   size = 'medium'
 }: CarMarkerProps) {
   const sizeConfig = {

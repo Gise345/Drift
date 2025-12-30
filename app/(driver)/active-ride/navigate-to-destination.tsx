@@ -34,7 +34,6 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
-import { SimpleCarMarker } from '@/components/map/CarMarker';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 import { useRouteDeviation } from '@/src/hooks/useRouteDeviation';
@@ -801,11 +800,19 @@ export default function NavigateToDestination() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <SimpleCarMarker
-              heading={currentHeading}
-              color={Colors.primary}
-              size="large"
-            />
+            <View style={{
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              backgroundColor: '#4285F4',
+              borderWidth: 3,
+              borderColor: 'white',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.25,
+              shadowRadius: 4,
+              elevation: 5,
+            }} />
           </Marker>
         )}
 
