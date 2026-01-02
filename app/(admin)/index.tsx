@@ -20,7 +20,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { getApp } from '@react-native-firebase/app';
-import { getFirestore, collection, query, where, getDocs } from '@react-native-firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -85,7 +85,7 @@ export default function AdminDashboard() {
           console.log('⚠️ Role string query also failed, fetching all users...');
           // Last resort: get all users and count client-side
           const allUsersSnapshot = await getDocs(usersRef);
-          allUsersSnapshot.forEach((doc) => {
+          allUsersSnapshot.forEach((doc: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
             const data = doc.data();
             if (
               (Array.isArray(data.roles) && data.roles.includes('RIDER')) ||
@@ -167,13 +167,13 @@ export default function AdminDashboard() {
       color: Colors.success,
       badge: stats.activeDrivers > 0 ? String(stats.activeDrivers) : undefined,
     },
-    // {
-    //   icon: 'location-outline',
-    //   title: 'Live Map',
-    //   subtitle: 'Track active drivers in real-time',
-    //   route: '/(admin)/map',
-    //   color: Colors.info,
-    // },
+    {
+      icon: 'location-outline',
+      title: 'Live Map',
+      subtitle: 'Track active drivers in real-time',
+      route: '/(admin)/map',
+      color: Colors.info,
+    },
     {
       icon: 'receipt-outline',
       title: 'All Trips',
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     alignItems: 'center',
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   statValue: {
     fontSize: Typography.fontSize['2xl'],
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.md,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   sectionIcon: {
     width: 56,

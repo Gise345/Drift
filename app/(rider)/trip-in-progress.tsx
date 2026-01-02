@@ -875,7 +875,7 @@ export default function TripInProgressScreen() {
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={mapRegion}
-        showsUserLocation={true}
+        showsUserLocation={false}
         onPanDrag={() => {
           // Disable auto-follow when user manually pans the map
           if (isAutoFollowEnabled) {
@@ -893,12 +893,10 @@ export default function TripInProgressScreen() {
             title={driver.name}
             description={`${driver.vehicle.make} ${driver.vehicle.model}`}
             anchor={{ x: 0.5, y: 0.5 }}
-            flat={true}
+            flat
+            rotation={currentTrip.driverLocation.heading || 0}
           >
-            <CarMarker
-              heading={currentTrip.driverLocation.heading || 0}
-              size="medium"
-            />
+            <CarMarker size="medium" />
           </Marker>
         )}
 
@@ -1339,22 +1337,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  // Driver Marker
-  driverMarker: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#5d1289',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
-  },
   // Center on Driver Button
   centerButton: {
     position: 'absolute',

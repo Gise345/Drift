@@ -809,12 +809,10 @@ export default function NavigateToDestination() {
           <Marker
             coordinate={currentLocation}
             anchor={{ x: 0.5, y: 0.5 }}
-            flat={true}
+            flat
+            rotation={currentHeading}
           >
-            <CarMarker
-              heading={currentHeading}
-              size="medium"
-            />
+            <CarMarker size="medium" />
           </Marker>
         )}
 

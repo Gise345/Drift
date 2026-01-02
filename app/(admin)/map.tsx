@@ -286,7 +286,7 @@ export default function LiveMapScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+            <Ionicons name="arrow-back" size={24} color={Colors.gray[900]} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Live Map</Text>
           <View style={{ width: 40 }} />
@@ -304,7 +304,7 @@ export default function LiveMapScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+          <Ionicons name="arrow-back" size={24} color={Colors.gray[900]} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Map</Text>
         <View style={styles.headerRight}>
@@ -398,7 +398,7 @@ export default function LiveMapScreen() {
             <View style={styles.infoRow}>
               <Ionicons name="car-outline" size={18} color={Colors.gray[600]} />
               <Text style={styles.infoText}>
-                {selectedDriver.vehicle.year || ''} {selectedDriver.vehicle.make}{' '}
+                {selectedDriver.vehicle.make}{' '}
                 {selectedDriver.vehicle.model}
               </Text>
             </View>
@@ -461,7 +461,7 @@ export default function LiveMapScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.gray[50],
   },
   header: {
     flexDirection: 'row',
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Typography.fontSize.xl,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.gray[900],
   },
   headerRight: {
     flexDirection: 'row',
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
-    ...Shadows.small,
+    ...Shadows.sm,
   },
   legendItem: {
     flexDirection: 'row',
@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    ...Shadows.large,
+    ...Shadows.lg,
   },
   infoPanelHeader: {
     flexDirection: 'row',
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   driverName: {
     fontSize: Typography.fontSize.lg,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.gray[900],
   },
   driverStatus: {
     fontSize: Typography.fontSize.sm,
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
   tripLabel: {
     fontSize: Typography.fontSize.sm,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.gray[900],
     marginBottom: Spacing.sm,
   },
   routeContainer: {
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
   },
   routeText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.text,
+    color: Colors.gray[900],
     flex: 1,
   },
   updateText: {
@@ -655,7 +655,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: Typography.fontSize.lg,
     fontFamily: Typography.fontFamily.bold,
-    color: Colors.text,
+    color: Colors.gray[900],
     marginTop: Spacing.md,
     marginBottom: Spacing.xs,
   },

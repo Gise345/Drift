@@ -1,21 +1,23 @@
 /**
  * CarMarker Component
  *
- * A modern 3D-style car marker for maps
- * Inspired by Google Maps navigation car design
+ * A modern image-based car marker for maps
+ * Uses a top-down car PNG for professional appearance like Uber/Google Maps
  *
  * Features:
- * - Modern 3D purple car marker
- * - Blue dot fallback if car fails to render
- * - Error boundary protection
+ * - Top-down car image (not a side-view icon)
+ * - Outer glow effect for visibility
+ * - Blue dot fallback option
+ * - Optimized for map marker rendering
  */
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, StyleSheet, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+
+// Import the car marker image
+const CarMarkerImage = require('@/assets/car-marker.png');
 
 interface CarMarkerProps {
-  heading?: number;
   color?: string;
   size?: 'small' | 'medium' | 'large';
   useFallback?: boolean; // Force blue dot fallback
@@ -23,7 +25,7 @@ interface CarMarkerProps {
 
 /**
  * Blue Dot Fallback Marker
- * Used when CarMarker fails to render or as explicit fallback
+ * Used as explicit fallback when requested
  */
 export function BlueDotMarker({ size = 'medium' }: { size?: 'small' | 'medium' | 'large' }) {
   const sizeConfig = {
@@ -35,7 +37,7 @@ export function BlueDotMarker({ size = 'medium' }: { size?: 'small' | 'medium' |
   const config = sizeConfig[size];
 
   return (
-    <View style={styles.blueDotWrapper}>
+    <View style={[styles.blueDotWrapper, { width: config.outer, height: config.outer }]}>
       {/* Outer pulse ring */}
       <View style={[
         styles.blueDotOuter,
@@ -58,37 +60,38 @@ export function BlueDotMarker({ size = 'medium' }: { size?: 'small' | 'medium' |
   );
 }
 
+/**
+ * Modern Image-Based Car Marker
+ * Top-down car view for professional map appearance
+ */
 export function CarMarker({
-  heading = 0,
   color = '#5D1289',
   size = 'medium',
   useFallback = false
 }: CarMarkerProps) {
-  const [hasError, setHasError] = useState(false);
-
-  // If useFallback is true or there was an error, show blue dot
-  if (useFallback || hasError) {
+  // If useFallback is true, show blue dot
+  if (useFallback) {
     return <BlueDotMarker size={size} />;
   }
 
   const sizeConfig = {
-    small: { container: 36, car: 20, pulse: 44 },
-    medium: { container: 48, car: 28, pulse: 56 },
-    large: { container: 60, car: 36, pulse: 72 },
+    small: { wrapper: 48, image: 36 },
+    medium: { wrapper: 64, image: 48 },
+    large: { wrapper: 80, image: 60 },
   };
 
   const config = sizeConfig[size];
 
   return (
-    <View style={[styles.wrapper, { transform: [{ rotate: `${heading}deg` }] }]}>
-      {/* Outer glow/pulse effect */}
+    <View style={[styles.wrapper, { width: config.wrapper, height: config.wrapper }]}>
+      {/* Outer glow for visibility on map */}
       <View style={[
         styles.outerGlow,
         {
-          width: config.pulse,
-          height: config.pulse,
-          borderRadius: config.pulse / 2,
-          backgroundColor: `${color}20`,
+          width: config.wrapper,
+          height: config.wrapper,
+          borderRadius: config.wrapper / 2,
+          backgroundColor: `${color}40`,
         }
       ]} />
 
@@ -96,240 +99,75 @@ export function CarMarker({
       <View style={[
         styles.shadow,
         {
-          width: config.container * 0.8,
-          height: config.container * 0.4,
-          borderRadius: config.container * 0.2,
+          width: config.image * 0.6,
+          height: config.image * 0.2,
+          borderRadius: config.image * 0.1,
         }
       ]} />
 
-      {/* Main car body */}
-      <View style={[
-        styles.carBody,
-        {
-          width: config.container,
-          height: config.container,
-          borderRadius: config.container / 2,
-          backgroundColor: color,
-        }
-      ]}>
-        {/* 3D highlight effect */}
-        <View style={[
-          styles.highlight,
+      {/* Car image */}
+      <Image
+        source={CarMarkerImage}
+        style={[
+          styles.carImage,
           {
-            width: config.container - 8,
-            height: (config.container - 8) / 2,
-            borderTopLeftRadius: (config.container - 8) / 2,
-            borderTopRightRadius: (config.container - 8) / 2,
+            width: config.image,
+            height: config.image,
           }
-        ]} />
-
-        {/* Car icon with styling */}
-        <View style={styles.iconContainer}>
-          <Ionicons
-            name="car-sport"
-            size={config.car}
-            color="white"
-          />
-        </View>
-
-        {/* Direction arrow at top */}
-        <View style={styles.directionArrow}>
-          <View style={[
-            styles.arrowTriangle,
-            {
-              borderLeftWidth: 6,
-              borderRightWidth: 6,
-              borderBottomWidth: 10,
-              borderBottomColor: 'white',
-            }
-          ]} />
-        </View>
-      </View>
-
-      {/* Inner ring for depth */}
-      <View style={[
-        styles.innerRing,
-        {
-          width: config.container + 6,
-          height: config.container + 6,
-          borderRadius: (config.container + 6) / 2,
-          borderColor: 'white',
-        }
-      ]} />
-    </View>
-  );
-}
-
-/**
- * Simple Car Marker - less complex, better performance
- * Use this for multiple markers on map
- */
-export function SimpleCarMarker({
-  heading = 0,
-  color = '#5D1289',
-  size = 'medium'
-}: CarMarkerProps) {
-  const sizeConfig = {
-    small: { container: 40, car: 22 },
-    medium: { container: 52, car: 28 },
-    large: { container: 64, car: 36 },
-  };
-
-  const config = sizeConfig[size];
-
-  return (
-    <View style={[
-      styles.simpleContainer,
-      {
-        width: config.container,
-        height: config.container,
-        borderRadius: config.container / 2,
-        backgroundColor: color,
-        transform: [{ rotate: `${heading}deg` }],
-      }
-    ]}>
-      {/* White border for 3D effect */}
-      <View style={[
-        styles.simpleBorder,
-        {
-          width: config.container,
-          height: config.container,
-          borderRadius: config.container / 2,
-        }
-      ]} />
-
-      {/* Gradient overlay for 3D look */}
-      <View style={[
-        styles.gradientTop,
-        {
-          width: config.container - 6,
-          height: (config.container - 6) / 2,
-          borderTopLeftRadius: (config.container - 6) / 2,
-          borderTopRightRadius: (config.container - 6) / 2,
-        }
-      ]} />
-
-      {/* Car icon */}
-      <Ionicons
-        name="car-sport"
-        size={config.car}
-        color="white"
+        ]}
+        resizeMode="contain"
       />
-
-      {/* Direction indicator */}
-      <View style={styles.simpleArrow}>
-        <View style={styles.arrowDot} />
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Main wrapper
   wrapper: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Outer glow effect
   outerGlow: {
     position: 'absolute',
   },
+
+  // Shadow for 3D depth
   shadow: {
     position: 'absolute',
-    bottom: -4,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    transform: [{ scaleX: 1.2 }],
-  },
-  carBody: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 10,
-    overflow: 'hidden',
-  },
-  highlight: {
-    position: 'absolute',
-    top: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  iconContainer: {
-    zIndex: 1,
-  },
-  directionArrow: {
-    position: 'absolute',
-    top: -2,
-    alignItems: 'center',
-  },
-  arrowTriangle: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
-  innerRing: {
-    position: 'absolute',
-    borderWidth: 2,
-    opacity: 0.5,
+    bottom: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
 
-  // Simple marker styles
-  simpleContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: 'white',
+  // Car image
+  carImage: {
+    // Shadow for the car itself
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 10,
-    overflow: 'hidden',
-  },
-  simpleBorder: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  gradientTop: {
-    position: 'absolute',
-    top: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  simpleArrow: {
-    position: 'absolute',
-    top: 4,
-  },
-  arrowDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'white',
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
   },
 
-  // Blue dot fallback styles (like Google Maps user location)
+  // Blue dot fallback styles
   blueDotWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   blueDotOuter: {
     position: 'absolute',
-    backgroundColor: 'rgba(66, 133, 244, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(66, 133, 244, 0.4)',
+    backgroundColor: 'rgba(66, 133, 244, 0.25)',
+    borderWidth: 2,
+    borderColor: 'rgba(66, 133, 244, 0.5)',
   },
   blueDotInner: {
     backgroundColor: '#4285F4',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'white',
     shadowColor: '#4285F4',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.5,
     shadowRadius: 4,
-    elevation: 6,
+    elevation: 8,
   },
 });

@@ -577,7 +577,7 @@ export default function NavigateToPickup() {
             flat
             rotation={currentHeading}
           >
-            <CarMarker heading={currentHeading} size="medium" />
+            <CarMarker size="medium" />
           </Marker>
         )}
 

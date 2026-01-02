@@ -429,12 +429,10 @@ export default function TrackTripScreen() {
               }}
               title="Driver"
               anchor={{ x: 0.5, y: 0.5 }}
-              flat={true}
+              flat
+              rotation={trip.driverLocation.heading || 0}
             >
-              <CarMarker
-                heading={trip.driverLocation.heading || 0}
-                size="medium"
-              />
+              <CarMarker size="medium" />
             </Marker>
           )}
 
@@ -647,20 +645,6 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
-  },
-  driverMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#5d1289',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
     elevation: 5,
   },
   destinationMarker: {

@@ -185,12 +185,10 @@ export default function PickupPointScreen() {
             }}
             title={driver.name}
             anchor={{ x: 0.5, y: 0.5 }}
-            flat={true}
+            flat
+            rotation={currentTrip.driverLocation?.heading || 0}
           >
-            <CarMarker
-              heading={currentTrip.driverLocation?.heading || 0}
-              size="medium"
-            />
+            <CarMarker size="medium" />
           </Marker>
         </MapView>
 
@@ -334,16 +332,6 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  driverMarker: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#000',
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
   },
   waitingBanner: {
     position: 'absolute',

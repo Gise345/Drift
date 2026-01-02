@@ -57,8 +57,8 @@ export const onRideRequested = onDocumentCreated(
     const { tripId } = event.params;
 
     // Only process if status is REQUESTED and payment is ready
-    // Accept AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
-    const validPaymentStatuses = ['AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    // Accept VERIFIED (new flow), AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
+    const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
     const hasValidPayment = validPaymentStatuses.includes(tripData.paymentStatus);
 
     if (tripData.status !== 'REQUESTED' || !hasValidPayment) {
@@ -229,8 +229,8 @@ export const onRideResent = onDocumentUpdated(
     if (!before || !after) return null;
 
     // Check if this is a resend (declinedBy cleared and status still REQUESTED)
-    // Accept AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
-    const validPaymentStatuses = ['AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    // Accept VERIFIED (new flow), AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
+    const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
     const hasValidPayment = validPaymentStatuses.includes(after.paymentStatus);
 
     const wasResent =

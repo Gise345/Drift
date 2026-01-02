@@ -550,12 +550,11 @@ export const useTripStore = create<TripStore>((set, get) => ({
   },
   
   updateDriverLocation: (() => {
-    // Throttle Firebase updates to reduce network usage on slow connections
-    // Best practice: Balance between real-time feel and network efficiency
-    // - 1.5s provides smooth rider experience while reducing bandwidth
+    // Throttle Firebase updates for balance between real-time feel and network efficiency
+    // - 500ms provides smooth real-time tracking without excessive bandwidth
     // - Firebase SDK handles offline persistence automatically
     let lastFirebaseUpdate = 0;
-    const FIREBASE_UPDATE_INTERVAL = 1500; // Update Firebase every 1.5 seconds
+    const FIREBASE_UPDATE_INTERVAL = 500; // Update Firebase every 500ms for real-time tracking
     let pendingLocation: TripLocation | null = null;
     let pendingTripId: string | null = null;
     let updateTimeout: NodeJS.Timeout | null = null;
