@@ -24,6 +24,7 @@ import {
   RegistrationData,
   UserRole,
 } from '@/src/services/firebase-auth-service';
+import { signInWithApple, isAppleAuthAvailable } from '@/src/services/apple-auth';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -37,6 +38,8 @@ export default function SignUpScreen() {
   const [selectedGender, setSelectedGender] = useState<'male' | 'female' | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Reset loading states when component mounts or re-mounts
@@ -44,6 +47,9 @@ export default function SignUpScreen() {
   useEffect(() => {
     setLoading(false);
     setGoogleLoading(false);
+    setAppleLoading(false);
+    // Check if Apple Sign-In is available
+    isAppleAuthAvailable().then(setAppleAuthAvailable);
   }, []);
 
   const validateEmail = (value: string) =>
@@ -185,6 +191,65 @@ export default function SignUpScreen() {
     } finally {
       // ALWAYS reset loading state, no matter what happens
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    if (!acceptedTerms) {
+      Alert.alert(
+        'Error',
+        'Please accept the Terms of Service and Privacy Policy to continue'
+      );
+      return;
+    }
+
+    if (!selectedGender) {
+      Alert.alert('Error', 'Please select your gender to continue');
+      return;
+    }
+
+    // Prevent double-tap
+    if (appleLoading || loading || googleLoading) {
+      return;
+    }
+
+    setAppleLoading(true);
+    try {
+      const result = await signInWithApple(selectedRole, selectedGender);
+
+      if (result.success && result.user) {
+        setUser(result.user);
+
+        Alert.alert('Welcome!', 'Successfully signed in with Apple', [
+          {
+            text: 'OK',
+            onPress: () => {
+              if (selectedRole === 'DRIVER') {
+                router.replace('/(driver)/registration/legal-consent');
+              } else {
+                router.replace('/(tabs)');
+              }
+            },
+          },
+        ]);
+      } else {
+        // Handle cancellation silently
+        const errorMessage = result.error || '';
+        if (errorMessage.toLowerCase().includes('cancel')) {
+          console.log('Apple sign-in cancelled by user');
+        } else {
+          Alert.alert('Apple Sign-In Failed', errorMessage || 'Unknown error occurred');
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || 'An error occurred';
+      if (errorMessage.toLowerCase().includes('cancel')) {
+        console.log('Apple sign-in cancelled by user');
+      } else {
+        Alert.alert('Apple Sign-In Failed', errorMessage);
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -480,7 +545,7 @@ export default function SignUpScreen() {
               <TouchableOpacity
                 style={styles.googleButton}
                 onPress={handleGoogleSignIn}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || appleLoading}
                 activeOpacity={0.8}
               >
                 {googleLoading ? (
@@ -492,6 +557,25 @@ export default function SignUpScreen() {
                   </>
                 )}
               </TouchableOpacity>
+
+              {/* Apple Sign-In - Only shown on iOS when available */}
+              {appleAuthAvailable && (
+                <TouchableOpacity
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                  disabled={loading || googleLoading || appleLoading}
+                  activeOpacity={0.8}
+                >
+                  {appleLoading ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <>
+                      <Text style={styles.appleIcon}></Text>
+                      <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Footer */}
@@ -712,7 +796,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.24)',
     borderRadius: 12,
     paddingVertical: Spacing.md,
-    marginBottom: Spacing.xl,
     gap: Spacing.sm,
   },
   googleIcon: {
@@ -723,6 +806,26 @@ const styles = StyleSheet.create({
   googleButtonText: {
     fontSize: Typography.fontSize.base,
     color: Colors.gray[50],
+    fontWeight: '600',
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  appleIcon: {
+    fontSize: 20,
+    color: Colors.black,
+  },
+  appleButtonText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.black,
     fontWeight: '600',
   },
   signInContainer: {

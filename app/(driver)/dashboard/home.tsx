@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +16,7 @@ import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useDriverStore, ActiveRide } from '@/src/stores/driver-store';
-import { getActiveDriverTrip } from '@/src/services/ride-request.service';
+import { getActiveDriverTrip, subscribeToTrip } from '@/src/services/ride-request.service';
 import { useBackgroundLocationPermission } from '@/src/hooks/useBackgroundLocationPermission';
 import { BackgroundLocationDisclosureModal } from '@/components/location/BackgroundLocationDisclosureModal';
 
@@ -35,6 +37,8 @@ export default function DriverHome() {
   const [onlineTime, setOnlineTime] = useState(0);
   const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
   const [hasCheckedActiveTrip, setHasCheckedActiveTrip] = useState(false);
+  const tripUnsubscribe = useRef<(() => void) | null>(null);
+  const appState = useRef(AppState.currentState);
 
   // Background location permission with prominent disclosure modal
   const {
@@ -55,23 +59,23 @@ export default function DriverHome() {
     },
   });
 
-  // Check for active trip on mount (persists across app restart/logout)
-  useEffect(() => {
-    if (!hasCheckedActiveTrip && driver?.id) {
-      checkForActiveTrip();
-    }
-  }, [driver?.id, hasCheckedActiveTrip]);
-
   /**
    * Check if driver has an active trip and restore it
+   * Can be called multiple times (e.g., on mount, after network reconnect, app foreground)
    */
-  const checkForActiveTrip = async () => {
+  const checkForActiveTrip = useCallback(async (forceCheck: boolean = false) => {
     if (!driver?.id) return;
+
+    // Skip if already checked unless force check is requested (network reconnect, app foreground)
+    if (hasCheckedActiveTrip && !forceCheck) return;
+
+    console.log('🔍 Checking for active trip...', { forceCheck, driverId: driver.id });
 
     try {
       const activeTrip = await getActiveDriverTrip(driver.id);
 
       if (activeTrip) {
+        console.log('✅ Found active trip:', activeTrip.id, 'Status:', activeTrip.status);
 
         // Get rider name from the trip data (stored when trip was created)
         const riderName = (activeTrip as any).riderName || 'Rider';
@@ -107,14 +111,130 @@ export default function DriverHome() {
         };
 
         setActiveRide(restoredRide);
+
+        // Subscribe to real-time updates for this trip
+        setupTripSubscription(activeTrip.id);
+      } else {
+        console.log('ℹ️ No active trip found for driver');
+        // Clear any stale active ride if no trip found
+        if (forceCheck && activeRide) {
+          console.log('🧹 Clearing stale active ride after re-check');
+          setActiveRide(null);
+        }
       }
 
       setHasCheckedActiveTrip(true);
     } catch (error) {
-      console.error('Error checking for active trip:', error);
-      setHasCheckedActiveTrip(true);
+      console.error('❌ Error checking for active trip:', error);
+      // On network error during force check, don't set hasCheckedActiveTrip
+      // so it can be retried
+      if (!forceCheck) {
+        setHasCheckedActiveTrip(true);
+      }
     }
-  };
+  }, [driver?.id, hasCheckedActiveTrip, activeRide, setActiveRide]);
+
+  /**
+   * Setup real-time subscription to active trip for live updates
+   */
+  const setupTripSubscription = useCallback((tripId: string) => {
+    // Clean up existing subscription
+    if (tripUnsubscribe.current) {
+      tripUnsubscribe.current();
+    }
+
+    console.log('📡 Setting up trip subscription for:', tripId);
+
+    tripUnsubscribe.current = subscribeToTrip(tripId, (tripData) => {
+      if (!tripData) {
+        console.log('⚠️ Trip data is null - trip may have been deleted');
+        setActiveRide(null);
+        return;
+      }
+
+      // Check if trip was cancelled or completed by rider
+      if (['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(tripData.status)) {
+        console.log('🚫 Trip ended:', tripData.status);
+        setActiveRide(null);
+        if (tripUnsubscribe.current) {
+          tripUnsubscribe.current();
+          tripUnsubscribe.current = null;
+        }
+        return;
+      }
+
+      // Update active ride with latest data from Firebase
+      const riderName = (tripData as any).riderName || 'Rider';
+      const riderRating = (tripData as any).riderRating || 4.5;
+      const riderPhoto = (tripData as any).riderPhoto;
+
+      const updatedRide: ActiveRide = {
+        id: tripData.id,
+        riderId: tripData.riderId,
+        riderName: riderName,
+        riderRating: riderRating,
+        riderPhoto: riderPhoto,
+        pickup: {
+          lat: tripData.pickup.coordinates.latitude,
+          lng: tripData.pickup.coordinates.longitude,
+          address: tripData.pickup.address,
+        },
+        destination: {
+          lat: tripData.destination.coordinates.latitude,
+          lng: tripData.destination.coordinates.longitude,
+          address: tripData.destination.address,
+        },
+        distance: tripData.distance || 0,
+        estimatedDuration: tripData.duration || 0,
+        estimatedEarnings: tripData.estimatedCost || 0,
+        requestedAt: tripData.requestedAt || new Date(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        status: mapTripStatusToRideStatus(tripData.status),
+        acceptedAt: tripData.acceptedAt || new Date(),
+        arrivedAt: tripData.status === 'DRIVER_ARRIVED' ? new Date() : undefined,
+        startedAt: tripData.startedAt,
+      };
+
+      setActiveRide(updatedRide);
+    });
+  }, [setActiveRide]);
+
+  // Check for active trip on mount
+  useEffect(() => {
+    if (!hasCheckedActiveTrip && driver?.id) {
+      checkForActiveTrip(false);
+    }
+  }, [driver?.id, hasCheckedActiveTrip, checkForActiveTrip]);
+
+  // App state listener - re-check when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      // App came to foreground from background
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('📱 App came to foreground - re-checking active trip...');
+        checkForActiveTrip(true);
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, [checkForActiveTrip]);
+
+  // Cleanup trip subscription on unmount
+  useEffect(() => {
+    return () => {
+      if (tripUnsubscribe.current) {
+        tripUnsubscribe.current();
+      }
+    };
+  }, []);
+
+  // Setup subscription when activeRide changes (e.g., after accepting a ride)
+  useEffect(() => {
+    if (activeRide?.id && !tripUnsubscribe.current) {
+      setupTripSubscription(activeRide.id);
+    }
+  }, [activeRide?.id, setupTripSubscription]);
 
   /**
    * Map trip status to driver ride status

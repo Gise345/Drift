@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    <!-- Primary Meta Tags -->
+    <title>Support - Drift | Help Center & Contact Us</title>
+    <meta name="title" content="Support - Drift | Help Center & Contact Us">
+    <meta name="description" content="Need help with Drift? Contact our support team, browse FAQs, or report an issue. We're here 24/7 to help you get around the Cayman Islands.">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://drift-global.com/support">
+    <meta property="og:title" content="Support - Drift | Help Center">
+    <meta property="og:description" content="Need help with Drift? Contact our support team or browse FAQs.">
+    <meta property="og:image" content="https://drift-global.com/images/drift-og-image.png">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://drift-global.com/support">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="images/drift-logo.png">
+    <link rel="apple-touch-icon" href="images/drift-logo.png">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        .support-hero {
+            background: linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #1a0a2e 100%);
+            padding: 120px 20px 80px;
+            text-align: center;
+            color: white;
+        }
+
+        .support-hero h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            margin-bottom: 1rem;
+        }
+
+        .support-hero p {
+            font-size: 1.25rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .support-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+
+        .support-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-bottom: 60px;
+        }
+
+        .support-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .support-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .support-card-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+
+        .support-card-icon svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
+        }
+
+        .support-card h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1a0a2e;
+            margin-bottom: 10px;
+        }
+
+        .support-card p {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .support-card a {
+            color: #8B5CF6;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .support-card a:hover {
+            text-decoration: underline;
+        }
+
+        .contact-section {
+            background: #f8f9fa;
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 60px;
+        }
+
+        .contact-section h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1a0a2e;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .contact-methods {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .contact-method {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+        }
+
+        .contact-method-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .contact-method-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
+
+        .contact-method-info h4 {
+            font-weight: 700;
+            color: #1a0a2e;
+            margin-bottom: 4px;
+        }
+
+        .contact-method-info a,
+        .contact-method-info p {
+            color: #666;
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .contact-method-info a:hover {
+            color: #8B5CF6;
+        }
+
+        .faq-section h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #6D28D9;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .faq-list {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .faq-item {
+            border-bottom: 1px solid #eee;
+            padding: 20px 0;
+        }
+
+        .faq-item h4 {
+            font-weight: 700;
+            color: #6D28D9;
+            margin-bottom: 10px;
+        }
+
+        .faq-item p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .back-home {
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .back-home a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #8B5CF6;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .back-home a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .support-hero h1 {
+                font-size: 2rem;
+            }
+
+            .support-hero {
+                padding: 100px 20px 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="/" class="logo">
+                <img src="images/drift-logo.png" alt="Drift Logo" class="logo-img">
+            </a>
+            <div class="nav-links" id="nav-links">
+                <a href="/#how-it-works">How It Works</a>
+                <a href="/#features">Features</a>
+                <a href="/blog/">Blog</a>
+                <a href="/#download">Download</a>
+                <a href="/#faq">FAQ</a>
+                <a href="/#drive" class="nav-cta">Become a Driver</a>
+            </div>
+            <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="support-hero">
+        <h1>How Can We Help?</h1>
+        <p>We're here to help you get the most out of Drift. Find answers to common questions or contact our support team.</p>
+    </section>
+
+    <!-- Support Content -->
+    <div class="support-content">
+        <!-- Support Options Grid -->
+        <div class="support-grid">
+            <div class="support-card">
+                <div class="support-card-icon">
+                    <svg viewBox="0 0 24 24"><path d="M21 6h-2V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2H3a1 1 0 0 0-1 1v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a1 1 0 0 0-1-1zM7 4h10v2H7V4zm13 14H4V8h16v10z"/></svg>
+                </div>
+                <h3>Ride Issues</h3>
+                <p>Problems with a recent ride? Report issues with drivers, fares, or routes.</p>
+                <a href="mailto:support@drift-global.com?subject=Ride Issue">Report an Issue</a>
+            </div>
+
+            <div class="support-card">
+                <div class="support-card-icon">
+                    <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+                </div>
+                <h3>Payment Help</h3>
+                <p>Questions about charges, refunds, or payment methods? We're here to help.</p>
+                <a href="mailto:support@drift-global.com?subject=Payment Question">Get Payment Help</a>
+            </div>
+
+            <div class="support-card">
+                <div class="support-card-icon">
+                    <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                </div>
+                <h3>Account Support</h3>
+                <p>Need help with your account, profile, or login issues?</p>
+                <a href="mailto:support@drift-global.com?subject=Account Help">Account Help</a>
+            </div>
+
+            <div class="support-card">
+                <div class="support-card-icon">
+                    <svg viewBox="0 0 24 24"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+                </div>
+                <h3>Driver Support</h3>
+                <p>Questions about driving with Drift, earnings, or registration?</p>
+                <a href="mailto:drivers@drift-global.com?subject=Driver Support">Driver Help</a>
+            </div>
+        </div>
+
+        <!-- Contact Section -->
+        <div class="contact-section">
+            <h2>Contact Us Directly</h2>
+            <div class="contact-methods">
+                <div class="contact-method">
+                    <div class="contact-method-icon">
+                        <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    </div>
+                    <div class="contact-method-info">
+                        <h4>Email Support</h4>
+                        <a href="mailto:support@drift-global.com">support@drift-global.com</a>
+                    </div>
+                </div>
+
+                <div class="contact-method">
+                    <div class="contact-method-icon">
+                        <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                    </div>
+                    <div class="contact-method-info">
+                        <h4>Response Time</h4>
+                        <p>Usually within 24 hours</p>
+                    </div>
+                </div>
+
+                <div class="contact-method">
+                    <div class="contact-method-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                    </div>
+                    <div class="contact-method-info">
+                        <h4>Location</h4>
+                        <p>George Town, Grand Cayman</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick FAQ Section -->
+        <div class="faq-section">
+            <h2>Quick Answers</h2>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <h4>How do I request a refund?</h4>
+                    <p>Email us at support@drift-global.com with your trip details and reason for the refund request. We'll review and respond within 24-48 hours.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>I left something in the car. What do I do?</h4>
+                    <p>Contact us immediately at support@drift-global.com with your trip details. We'll help connect you with the driver to retrieve your item.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>How do I update my payment method?</h4>
+                    <p>Open the Drift app, go to Settings, then Payment Methods. You can add, remove, or update your cards there.</p>
+                </div>
+
+                <div class="faq-item">
+                    <h4>How do I become a driver?</h4>
+                    <p>Download the Drift app, sign up as a driver, and complete the registration process including document verification. We'll review your application and get back to you.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Back to Home -->
+        <div class="back-home">
+            <a href="/">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                Back to Home
+            </a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <img src="images/drift-logo.png" alt="Drift Logo" class="footer-logo">
+                    <p>Cayman's carpool movement. Peer-to-peer carpooling. Not a taxi or rideshare service.</p>
+                    <div class="social-links">
+                        <a href="https://www.facebook.com/profile.php?id=61583498042333" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+                        <a href="https://www.instagram.com/drift.cayman" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 4H8a4 4 0 0 0-4 4v8a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4zm2 12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8z"/><circle cx="12" cy="12" r="3"/><circle cx="16.5" cy="7.5" r=".75"/></svg></a>
+                        <a href="https://www.tiktok.com/@drift_global" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/></svg></a>
+                    </div>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="/#how-it-works">How It Works</a></li>
+                        <li><a href="/#features">Features</a></li>
+                        <li><a href="/blog/">Blog</a></li>
+                        <li><a href="/#download">Download</a></li>
+                        <li><a href="/#drive">Become a Driver</a></li>
+                        <li><a href="/#faq">FAQ</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-links">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="mailto:support@drift-global.com">Contact Us</a></li>
+                        <li><a href="/privacy.html">Privacy Policy</a></li>
+                        <li><a href="/terms.html">Terms of Service</a></li>
+                        <li><a href="/blog/drift-safety-features.html">Safety</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; 2025 Invovibe Tech Ltd. All rights reserved. Proudly serving the Cayman Islands.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

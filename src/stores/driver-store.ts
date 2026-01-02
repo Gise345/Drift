@@ -238,7 +238,7 @@ interface DriverStore {
   updateDocument: (id: string, updates: Partial<Document>) => void;
   
   // Actions - Online Status
-  toggleOnline: () => void;
+  toggleOnline: () => Promise<void>;
   goOnline: () => void;
   goOffline: () => void;
   startListeningForRequests: () => void;
@@ -496,12 +496,12 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
   })),
   
   // Online status actions
-  toggleOnline: () => {
+  toggleOnline: async () => {
     const state = get();
     if (state.isOnline) {
-      get().goOffline();
+      await get().goOffline();
     } else {
-      get().goOnline();
+      await get().goOnline();
     }
   },
 

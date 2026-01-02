@@ -1484,7 +1484,7 @@ const SearchLocationScreen = () => {
 
         {/* Confirm Button */}
         {canConfirm && !addStopMode && (
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <TouchableOpacity
               style={styles.confirmButton}
               onPress={handleConfirm}

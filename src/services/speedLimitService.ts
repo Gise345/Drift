@@ -22,6 +22,7 @@ import {
   getFirestore,
   doc,
   updateDoc,
+  setDoc,
   arrayUnion,
   increment,
   serverTimestamp
@@ -155,7 +156,8 @@ export async function getSpeedLimit(
 
   try {
     // Use Google Roads API - Speed Limits endpoint (with timeout for slow networks)
-    const url = `https://roads.googleapis.com/v1/speedLimits?path=${latitude},${longitude}&key=${GOOGLE_ROADS_API_KEY}`;
+    // Request MPH directly to avoid conversion errors
+    const url = `https://roads.googleapis.com/v1/speedLimits?path=${latitude},${longitude}&units=MPH&key=${GOOGLE_ROADS_API_KEY}`;
 
     const response = await fetchWithTimeout(url, 5000); // 5 second timeout
     const data = await response.json();
@@ -167,9 +169,8 @@ export async function getSpeedLimit(
     }
 
     if (data.speedLimits && data.speedLimits.length > 0) {
-      // Speed limit is returned in km/h, convert to mph
-      const speedLimitKmh = data.speedLimits[0].speedLimit;
-      const speedLimitMph = Math.round(kmhToMph(speedLimitKmh));
+      // Speed limit is now returned in MPH directly (we requested units=MPH)
+      const speedLimitMph = Math.round(data.speedLimits[0].speedLimit);
 
       // Cache the result with size management
       if (speedLimitCache.size >= MAX_CACHE_ENTRIES) {
@@ -395,7 +396,7 @@ export function processSpeedViolation(
 }
 
 /**
- * Log speed violation to Firestore (trip + driver profile)
+ * Log speed violation to Firestore (trip + driver profile + speedViolations collection for admin)
  */
 export async function logSpeedViolation(
   tripId: string,
@@ -412,6 +413,9 @@ export async function logSpeedViolation(
 
     // Also record in driver's profile
     await recordViolationInDriverProfile(violation);
+
+    // Also write to speedViolations collection for admin dashboard queries
+    await writeViolationToAdminCollection(violation);
 
     console.log('📊 Speed violation logged:', violation.id);
     return { success: true };
@@ -457,6 +461,48 @@ export async function recordViolationInDriverProfile(
     console.log('📊 Violation recorded in driver profile:', violation.driverId);
   } catch (error) {
     console.error('Failed to record violation in driver profile:', error);
+  }
+}
+
+/**
+ * Write speed violation to admin speedViolations collection for dashboard queries
+ * This allows admin to view and take action on all violations
+ */
+async function writeViolationToAdminCollection(
+  violation: SpeedViolation
+): Promise<void> {
+  try {
+    const violationRef = doc(db, 'speedViolations', violation.id);
+
+    await setDoc(violationRef, {
+      id: violation.id,
+      tripId: violation.tripId,
+      driverId: violation.driverId,
+      startTime: violation.startTime,
+      endTime: violation.endTime,
+      duration: violation.duration,
+      maxSpeed: violation.maxSpeed,
+      speedLimit: violation.speedLimit,
+      excessSpeed: violation.maxExcessSpeed,
+      averageExcessSpeed: violation.averageExcessSpeed,
+      severity: violation.severity,
+      location: violation.location,
+      // Admin action fields
+      status: 'pending', // pending, ignored, enforced
+      adminAction: null,
+      adminActionAt: null,
+      adminActionBy: null,
+      adminNotes: null,
+      // Rider response tracking
+      riderAlerted: false,
+      riderResponse: null,
+      riderResponseAt: null,
+      createdAt: serverTimestamp(),
+    });
+
+    console.log('📊 Violation written to admin collection:', violation.id);
+  } catch (error) {
+    console.error('Failed to write violation to admin collection:', error);
   }
 }
 

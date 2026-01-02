@@ -21,6 +21,7 @@ import { ChatModal } from '@/components/messaging/ChatModal';
 import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { CarMarker } from '@/components/map/CarMarker';
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =
@@ -409,19 +410,10 @@ export default function DriverArrivingScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <View style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#4285F4',
-              borderWidth: 3,
-              borderColor: 'white',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 4,
-              elevation: 5,
-            }} />
+            <CarMarker
+              heading={currentTrip.driverLocation.heading || 0}
+              size="medium"
+            />
           </Marker>
         )}
 
@@ -661,7 +653,10 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   etaBanner: {
     position: 'absolute',
@@ -723,6 +718,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
+    paddingBottom: Platform.OS === 'android' ? 40 : 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,

@@ -16,6 +16,7 @@ import { useTripStore } from '@/src/stores/trip-store';
 import { useUserStore } from '@/src/stores/user-store';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ChatModal } from '@/components/messaging/ChatModal';
+import { CarMarker } from '@/components/map/CarMarker';
 
 export default function PickupPointScreen() {
   const router = useRouter();
@@ -186,19 +187,10 @@ export default function PickupPointScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <View style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#4285F4',
-              borderWidth: 3,
-              borderColor: 'white',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 4,
-              elevation: 5,
-            }} />
+            <CarMarker
+              heading={currentTrip.driverLocation?.heading || 0}
+              size="medium"
+            />
           </Marker>
         </MapView>
 

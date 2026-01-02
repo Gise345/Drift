@@ -34,6 +34,7 @@ import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { useSafetyStore } from '@/src/stores/safety-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { CarMarker } from '@/components/map/CarMarker';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
 import { RiderSpeedingAlertContainer } from '@/components/rider/RiderSpeedingAlert';
@@ -894,19 +895,10 @@ export default function TripInProgressScreen() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <View style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#4285F4',
-              borderWidth: 3,
-              borderColor: 'white',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 4,
-              elevation: 5,
-            }} />
+            <CarMarker
+              heading={currentTrip.driverLocation.heading || 0}
+              size="medium"
+            />
           </Marker>
         )}
 
@@ -1189,7 +1181,7 @@ export default function TripInProgressScreen() {
         onRequestClose={() => setShowStopRequestModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.stopRequestModal}>
+          <View style={[styles.stopRequestModal, { marginBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.stopRequestIconContainer}>
               <Ionicons name="location" size={40} color="#5d1289" />
             </View>

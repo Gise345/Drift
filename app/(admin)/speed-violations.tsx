@@ -27,6 +27,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, collection, doc, getDoc, getDocs, updateDoc, orderBy, limit, query, serverTimestamp, increment, FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { saveNotificationToInbox } from '@/src/services/driver-notification.service';
 
 // Initialize Firebase instances
 const app = getApp();
@@ -202,6 +203,103 @@ export default function SpeedViolationsScreen() {
     } finally {
       setProcessingAction(false);
     }
+  };
+
+  // Handle ignoring a violation (dismiss as GPS error or mistake)
+  const handleIgnoreViolation = async (violationId: string, driverId?: string) => {
+    Alert.alert(
+      'Ignore Violation',
+      'Mark this violation as a mistake/GPS error? It will not count against the driver.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Ignore',
+          onPress: async () => {
+            setProcessingAction(true);
+            try {
+              const violationRef = doc(db, 'speedViolations', violationId);
+              await updateDoc(violationRef, {
+                status: 'ignored',
+                adminAction: 'ignored',
+                adminActionAt: serverTimestamp(),
+                adminNotes: 'Marked as GPS error or mistake by admin',
+              });
+
+              // Send notification to driver's inbox
+              if (driverId) {
+                await saveNotificationToInbox(
+                  driverId,
+                  'Speed Violation Dismissed',
+                  'A speed violation alert has been reviewed and dismissed by our safety team. No action required on your part.',
+                  'system',
+                  { violationId, action: 'ignored' }
+                );
+              }
+
+              Alert.alert('Violation Ignored', 'This violation has been dismissed and the driver has been notified.');
+              loadDriverViolations();
+            } catch (error) {
+              console.error('Error ignoring violation:', error);
+              Alert.alert('Error', 'Failed to ignore violation');
+            } finally {
+              setProcessingAction(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle enforcing a violation (confirm it's a real violation)
+  const handleEnforceViolation = async (violationId: string, driverId: string) => {
+    Alert.alert(
+      'Enforce Violation',
+      'Confirm this is a valid speed violation? A strike will be added to the driver.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Enforce',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingAction(true);
+            try {
+              // Update the violation status
+              const violationRef = doc(db, 'speedViolations', violationId);
+              await updateDoc(violationRef, {
+                status: 'enforced',
+                adminAction: 'enforced',
+                adminActionAt: serverTimestamp(),
+                adminNotes: 'Confirmed as valid violation by admin',
+              });
+
+              // Add a strike to the driver's record
+              const driverRef = doc(db, 'drivers', driverId);
+              await updateDoc(driverRef, {
+                'safetyData.enforcedViolations': increment(1),
+                'safetyData.lastEnforcedViolationAt': serverTimestamp(),
+              });
+
+              // Send notification to driver's inbox
+              await saveNotificationToInbox(
+                driverId,
+                'Speed Violation Recorded',
+                'A speed violation has been reviewed and confirmed by our safety team. Please maintain safe driving speeds to avoid further action. Multiple violations may affect your account status.',
+                'system',
+                { violationId, action: 'enforced' }
+              );
+
+              Alert.alert('Violation Enforced', 'This violation has been confirmed and the driver has been notified.');
+              loadDriverViolations();
+            } catch (error) {
+              console.error('Error enforcing violation:', error);
+              Alert.alert('Error', 'Failed to enforce violation');
+            } finally {
+              setProcessingAction(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleBanDriver = async (driverId: string) => {
@@ -445,7 +543,7 @@ export default function SpeedViolationsScreen() {
                 </View>
 
                 {/* Recent Violations */}
-                <Text style={styles.recentTitle}>Recent Violations</Text>
+                <Text style={styles.recentTitle}>Recent Violations (tap to take action)</Text>
                 <View style={styles.violationsList}>
                   {selectedDriver.violations.slice(0, 5).map((v, index) => (
                     <View key={index} style={styles.violationItem}>
@@ -461,7 +559,22 @@ export default function SpeedViolationsScreen() {
                         </Text>
                         <Text style={styles.violationDate}>{formatDate(v.timestamp)}</Text>
                       </View>
-                      <Text style={styles.violationExcess}>+{v.maxExcessSpeed} mph</Text>
+                      <View style={styles.violationActions}>
+                        <TouchableOpacity
+                          style={styles.ignoreBtn}
+                          onPress={() => handleIgnoreViolation(v.id, selectedDriver.driverId)}
+                          disabled={processingAction}
+                        >
+                          <Ionicons name="close-circle-outline" size={20} color="#6B7280" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.enforceBtn}
+                          onPress={() => handleEnforceViolation(v.id, selectedDriver.driverId)}
+                          disabled={processingAction}
+                        >
+                          <Ionicons name="checkmark-circle" size={20} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -795,6 +908,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#EF4444',
+  },
+  violationActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  ignoreBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enforceBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionsTitle: {
     fontSize: 14,

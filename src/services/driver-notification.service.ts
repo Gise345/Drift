@@ -127,6 +127,71 @@ export async function initializeDriverNotifications(): Promise<void> {
 }
 
 /**
+ * Register for push notifications and save token to Firebase
+ * This must be called for drivers to receive ride request notifications when app is closed
+ * Uses Firebase Cloud Messaging (FCM) token for Cloud Functions compatibility
+ */
+export async function registerPushToken(driverId: string): Promise<string | null> {
+  try {
+    // Request permissions first
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.warn('Push notification permissions not granted');
+      return null;
+    }
+
+    // Get the FCM token using Firebase Messaging
+    // This is required for Cloud Functions to send notifications
+    const messaging = require('@react-native-firebase/messaging').default;
+
+    // Request permission for iOS
+    if (Platform.OS === 'ios') {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+      if (!enabled) {
+        console.warn('FCM permission not granted on iOS');
+        return null;
+      }
+    }
+
+    // Get FCM token
+    const fcmToken = await messaging().getToken();
+
+    if (!fcmToken) {
+      console.warn('Failed to get FCM token');
+      return null;
+    }
+
+    console.log('📱 Got FCM token:', fcmToken.substring(0, 20) + '...');
+
+    // Save to Firebase
+    const { saveDriverPushToken } = require('./driver-profile.service');
+    await saveDriverPushToken(driverId, fcmToken);
+
+    // Set up token refresh listener
+    messaging().onTokenRefresh(async (newToken: string) => {
+      console.log('📱 FCM token refreshed, saving new token...');
+      await saveDriverPushToken(driverId, newToken);
+    });
+
+    return fcmToken;
+  } catch (error) {
+    console.error('Failed to register push token:', error);
+    return null;
+  }
+}
+
+/**
  * Send a ride request notification to the driver
  */
 export async function sendRideRequestNotification(
@@ -425,6 +490,7 @@ export async function sendChatMessageNotification(
 
 export default {
   initializeDriverNotifications,
+  registerPushToken,
   sendRideRequestNotification,
   dismissRideRequestNotifications,
   setupDriverNotificationListener,

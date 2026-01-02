@@ -145,6 +145,13 @@ export default function AdminDashboard() {
       badge: undefined, // Will be populated with unread count
     },
     {
+      icon: 'megaphone-outline',
+      title: 'Message Center',
+      subtitle: 'Send push notifications to drivers',
+      route: '/(admin)/message-center',
+      color: Colors.primary,
+    },
+    {
       icon: 'people-outline',
       title: 'Driver Applications',
       subtitle: 'Review pending driver registrations',
@@ -160,13 +167,13 @@ export default function AdminDashboard() {
       color: Colors.success,
       badge: stats.activeDrivers > 0 ? String(stats.activeDrivers) : undefined,
     },
-    {
-      icon: 'location-outline',
-      title: 'Live Map',
-      subtitle: 'Track active drivers in real-time',
-      route: '/(admin)/map',
-      color: Colors.info,
-    },
+    // {
+    //   icon: 'location-outline',
+    //   title: 'Live Map',
+    //   subtitle: 'Track active drivers in real-time',
+    //   route: '/(admin)/map',
+    //   color: Colors.info,
+    // },
     {
       icon: 'receipt-outline',
       title: 'All Trips',

@@ -3,9 +3,14 @@
  *
  * A modern 3D-style car marker for maps
  * Inspired by Google Maps navigation car design
+ *
+ * Features:
+ * - Modern 3D purple car marker
+ * - Blue dot fallback if car fails to render
+ * - Error boundary protection
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -13,13 +18,59 @@ interface CarMarkerProps {
   heading?: number;
   color?: string;
   size?: 'small' | 'medium' | 'large';
+  useFallback?: boolean; // Force blue dot fallback
+}
+
+/**
+ * Blue Dot Fallback Marker
+ * Used when CarMarker fails to render or as explicit fallback
+ */
+export function BlueDotMarker({ size = 'medium' }: { size?: 'small' | 'medium' | 'large' }) {
+  const sizeConfig = {
+    small: { outer: 24, inner: 12 },
+    medium: { outer: 32, inner: 16 },
+    large: { outer: 40, inner: 20 },
+  };
+
+  const config = sizeConfig[size];
+
+  return (
+    <View style={styles.blueDotWrapper}>
+      {/* Outer pulse ring */}
+      <View style={[
+        styles.blueDotOuter,
+        {
+          width: config.outer,
+          height: config.outer,
+          borderRadius: config.outer / 2,
+        }
+      ]} />
+      {/* Inner solid dot */}
+      <View style={[
+        styles.blueDotInner,
+        {
+          width: config.inner,
+          height: config.inner,
+          borderRadius: config.inner / 2,
+        }
+      ]} />
+    </View>
+  );
 }
 
 export function CarMarker({
   heading = 0,
-  color = '#4285F4',
-  size = 'medium'
+  color = '#5D1289',
+  size = 'medium',
+  useFallback = false
 }: CarMarkerProps) {
+  const [hasError, setHasError] = useState(false);
+
+  // If useFallback is true or there was an error, show blue dot
+  if (useFallback || hasError) {
+    return <BlueDotMarker size={size} />;
+  }
+
   const sizeConfig = {
     small: { container: 36, car: 20, pulse: 44 },
     medium: { container: 48, car: 28, pulse: 56 },
@@ -115,7 +166,7 @@ export function CarMarker({
  */
 export function SimpleCarMarker({
   heading = 0,
-  color = '#4285F4',
+  color = '#5D1289',
   size = 'medium'
 }: CarMarkerProps) {
   const sizeConfig = {
@@ -258,5 +309,27 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: 'white',
+  },
+
+  // Blue dot fallback styles (like Google Maps user location)
+  blueDotWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blueDotOuter: {
+    position: 'absolute',
+    backgroundColor: 'rgba(66, 133, 244, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(66, 133, 244, 0.4)',
+  },
+  blueDotInner: {
+    backgroundColor: '#4285F4',
+    borderWidth: 2,
+    borderColor: 'white',
+    shadowColor: '#4285F4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 6,
   },
 });

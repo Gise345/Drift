@@ -22,6 +22,7 @@ module.exports = {
   expo: {
     name: IS_PRODUCTION ? "Drift" : IS_PREVIEW ? "Drift (Preview)" : "Drift (Dev)",
     slug: "drift",
+    owner: "giselle345",
     version: "1.0.0",
     orientation: "default",
     icon: "./assets/images/app-icon.png",
@@ -41,7 +42,7 @@ module.exports = {
     assetBundlePatterns: ["**/*"],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.drift.app",
+      bundleIdentifier: "com.drift.global",
       googleServicesFile: "./GoogleService-Info.plist",
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift uses your location to show nearby drivers, calculate routes, provide turn-by-turn navigation, and share your trip with trusted contacts for safety.",
@@ -53,7 +54,9 @@ module.exports = {
           }
         ],
         // Allow opening external URLs
-        LSApplicationQueriesSchemes: ["https", "http"]
+        LSApplicationQueriesSchemes: ["https", "http"],
+        // Required for App Store - app doesn't use non-exempt encryption
+        ITSAppUsesNonExemptEncryption: false
       },
       config: {
         googleMapsApiKey: GOOGLE_MAPS_API_KEY
@@ -62,9 +65,9 @@ module.exports = {
       associatedDomains: [
         "applinks:drift-global.web.app"
       ],
-      // Apple Pay entitlement
+      // Sign in with Apple entitlement (Apple Pay temporarily disabled for initial build)
       entitlements: {
-        "com.apple.developer.in-app-payments": ["merchant.com.drift.app"]
+        "com.apple.developer.applesignin": ["Default"]
       }
     },
     android: {
@@ -188,7 +191,8 @@ module.exports = {
       [
         "@stripe/stripe-react-native",
         {
-          merchantIdentifier: "merchant.com.drift.app",
+          // merchantIdentifier temporarily disabled for initial iOS build
+          // merchantIdentifier: "merchant.com.drift.global",
           enableGooglePay: true
         }
       ],

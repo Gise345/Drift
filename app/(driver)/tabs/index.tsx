@@ -592,7 +592,7 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const handleToggleOnline = () => {
+  const handleToggleOnline = async () => {
     // Check if driver is approved before allowing them to go online
     // Check both 'status' and 'registrationStatus' fields
     const driverStatus = driver?.registrationStatus || driver?.status;
@@ -629,9 +629,14 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    toggleOnline();
+    // Store current state before toggling
+    const wasOffline = !isOnline;
 
-    if (!isOnline) {
+    // Wait for the toggle to complete (Firebase update + state update)
+    await toggleOnline();
+
+    // Show alert after state has updated
+    if (wasOffline) {
       Alert.alert(
         'You\'re Online!',
         'You\'ll now receive ride requests from nearby riders.',

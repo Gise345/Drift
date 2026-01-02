@@ -33,6 +33,7 @@ import { useAuthStore } from '@/src/stores/auth-store';
 import { updateDriverArrivalStatus } from '@/src/services/ride-request.service';
 import { initializeMessaging } from '@/src/services/messaging.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { CarMarker } from '@/components/map/CarMarker';
 import { ChatModal, ChatButton } from '@/components/messaging';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
@@ -557,7 +558,7 @@ export default function NavigateToPickup() {
           latitudeDelta: 0.02,
           longitudeDelta: 0.02,
         }}
-        showsUserLocation
+        showsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         followsUserLocation={false}
@@ -568,6 +569,18 @@ export default function NavigateToPickup() {
           }
         }}
       >
+        {/* Driver Car Marker */}
+        {currentLocation && (
+          <Marker
+            coordinate={currentLocation}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat
+            rotation={currentHeading}
+          >
+            <CarMarker heading={currentHeading} size="medium" />
+          </Marker>
+        )}
+
         {/* Pickup Marker */}
         <Marker
           coordinate={{

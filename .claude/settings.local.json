@@ -120,7 +120,11 @@
       "WebFetch(domain:drift-global.com)",
       "WebFetch(domain:www.caymancompass.com)",
       "Bash(cmd /c:*)",
-      "WebFetch(domain:docs.expo.dev)"
+      "WebFetch(domain:docs.expo.dev)",
+      "Bash(git stash:*)",
+      "Bash(where:*)",
+      "Bash(\"C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\openssl.exe\" genrsa -out C:Driftcertsdistribution.key 2048)",
+      "WebFetch(domain:developers.google.com)"
     ],
     "deny": [],
     "ask": []

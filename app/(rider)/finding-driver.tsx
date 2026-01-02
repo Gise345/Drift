@@ -15,7 +15,7 @@ import {
   Easing,
   BackHandler,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -38,6 +38,7 @@ const TOTAL_MAX_RETRIES = AUTO_RETRY_ATTEMPTS + MAX_MANUAL_RETRIES; // 6 total a
 
 export default function FindingDriverScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     vehicleType,
     lockedContribution,
@@ -762,7 +763,7 @@ export default function FindingDriverScreen() {
           </View>
 
           {/* Cancel Button */}
-          <View style={styles.bottomContainer}>
+          <View style={[styles.bottomContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => handleCancel()}

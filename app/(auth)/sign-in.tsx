@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { Colors, Typography, Spacing } from '@/src/constants/theme';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { signInWithEmail } from '@/src/services/firebase-auth-service';
 import { signInWithGoogle } from '@/src/services/google-auth';
+import { signInWithApple, isAppleAuthAvailable } from '@/src/services/apple-auth';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -29,7 +30,14 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Check if Apple Sign-In is available on mount
+  useEffect(() => {
+    isAppleAuthAvailable().then(setAppleAuthAvailable);
+  }, []);
 
   const validateEmail = (value: string) => {
     if (!value) return false;
@@ -131,6 +139,44 @@ export default function SignInScreen() {
       }
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setAppleLoading(true);
+
+    try {
+      const result = await signInWithApple();
+
+      if (result.success && result.user) {
+        setUser({
+          ...result.user,
+          photoURL: result.user.photoURL || undefined,
+        });
+
+        if (result.user.roles.includes('DRIVER')) {
+          router.replace('/(driver)/tabs');
+        } else {
+          router.replace('/(tabs)');
+        }
+      } else {
+        // Handle cancellation silently
+        const errorMessage = result.error || '';
+        if (errorMessage.toLowerCase().includes('cancel')) {
+          console.log('Apple sign-in cancelled by user');
+        } else {
+          Alert.alert('Apple Sign-In Failed', errorMessage || 'Unknown error occurred');
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || 'An error occurred';
+      if (errorMessage.toLowerCase().includes('cancel')) {
+        console.log('Apple sign-in cancelled by user');
+      } else {
+        Alert.alert('Apple Sign-In Failed', errorMessage);
+      }
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -246,7 +292,7 @@ export default function SignInScreen() {
               <TouchableOpacity
                 style={styles.googleButton}
                 onPress={handleGoogleSignIn}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || appleLoading}
                 activeOpacity={0.8}
               >
                 {googleLoading ? (
@@ -258,6 +304,25 @@ export default function SignInScreen() {
                   </>
                 )}
               </TouchableOpacity>
+
+              {/* Apple Sign-In - Only shown on iOS when available */}
+              {appleAuthAvailable && (
+                <TouchableOpacity
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                  disabled={loading || googleLoading || appleLoading}
+                  activeOpacity={0.8}
+                >
+                  {appleLoading ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <>
+                      <Text style={styles.appleIcon}></Text>
+                      <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.signUpContainer}>
@@ -434,6 +499,25 @@ const styles = StyleSheet.create({
   googleButtonText: {
     fontSize: Typography.fontSize.base,
     color: Colors.gray[50],
+    fontWeight: '600',
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  appleIcon: {
+    fontSize: 20,
+    color: Colors.black,
+  },
+  appleButtonText: {
+    fontSize: Typography.fontSize.base,
+    color: Colors.black,
     fontWeight: '600',
   },
   signUpContainer: {

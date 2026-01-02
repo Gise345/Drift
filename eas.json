@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -9,6 +10,9 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleDebug"
+      },
+      "ios": {
+        "simulator": true
       },
       "env": {
         "EXPO_USE_UPDATES": "0",
@@ -21,22 +25,36 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "distribution": "internal"
+      },
       "channel": "preview"
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
+      "ios": {
+        "distribution": "store",
+        "autoIncrement": true
+      },
       "env": {
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "693488691443-qhna03104b55i4ib58jv67rf0ugbk5mt.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "693488691443-apptk3ch39tlek643asp72ihj9tadl9d.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "693488691443-pmjrvmemkudlbma58u4bkivfppf55t66.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyD94ZFCQvkJjyqjIGFmZ7ASpZX9vRvwbjk",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_live_51SZ0lMJzTUaJU2KNafBrmzOd5vkWw0HTxNSrwE5SqP8pOaceJf0exy4yWE6Kcl7kHz1Y5tfSClv8XLqJeo3HnmCX00XIwUe3OK",
         "NODE_ENV": "production"
       },
       "channel": "production"
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleTeamId": "2VKYM78Q3Q",
+        "ascAppId": "6757209673"
+      }
+    }
   }
 }

@@ -535,6 +535,9 @@ export async function loadDriverTripHistory(userId: string, limitCount: number =
 
 /**
  * Update driver location in Firebase
+ * NOTE: We save BOTH lat/lng AND latitude/longitude for compatibility
+ * - App uses lat/lng format
+ * - Cloud Functions use latitude/longitude format
  */
 export async function updateDriverLocation(
   userId: string,
@@ -548,8 +551,11 @@ export async function updateDriverLocation(
   try {
     const driverRef = doc(db, 'drivers', userId);
     await updateDoc(driverRef, {
+      // Both formats for compatibility with Cloud Functions
       'currentLocation.lat': location.lat,
       'currentLocation.lng': location.lng,
+      'currentLocation.latitude': location.lat,
+      'currentLocation.longitude': location.lng,
       'currentLocation.heading': location.heading || 0,
       'currentLocation.speed': location.speed || 0,
       'currentLocation.updatedAt': serverTimestamp(),
@@ -574,6 +580,25 @@ export async function updateDriverOnlineStatus(userId: string, isOnline: boolean
     console.log(`🟢 Driver is now ${isOnline ? 'online' : 'offline'}`);
   } catch (error) {
     console.error('❌ Error updating online status:', error);
+  }
+}
+
+/**
+ * Save driver's push token to Firebase
+ * This is required for Cloud Functions to send push notifications
+ */
+export async function saveDriverPushToken(userId: string, pushToken: string) {
+  try {
+    const driverRef = doc(db, 'drivers', userId);
+    await updateDoc(driverRef, {
+      fcmToken: pushToken,
+      pushToken: pushToken, // Save both for compatibility
+      pushTokenUpdatedAt: serverTimestamp(),
+    });
+
+    console.log('📱 Push token saved for driver:', userId);
+  } catch (error) {
+    console.error('❌ Error saving push token:', error);
   }
 }
 

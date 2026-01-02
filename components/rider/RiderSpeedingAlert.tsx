@@ -44,7 +44,7 @@ interface RiderSpeedingAlertProps {
   speedLimit: number;
   driverName: string;
   tripId: string;
-  onDismiss: () => void;
+  onDismiss: (responseType?: 'ok' | 'slow_down' | 'end_ride' | 'emergency') => void;
   onEndRide?: () => void;
 }
 
@@ -128,24 +128,25 @@ export function RiderSpeedingAlert({
     }
   }, [visible, isRedZone]);
 
-  // Handle "I'm OK" response
+  // Handle "I'm OK" response - terminal response, no more alerts for this speeding incident
   const handleImOk = async () => {
     await markSafetyAlertResponded(tripId, 'ok', 'rider');
-    onDismiss();
+    onDismiss('ok');
   };
 
-  // Handle "Warn Driver" action
+  // Handle "Warn Driver" action - allows re-alerting if driver slows down then speeds up again
   const handleWarnDriver = async () => {
     if (warningMessageSent) return;
 
     try {
       await sendWarnDriverMessage(tripId, user?.id || '', user?.name?.split(' ')[0] || 'Rider');
+      await markSafetyAlertResponded(tripId, 'slow_down', 'rider');
       setWarningMessageSent(true);
 
       Alert.alert(
         'Message Sent',
         `${driverName} has been notified to slow down for your safety.`,
-        [{ text: 'OK' }]
+        [{ text: 'OK', onPress: () => onDismiss('slow_down') }]
       );
     } catch (error) {
       Alert.alert('Error', 'Failed to send message. Please try again.');
@@ -179,7 +180,7 @@ export function RiderSpeedingAlert({
               Alert.alert(
                 'Ride Ended',
                 'Your ride has been ended for safety reasons. A refund request has been submitted for review.',
-                [{ text: 'OK', onPress: onDismiss }]
+                [{ text: 'OK', onPress: () => onDismiss('end_ride') }]
               );
             } catch (error) {
               Alert.alert('Error', 'Failed to end ride. Please try again or call emergency services if you feel unsafe.');
@@ -192,7 +193,7 @@ export function RiderSpeedingAlert({
     );
   };
 
-  // Handle emergency call
+  // Handle emergency call - terminal response
   const handleEmergency = () => {
     Alert.alert(
       'Call Emergency Services?',
@@ -202,7 +203,9 @@ export function RiderSpeedingAlert({
         {
           text: 'Call 911',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            await markSafetyAlertResponded(tripId, 'emergency', 'rider');
+            onDismiss('emergency');
             Linking.openURL('tel:911');
           },
         },
@@ -341,6 +344,11 @@ export function RiderSpeedingAlert({
 
 /**
  * RiderSpeedingAlertContainer - Connects to safety store
+ *
+ * Fixed to prevent glitching and duplicate alerts:
+ * - Only triggers once per speeding incident
+ * - Tracks rider response type
+ * - Re-alerts only if driver slowed down then sped up again
  */
 export function RiderSpeedingAlertContainer() {
   const { useSafetyStore } = require('@/src/stores/safety-store');
@@ -350,10 +358,19 @@ export function RiderSpeedingAlertContainer() {
     tripId,
     showRiderSpeedingAlert,
     riderSpeedingAlertDismissed,
+    riderResponseType,
     showRiderSpeedAlert,
     dismissRiderSpeedAlert,
   } = useSafetyStore();
   const { currentTrip } = useTripStore();
+
+  // Track whether we've already triggered an alert for this speeding incident
+  const alertTriggeredRef = useRef(false);
+  const wasInRedZoneRef = useRef(false);
+  const lastAlertTimeRef = useRef(0);
+
+  // Minimum time between alerts (5 minutes) unless driver slowed down
+  const ALERT_COOLDOWN = 5 * 60 * 1000;
 
   // Show alert when speed is in danger zone (6+ mph over - Cayman law)
   useEffect(() => {
@@ -363,10 +380,36 @@ export function RiderSpeedingAlertContainer() {
       speedState.currentSpeedLimit !== null &&
       speedState.currentSpeed - speedState.currentSpeedLimit >= 6;
 
-    if (isRedZone && !riderSpeedingAlertDismissed) {
+    // Track if driver went back under limit (so we can re-alert if they speed again)
+    if (!isRedZone && wasInRedZoneRef.current) {
+      // Driver slowed down - reset alert trigger for next incident
+      alertTriggeredRef.current = false;
+      wasInRedZoneRef.current = false;
+    }
+
+    // Only show alert if:
+    // 1. In red zone
+    // 2. Haven't triggered alert for this incident yet
+    // 3. Haven't been dismissed (or enough time passed or driver slowed down then sped up)
+    // 4. Rider hasn't responded with OK, end_ride, or emergency (those are terminal responses)
+    const now = Date.now();
+    const timeSinceLastAlert = now - lastAlertTimeRef.current;
+    const isTerminalResponse = ['ok', 'end_ride', 'emergency'].includes(riderResponseType || '');
+
+    // If rider clicked "Ask Driver to Slow Down", only re-alert if driver slowed down and sped up again
+    const canReAlert =
+      !alertTriggeredRef.current &&
+      !riderSpeedingAlertDismissed &&
+      !isTerminalResponse &&
+      (timeSinceLastAlert > ALERT_COOLDOWN || !wasInRedZoneRef.current);
+
+    if (isRedZone && canReAlert) {
+      alertTriggeredRef.current = true;
+      wasInRedZoneRef.current = true;
+      lastAlertTimeRef.current = now;
       showRiderSpeedAlert();
     }
-  }, [speedState, isMonitoring, currentTrip, riderSpeedingAlertDismissed]);
+  }, [speedState.currentSpeed, speedState.currentSpeedLimit, isMonitoring, currentTrip, riderSpeedingAlertDismissed, riderResponseType]);
 
   if (!currentTrip || !tripId) return null;
 

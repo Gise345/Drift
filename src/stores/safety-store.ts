@@ -82,6 +82,11 @@ interface SafetyStore {
   // Rider speeding alert
   showRiderSpeedingAlert: boolean;
   riderSpeedingAlertDismissed: boolean;
+  riderResponseType: 'ok' | 'slow_down' | 'end_ride' | 'emergency' | null;
+
+  // Driver slow down request (from rider)
+  showDriverSlowDownRequest: boolean;
+  slowDownRequestFrom: string | null;
 
   // Emergency
   emergencyMode: boolean;
@@ -140,7 +145,9 @@ interface SafetyStore {
   // Actions - Notifications
   initializeNotifications: () => Promise<void>;
   showRiderSpeedAlert: () => void;
-  dismissRiderSpeedAlert: () => void;
+  dismissRiderSpeedAlert: (responseType?: 'ok' | 'slow_down' | 'end_ride' | 'emergency') => void;
+  showDriverSlowDownRequestModal: (fromName: string) => void;
+  dismissDriverSlowDownRequest: () => void;
 
   // Reset
   reset: () => void;
@@ -173,6 +180,9 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
   countdownInterval: null,
   showRiderSpeedingAlert: false,
   riderSpeedingAlertDismissed: false,
+  riderResponseType: null,
+  showDriverSlowDownRequest: false,
+  slowDownRequestFrom: null,
   emergencyMode: false,
   emergencyAlert: null,
   driverProfile: null,
@@ -211,8 +221,9 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       console.log('Safety alert received from Firebase:', alert);
 
       if (alert.type === 'safety_message' && alert.messageType === 'slow_down_request') {
-        // Driver received a slow-down request from rider
-        console.log('Rider requested driver to slow down');
+        // Driver received a slow-down request from rider - show the modal
+        console.log('Rider requested driver to slow down:', alert.fromName);
+        get().showDriverSlowDownRequestModal(alert.fromName || 'Rider');
       }
     });
 
@@ -262,6 +273,9 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       countdownInterval: null,
       showRiderSpeedingAlert: false,
       riderSpeedingAlertDismissed: false,
+      riderResponseType: null,
+      showDriverSlowDownRequest: false,
+      slowDownRequestFrom: null,
       safetyAlertUnsubscribe: null,
     });
 
@@ -645,17 +659,34 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
     }
   },
 
-  // Dismiss rider speeding alert
-  dismissRiderSpeedAlert: () => {
+  // Dismiss rider speeding alert with response type tracking
+  // Terminal responses (ok, end_ride, emergency) prevent re-alerting for this trip
+  // slow_down allows re-alerting if driver slows down then speeds up again
+  dismissRiderSpeedAlert: (responseType?: 'ok' | 'slow_down' | 'end_ride' | 'emergency') => {
     set({
       showRiderSpeedingAlert: false,
       riderSpeedingAlertDismissed: true,
+      riderResponseType: responseType || 'ok',
     });
 
-    // Reset dismissed flag after 60 seconds so alert can show again
-    setTimeout(() => {
-      set({ riderSpeedingAlertDismissed: false });
-    }, 60000);
+    // Don't auto-reset - the RiderSpeedingAlertContainer handles when to re-alert
+    // based on whether driver slowed down and sped up again
+  },
+
+  // Show driver slow-down request modal (when rider asks driver to slow down)
+  showDriverSlowDownRequestModal: (fromName: string) => {
+    set({
+      showDriverSlowDownRequest: true,
+      slowDownRequestFrom: fromName,
+    });
+  },
+
+  // Dismiss driver slow-down request modal
+  dismissDriverSlowDownRequest: () => {
+    set({
+      showDriverSlowDownRequest: false,
+      slowDownRequestFrom: null,
+    });
   },
 
   // Reset store
@@ -694,6 +725,9 @@ export const useSafetyStore = create<SafetyStore>((set, get) => ({
       countdownInterval: null,
       showRiderSpeedingAlert: false,
       riderSpeedingAlertDismissed: false,
+      riderResponseType: null,
+      showDriverSlowDownRequest: false,
+      slowDownRequestFrom: null,
       emergencyMode: false,
       emergencyAlert: null,
       driverProfile: null,

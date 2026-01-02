@@ -62,6 +62,8 @@ export default function DriverInboxScreen() {
         return { icon: 'star', iconColor: Colors.info };
       case 'promo':
         return { icon: 'gift', iconColor: Colors.info };
+      case 'admin':
+        return { icon: 'megaphone', iconColor: Colors.primary };
       default:
         return { icon: 'notifications', iconColor: Colors.gray[600] };
     }

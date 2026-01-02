@@ -34,10 +34,13 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
+import { CarMarker } from '@/components/map/CarMarker';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 import { useRouteDeviation } from '@/src/hooks/useRouteDeviation';
 import { RouteDeviationModal } from '@/components/driver/RouteDeviationModal';
+import { DriverSlowDownRequestModal } from '@/components/driver/DriverSlowDownRequestModal';
+import { useSafetyStore } from '@/src/stores/safety-store';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_MAX_HEIGHT_BASE = SCREEN_HEIGHT * 0.42;
@@ -73,6 +76,14 @@ export default function NavigateToDestination() {
 
   // Route deviation monitoring hook
   const routeDeviation = useRouteDeviation(activeRide?.id || null);
+
+  // Safety store for slow-down requests from rider
+  const {
+    showDriverSlowDownRequest,
+    slowDownRequestFrom,
+    speedState,
+    dismissDriverSlowDownRequest,
+  } = useSafetyStore();
 
   // Calculate insets-aware heights
   const bottomInset = Math.max(insets.bottom, 20);
@@ -800,19 +811,10 @@ export default function NavigateToDestination() {
             anchor={{ x: 0.5, y: 0.5 }}
             flat={true}
           >
-            <View style={{
-              width: 24,
-              height: 24,
-              borderRadius: 12,
-              backgroundColor: '#4285F4',
-              borderWidth: 3,
-              borderColor: 'white',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.25,
-              shadowRadius: 4,
-              elevation: 5,
-            }} />
+            <CarMarker
+              heading={currentHeading}
+              size="medium"
+            />
           </Marker>
         )}
 
@@ -1099,6 +1101,16 @@ export default function NavigateToDestination() {
         deviationDistance={routeDeviation.deviationDistance}
         onOkay={() => routeDeviation.handleAlertResponse('okay')}
         onSOS={() => routeDeviation.handleAlertResponse('sos')}
+      />
+
+      {/* Rider Slow Down Request Modal */}
+      <DriverSlowDownRequestModal
+        visible={showDriverSlowDownRequest}
+        riderName={slowDownRequestFrom || 'Rider'}
+        tripId={activeRide?.id || ''}
+        currentSpeed={speedState.currentSpeed}
+        speedLimit={speedState.currentSpeedLimit || 0}
+        onAcknowledge={dismissDriverSlowDownRequest}
       />
     </View>
   );

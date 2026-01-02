@@ -31,7 +31,7 @@ import {
 const app = getApp();
 const db = getFirestore(app, 'main');
 
-export type NotificationType = 'ride' | 'earnings' | 'system' | 'document' | 'promo';
+export type NotificationType = 'ride' | 'earnings' | 'system' | 'document' | 'promo' | 'admin';
 
 export interface Notification {
   id: string;

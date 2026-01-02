@@ -1775,3 +1775,51 @@ export async function cleanupStaleRiderTrips(
     return 0;
   }
 }
+
+/**
+ * Subscribe to real-time updates for a specific trip
+ * Useful for drivers to stay synced with trip status changes
+ *
+ * @param tripId - The trip ID to subscribe to
+ * @param callback - Function called with trip data on each update
+ * @returns Unsubscribe function
+ */
+export function subscribeToTrip(
+  tripId: string,
+  callback: (trip: RideRequest | null) => void
+): () => void {
+  const tripRef = doc(firebaseDb, 'trips', tripId);
+
+  console.log('📡 Setting up trip subscription for:', tripId);
+
+  const unsubscribe = onSnapshot(
+    tripRef,
+    (docSnapshot) => {
+      if (documentExists(docSnapshot)) {
+        const data = docSnapshot.data();
+        const tripData: RideRequest = {
+          id: docSnapshot.id,
+          ...data,
+          // Properly convert Firestore timestamps to Dates
+          requestedAt: data?.requestedAt?.toDate?.() || data?.requestedAt,
+          acceptedAt: data?.acceptedAt?.toDate?.() || data?.acceptedAt,
+          startedAt: data?.startedAt?.toDate?.() || data?.startedAt,
+          completedAt: data?.completedAt?.toDate?.() || data?.completedAt,
+          createdAt: data?.createdAt?.toDate?.() || data?.createdAt,
+          updatedAt: data?.updatedAt?.toDate?.() || data?.updatedAt,
+        } as RideRequest;
+
+        callback(tripData);
+      } else {
+        console.log('⚠️ Trip document does not exist:', tripId);
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error('❌ Trip subscription error:', error);
+      // Don't call callback with null on error - let the UI handle reconnection
+    }
+  );
+
+  return unsubscribe;
+}

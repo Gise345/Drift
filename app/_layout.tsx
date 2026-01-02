@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Platform, Linking, AppState, AppStateStatus } from 'react-native';
 import { AutoUpdate } from '@/src/components/AutoUpdate';
+import { StoreUpdatePrompt } from '@/src/components/StoreUpdatePrompt';
 import { initializeMonitoring } from '@/src/services/firebase-monitoring-service';
 import { DebugLogViewer } from '@/components/DebugLogViewer';
 import { debugLogger } from '@/src/utils/debug-logger';
@@ -209,7 +210,7 @@ export default function RootLayout() {
   const content = StripeProvider ? (
     <StripeProvider
       publishableKey={STRIPE_PUBLISHABLE_KEY}
-      merchantIdentifier="merchant.com.drift.app"
+      merchantIdentifier="merchant.com.drift.global"
       urlScheme="drift"
     >
       {stackContent}
@@ -221,6 +222,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AutoUpdate />
+      <StoreUpdatePrompt />
       {content}
       {/* Debug Log Viewer - Only for admins, triple tap top-right corner to open */}
       {isAdmin && <DebugLogViewer />}
