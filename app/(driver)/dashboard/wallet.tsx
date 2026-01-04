@@ -6,8 +6,6 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Modal,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -25,11 +23,8 @@ export default function Wallet() {
   const router = useRouter();
   const { driver, balance: storeBalance, earnings } = useDriverStore();
 
-  const [showCashoutModal, setShowCashoutModal] = useState(false);
-  const [cashoutAmount, setCashoutAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [processing, setProcessing] = useState(false);
 
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -62,69 +57,6 @@ export default function Wallet() {
     setRefreshing(true);
     await loadWalletData();
     setRefreshing(false);
-  };
-
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case 'ride':
-        return 'car';
-      case 'tip':
-        return 'heart';
-      case 'bonus':
-        return 'gift';
-      case 'cashout':
-        return 'arrow-down';
-      case 'fee':
-        return 'remove-circle';
-      default:
-        return 'cash';
-    }
-  };
-
-  const getTransactionColor = (type: string) => {
-    switch (type) {
-      case 'ride':
-      case 'tip':
-      case 'bonus':
-        return Colors.success;
-      case 'cashout':
-      case 'fee':
-        return Colors.error;
-      default:
-        return Colors.gray[600];
-    }
-  };
-
-  const handleCashout = async () => {
-    if (!driver?.id || !cashoutAmount) return;
-
-    const amount = parseFloat(cashoutAmount);
-    if (isNaN(amount) || amount < 25) {
-      alert('Please enter a valid amount (minimum CI$25)');
-      return;
-    }
-
-    if (!walletBalance || walletBalance.available < amount) {
-      alert('Insufficient balance');
-      return;
-    }
-
-    try {
-      setProcessing(true);
-      await TransactionService.requestCashout(driver.id, amount, 'bank_account');
-
-      // Reload wallet data
-      await loadWalletData();
-
-      setShowCashoutModal(false);
-      setCashoutAmount('');
-      alert('Cashout requested successfully!');
-    } catch (error: any) {
-      console.error('Error requesting cashout:', error);
-      alert(error.message || 'Failed to request cashout');
-    } finally {
-      setProcessing(false);
-    }
   };
 
   if (loading) {
@@ -172,17 +104,12 @@ export default function Wallet() {
           <Text style={styles.pendingText}>
             Pending: CI${pendingBalance.toFixed(2)}
           </Text>
-          <TouchableOpacity
-            style={styles.cashoutButton}
-            onPress={() => setShowCashoutModal(true)}
-            disabled={currentBalance < 25}
-          >
-            <Ionicons name="arrow-down-circle" size={20} color={Colors.white} />
-            <Text style={styles.cashoutButtonText}>Cash Out</Text>
-          </TouchableOpacity>
-          {currentBalance < 25 && (
-            <Text style={styles.minimumText}>Minimum CI$25 required to cash out</Text>
-          )}
+          <View style={styles.payoutInfoBox}>
+            <Ionicons name="calendar-outline" size={18} color={Colors.white} />
+            <Text style={styles.payoutInfoText}>
+              Payouts are processed weekly to your Wise account
+            </Text>
+          </View>
         </View>
 
         {/* Quick Stats */}
@@ -201,57 +128,54 @@ export default function Wallet() {
           </View>
         </View>
 
-        {/* Transaction History */}
+        {/* Payout History */}
         <View style={styles.transactionsSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.sectionTitle}>Payout History</Text>
 
-          {transactions.map((transaction) => (
-            <TouchableOpacity key={transaction.id} style={styles.transactionCard}>
-              <View style={styles.transactionLeft}>
-                <View
-                  style={[
-                    styles.transactionIconContainer,
-                    { backgroundColor: getTransactionColor(transaction.type) + '15' },
-                  ]}
-                >
-                  <Ionicons
-                    name={getTransactionIcon(transaction.type)}
-                    size={20}
-                    color={getTransactionColor(transaction.type)}
-                  />
+          {transactions.filter(t => t.type === 'cashout').length > 0 ? (
+            transactions
+              .filter(t => t.type === 'cashout')
+              .map((transaction) => (
+                <View key={transaction.id} style={styles.transactionCard}>
+                  <View style={styles.transactionLeft}>
+                    <View
+                      style={[
+                        styles.transactionIconContainer,
+                        { backgroundColor: Colors.success + '15' },
+                      ]}
+                    >
+                      <Ionicons name="wallet-outline" size={20} color={Colors.success} />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionDescription}>Weekly Payout</Text>
+                      <Text style={styles.transactionDate}>
+                        {transaction.createdAt.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.transactionRight}>
+                    <Text style={[styles.transactionAmount, { color: Colors.success }]}>
+                      CI${Math.abs(transaction.amount).toFixed(2)}
+                    </Text>
+                    <Text style={styles.completedBadge}>
+                      {transaction.status === 'completed' ? 'Sent' : 'Pending'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.transactionInfo}>
-                  <Text style={styles.transactionDescription}>{transaction.description}</Text>
-                  <Text style={styles.transactionDate}>
-                    {transaction.date.toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.transactionRight}>
-                <Text
-                  style={[
-                    styles.transactionAmount,
-                    { color: transaction.amount > 0 ? Colors.success : Colors.error },
-                  ]}
-                >
-                  {transaction.amount > 0 ? '+' : ''}CI${Math.abs(transaction.amount).toFixed(2)}
-                </Text>
-                {transaction.status === 'pending' && (
-                  <Text style={styles.pendingBadge}>Pending</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+              ))
+          ) : (
+            <View style={styles.emptyPayouts}>
+              <Ionicons name="time-outline" size={40} color={Colors.gray[400]} />
+              <Text style={styles.emptyPayoutsTitle}>No payouts yet</Text>
+              <Text style={styles.emptyPayoutsText}>
+                Your weekly payouts will appear here once processed
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Payment Methods */}
@@ -272,89 +196,6 @@ export default function Wallet() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Cashout Modal */}
-      <Modal
-        visible={showCashoutModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCashoutModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Cash Out</Text>
-              <TouchableOpacity onPress={() => setShowCashoutModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.black} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              <Text style={styles.availableBalance}>
-                Available: CI${currentBalance.toFixed(2)}
-              </Text>
-
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Amount to cash out</Text>
-                <View style={styles.inputWrapper}>
-                  <Text style={styles.inputPrefix}>CI$</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={cashoutAmount}
-                    onChangeText={setCashoutAmount}
-                    placeholder="0.00"
-                    keyboardType="decimal-pad"
-                    placeholderTextColor={Colors.gray[400]}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.quickAmounts}>
-                <TouchableOpacity
-                  style={styles.quickAmountButton}
-                  onPress={() => setCashoutAmount('50')}
-                >
-                  <Text style={styles.quickAmountText}>CI$50</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.quickAmountButton}
-                  onPress={() => setCashoutAmount('100')}
-                >
-                  <Text style={styles.quickAmountText}>CI$100</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.quickAmountButton}
-                  onPress={() => setCashoutAmount(currentBalance.toString())}
-                >
-                  <Text style={styles.quickAmountText}>All</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.infoBox}>
-                <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
-                <Text style={styles.infoText}>
-                  Funds will be transferred to your bank account within 1-3 business days
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.confirmButton,
-                  (processing || !cashoutAmount || parseFloat(cashoutAmount) < 25) && styles.confirmButtonDisabled,
-                ]}
-                onPress={handleCashout}
-                disabled={processing || !cashoutAmount || parseFloat(cashoutAmount) < 25}
-              >
-                {processing ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Text style={styles.confirmButtonText}>Confirm Cash Out</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -416,27 +257,22 @@ const styles = StyleSheet.create({
   pendingText: {
     fontSize: Typography.fontSize.xs,
     color: Colors.white + 'AA',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
-  cashoutButton: {
+  payoutInfoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    paddingVertical: Spacing.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
   },
-  cashoutButtonText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600',
-    color: Colors.purple,
-  },
-  minimumText: {
+  payoutInfoText: {
+    flex: 1,
     fontSize: Typography.fontSize.xs,
-    color: Colors.white + 'AA',
-    textAlign: 'center',
-    marginTop: Spacing.sm,
+    color: Colors.white,
+    fontWeight: '500',
   },
   statsRow: {
     flexDirection: 'row',
@@ -463,21 +299,11 @@ const styles = StyleSheet.create({
   transactionsSection: {
     marginBottom: Spacing.xl,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
   sectionTitle: {
     fontSize: Typography.fontSize.lg,
     fontWeight: '600',
     color: Colors.black,
-  },
-  viewAllText: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.primary,
+    marginBottom: Spacing.md,
   },
   transactionCard: {
     flexDirection: 'row',
@@ -527,6 +353,29 @@ const styles = StyleSheet.create({
     color: Colors.warning,
     fontWeight: '600',
   },
+  completedBadge: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.success,
+    fontWeight: '600',
+  },
+  emptyPayouts: {
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    padding: Spacing.xl,
+    alignItems: 'center',
+  },
+  emptyPayoutsTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '600',
+    color: Colors.gray[700],
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  emptyPayoutsText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.gray[500],
+    textAlign: 'center',
+  },
   paymentSection: {
     marginBottom: Spacing.xl,
   },
@@ -555,113 +404,5 @@ const styles = StyleSheet.create({
   paymentDetails: {
     fontSize: Typography.fontSize.sm,
     color: Colors.gray[600],
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: Colors.black + '80',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: Spacing['3xl'],
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray[200],
-  },
-  modalTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '700',
-    color: Colors.black,
-  },
-  modalBody: {
-    padding: Spacing.xl,
-  },
-  availableBalance: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.gray[600],
-    marginBottom: Spacing.lg,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: Spacing.lg,
-  },
-  inputLabel: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: Spacing.sm,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.gray[50],
-    borderRadius: 12,
-    paddingHorizontal: Spacing.lg,
-    borderWidth: 2,
-    borderColor: Colors.gray[200],
-  },
-  inputPrefix: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '600',
-    color: Colors.gray[600],
-    marginRight: Spacing.sm,
-  },
-  input: {
-    flex: 1,
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '600',
-    color: Colors.black,
-    paddingVertical: Spacing.lg,
-  },
-  quickAmounts: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  quickAmountButton: {
-    flex: 1,
-    backgroundColor: Colors.gray[100],
-    borderRadius: 8,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-  },
-  quickAmountText: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    color: Colors.gray[700],
-  },
-  infoBox: {
-    flexDirection: 'row',
-    backgroundColor: Colors.primary + '10',
-    borderRadius: 12,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: Typography.fontSize.xs,
-    color: Colors.gray[700],
-    marginLeft: Spacing.sm,
-  },
-  confirmButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-  },
-  confirmButtonDisabled: {
-    backgroundColor: Colors.gray[300],
-  },
-  confirmButtonText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600',
-    color: Colors.white,
   },
 });

@@ -34,7 +34,6 @@ import { useTripStore, TripLocation } from '@/src/stores/trip-store';
 import { useSafetyStore } from '@/src/stores/safety-store';
 import { ShareTripModal } from '@/components/modal/ShareTripModal';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
-import { CarMarker } from '@/components/map/CarMarker';
 import { SafetyAlertContainer } from '@/components/safety/SafetyAlertModal';
 import { SpeedMonitorDisplay } from '@/components/safety/SpeedMonitorDisplay';
 import { RiderSpeedingAlertContainer } from '@/components/rider/RiderSpeedingAlert';

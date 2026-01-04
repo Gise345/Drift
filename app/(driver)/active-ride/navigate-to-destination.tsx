@@ -34,7 +34,6 @@ import { useDriverStore } from '@/src/stores/driver-store';
 import { useTripStore } from '@/src/stores/trip-store';
 import { useAuthStore } from '@/src/stores/auth-store';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
-import { CarMarker } from '@/components/map/CarMarker';
 import { useSpeedMonitor } from '@/src/hooks/useSpeedMonitor';
 import { SpeedWarningModal } from '@/components/driver/SpeedWarningModal';
 import { useRouteDeviation } from '@/src/hooks/useRouteDeviation';

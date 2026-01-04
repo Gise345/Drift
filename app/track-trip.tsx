@@ -30,7 +30,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { CarMarker } from '@/components/map/CarMarker';
 import { getApp } from '@react-native-firebase/app';
 import { getFirestore, doc, onSnapshot } from '@react-native-firebase/firestore';
 

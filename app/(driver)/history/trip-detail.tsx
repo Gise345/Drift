@@ -52,9 +52,11 @@ interface TripData {
   duration: number;
   distance: number;
   earnings: {
-    base: number;
+    base: number;        // Driver's 80% share
+    grossFare: number;   // Original fare before split
+    platformFee: number; // 20% platform fee
     tip: number;
-    total: number;
+    total: number;       // Driver's total (80% + tips)
   };
   rating: number;
   feedback?: string;
@@ -148,10 +150,12 @@ export default function TripDetailScreen() {
         }
       }
 
-      // Calculate earnings
+      // Calculate earnings - driver gets 80% of fare + 100% of tips
       const baseFare = data.finalCost || data.estimatedCost || 0;
       const tip = data.tip || 0;
-      const totalEarnings = baseFare + tip;
+      const driverShare = baseFare * 0.80; // Driver gets 80% of trip fare
+      const platformFee = baseFare * 0.20; // Platform takes 20%
+      const totalEarnings = driverShare + tip; // Total = 80% of fare + 100% of tips
 
       // Parse stops data
       const stops: StopData[] = (data.stops || []).map((stop: any) => ({
@@ -193,9 +197,11 @@ export default function TripDetailScreen() {
         duration: data.actualDuration || data.duration || 0,
         distance: (data.actualDistance || data.distance || 0) / 1000, // Convert to km
         earnings: {
-          base: baseFare,
+          base: driverShare, // Driver's 80% share
+          grossFare: baseFare, // Original fare before split
+          platformFee: platformFee, // 20% platform fee
           tip: tip,
-          total: totalEarnings,
+          total: totalEarnings, // 80% of fare + 100% of tips
         },
         rating: data.driverRating || 0,
         feedback: data.driverFeedback || data.feedback,
@@ -425,14 +431,27 @@ export default function TripDetailScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Earnings Breakdown</Text>
           <View style={styles.earningsCard}>
+            {/* Rider paid (gross fare) */}
             <View style={styles.earningRow}>
-              <Text style={styles.earningLabel}>Base Fare</Text>
+              <Text style={styles.earningLabel}>Rider Contribution</Text>
+              <Text style={styles.earningValue}>CI${trip.earnings.grossFare.toFixed(2)}</Text>
+            </View>
+            {/* Platform fee deduction */}
+            <View style={styles.earningRow}>
+              <Text style={styles.earningLabel}>Platform Fee (20%)</Text>
+              <Text style={[styles.earningValue, { color: Colors.error }]}>
+                -CI${trip.earnings.platformFee.toFixed(2)}
+              </Text>
+            </View>
+            {/* Driver's share */}
+            <View style={styles.earningRow}>
+              <Text style={styles.earningLabel}>Your Trip Earnings (80%)</Text>
               <Text style={styles.earningValue}>CI${trip.earnings.base.toFixed(2)}</Text>
             </View>
             {trip.earnings.tip > 0 && (
               <View style={styles.earningRow}>
                 <View style={styles.tipLabelContainer}>
-                  <Text style={styles.earningLabel}>Tip</Text>
+                  <Text style={styles.earningLabel}>Tip (100% yours)</Text>
                   <View style={styles.tipBadge}>
                     <Ionicons name="heart" size={12} color={Colors.error} />
                     <Text style={styles.tipBadgeText}>Thank you!</Text>
@@ -445,7 +464,7 @@ export default function TripDetailScreen() {
             )}
             <View style={styles.divider} />
             <View style={styles.earningRow}>
-              <Text style={styles.totalLabel}>Total Earnings</Text>
+              <Text style={styles.totalLabel}>Your Total Earnings</Text>
               <Text style={styles.totalValue}>CI${trip.earnings.total.toFixed(2)}</Text>
             </View>
             <View style={styles.paymentMethod}>

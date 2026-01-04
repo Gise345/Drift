@@ -89,7 +89,7 @@ export const TransactionService = {
         };
       }
 
-      const data = doc.data()!;
+      const data = balanceDoc.data()!;
       return {
         driverId,
         available: data.available || 0,

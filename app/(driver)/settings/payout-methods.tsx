@@ -351,13 +351,13 @@ export default function PayoutMethodsScreen() {
 
           <Text style={styles.wiseTitle}>Fast & Easy Payouts with Wise</Text>
           <Text style={styles.wiseDescription}>
-            We use Wise for instant payouts. Get your earnings immediately after each trip - no waiting!
+            We use Wise for weekly payouts. Your earnings are sent every week directly to your Wise account!
           </Text>
 
           <View style={styles.wiseBenefits}>
             <View style={styles.benefit}>
-              <Ionicons name="flash" size={20} color={Colors.success} />
-              <Text style={styles.benefitText}>Instant payouts</Text>
+              <Ionicons name="calendar" size={20} color={Colors.success} />
+              <Text style={styles.benefitText}>Weekly payouts</Text>
             </View>
             <View style={styles.benefit}>
               <Ionicons name="shield-checkmark" size={20} color={Colors.success} />
@@ -399,10 +399,10 @@ export default function PayoutMethodsScreen() {
         <View style={styles.scheduleCard}>
           <View style={styles.scheduleHeader}>
             <Ionicons name="calendar" size={24} color={Colors.primary} />
-            <Text style={styles.scheduleTitle}>Instant Payouts</Text>
+            <Text style={styles.scheduleTitle}>Weekly Payouts</Text>
           </View>
           <Text style={styles.scheduleText}>
-            With Wise, you receive your earnings immediately after each completed trip. No waiting periods, no weekly payouts - get paid instantly!
+            Your earnings are processed and sent to your Wise account every week. Make sure your account details are correct to receive payments on time!
           </Text>
         </View>
 
@@ -640,11 +640,11 @@ export default function PayoutMethodsScreen() {
             <View style={styles.benefitsList}>
               <View style={styles.benefitItem}>
                 <View style={styles.benefitIconLarge}>
-                  <Ionicons name="flash" size={32} color={Colors.success} />
+                  <Ionicons name="calendar" size={32} color={Colors.success} />
                 </View>
-                <Text style={styles.benefitTitleLarge}>Instant Payouts</Text>
+                <Text style={styles.benefitTitleLarge}>Weekly Payouts</Text>
                 <Text style={styles.benefitDescLarge}>
-                  Receive your earnings immediately after each trip. No waiting for weekly or monthly payouts.
+                  Receive your earnings every week directly to your Wise account. Reliable and consistent payments.
                 </Text>
               </View>
 

@@ -1,0 +1,49 @@
+# EAS Build ignore file
+# Exclude files that cause permission issues or aren't needed for builds
+
+# Documentation files
+*.md
+!README.md
+
+# Plan files
+PLAN-*.md
+EAS_UPDATE_DAILY_WORKFLOW.md
+
+# Local development files
+.claude/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Certificates (sensitive - don't upload to EAS)
+certs/
+*.cer
+*.csr
+*.key
+*.p12
+*.mobileprovision
+
+# Credentials
+credentials.json
+
+# Test files
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Build artifacts
+*.log
+*.tsbuildinfo

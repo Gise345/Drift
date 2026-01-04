@@ -28,7 +28,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDriverStore } from '@/src/stores/driver-store';
-import { EarningsService } from '@/src/services/earnings.service';
+import { EarningsService, EarningsBreakdown } from '@/src/services/earnings.service';
 import { TransactionService } from '@/src/services/transaction.service';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/src/constants/theme';
 import { getApp } from '@react-native-firebase/app';
@@ -40,7 +40,7 @@ const db = getFirestore(app, 'main');
 
 const { width } = Dimensions.get('window');
 
-type PeriodTab = 'today' | 'week' | 'month';
+type PeriodTab = 'today' | 'week' | 'month' | 'lastMonth' | '3months' | '6months' | '2025' | '2026';
 
 interface EarningsStat {
   amount: number;
@@ -63,6 +63,13 @@ export default function DriverEarningsScreen() {
     hours: 0,
     avgPerTrip: 0,
   });
+  const [breakdown, setBreakdown] = useState<EarningsBreakdown>({
+    grossFare: 0,
+    driverShare: 0,
+    platformFee: 0,
+    tips: 0,
+    totalDriverEarnings: 0,
+  });
   const [walletBalance, setWalletBalance] = useState(0);
   const [recentTrips, setRecentTrips] = useState<any[]>([]);
 
@@ -77,7 +84,7 @@ export default function DriverEarningsScreen() {
 
       if (driver?.id) {
         let data;
-        
+
         switch (activePeriod) {
           case 'today':
             data = await EarningsService.getTodayEarnings(driver.id);
@@ -88,6 +95,21 @@ export default function DriverEarningsScreen() {
           case 'month':
             data = await EarningsService.getMonthlyEarnings(driver.id);
             break;
+          case 'lastMonth':
+            data = await EarningsService.getLastMonthEarnings(driver.id);
+            break;
+          case '3months':
+            data = await EarningsService.getThreeMonthsEarnings(driver.id);
+            break;
+          case '6months':
+            data = await EarningsService.getSixMonthsEarnings(driver.id);
+            break;
+          case '2025':
+            data = await EarningsService.getYearEarnings(driver.id, 2025);
+            break;
+          case '2026':
+            data = await EarningsService.getYearEarnings(driver.id, 2026);
+            break;
         }
 
         if (data) {
@@ -97,6 +119,9 @@ export default function DriverEarningsScreen() {
             hours: data.hours || 0,
             avgPerTrip: data.trips > 0 ? data.amount / data.trips : 0,
           });
+          if (data.breakdown) {
+            setBreakdown(data.breakdown);
+          }
         }
       }
     } catch (error) {
@@ -127,14 +152,15 @@ export default function DriverEarningsScreen() {
 
       const trips = tripsSnapshot.docs.map((doc: any) => {
         const data = doc.data();
-        // Use finalCost or estimatedCost, plus any tip
+        // Use finalCost or estimatedCost - driver gets 80% of fare + 100% of tips
         const tripFare = data.finalCost || data.estimatedCost || 0;
         const tip = data.tip || 0;
+        const driverShare = tripFare * 0.80; // Driver gets 80% of trip fare
         return {
           id: doc.id,
           pickup: data.pickup?.address || 'Unknown',
           destination: data.destination?.address || 'Unknown',
-          fare: tripFare + tip,
+          fare: driverShare + tip, // Driver earnings = 80% of fare + 100% of tips
           completedAt: data.completedAt?.toDate() || new Date(),
         };
       });
@@ -159,6 +185,18 @@ export default function DriverEarningsScreen() {
         return 'This Week';
       case 'month':
         return 'This Month';
+      case 'lastMonth':
+        return 'Last Month';
+      case '3months':
+        return 'Last 3 Months';
+      case '6months':
+        return 'Last 6 Months';
+      case '2025':
+        return '2025';
+      case '2026':
+        return '2026';
+      default:
+        return '';
     }
   };
 
@@ -212,28 +250,42 @@ export default function DriverEarningsScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Period Selector */}
-        <View style={styles.periodSelector}>
-          {(['today', 'week', 'month'] as PeriodTab[]).map((period) => (
+        {/* Period Selector - Scrollable */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.periodScrollView}
+          contentContainerStyle={styles.periodScrollContent}
+        >
+          {([
+            { key: 'today', label: 'Today' },
+            { key: 'week', label: 'Week' },
+            { key: 'month', label: 'Month' },
+            { key: 'lastMonth', label: 'Last Month' },
+            { key: '3months', label: '3 Months' },
+            { key: '6months', label: '6 Months' },
+            { key: '2025', label: '2025' },
+            { key: '2026', label: '2026' },
+          ] as { key: PeriodTab; label: string }[]).map((period) => (
             <TouchableOpacity
-              key={period}
+              key={period.key}
               style={[
                 styles.periodTab,
-                activePeriod === period && styles.periodTabActive,
+                activePeriod === period.key && styles.periodTabActive,
               ]}
-              onPress={() => setActivePeriod(period)}
+              onPress={() => setActivePeriod(period.key)}
             >
               <Text
                 style={[
                   styles.periodTabText,
-                  activePeriod === period && styles.periodTabTextActive,
+                  activePeriod === period.key && styles.periodTabTextActive,
                 ]}
               >
-                {period === 'today' ? 'Today' : period === 'week' ? 'Week' : 'Month'}
+                {period.label}
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Main Earnings Card */}
         <LinearGradient
@@ -298,33 +350,46 @@ export default function DriverEarningsScreen() {
           <Text style={styles.sectionTitle}>Earnings Breakdown</Text>
 
           <View style={styles.breakdownCard}>
+            {/* Gross fare from riders */}
+            <View style={styles.breakdownItem}>
+              <View style={styles.breakdownLeft}>
+                <Ionicons name="people-outline" size={20} color={Colors.gray[500]} />
+                <Text style={styles.breakdownLabel}>Rider Contributions</Text>
+              </View>
+              <Text style={styles.breakdownAmount}>CI${breakdown.grossFare.toFixed(2)}</Text>
+            </View>
+
+            {/* Platform fee deduction */}
+            <View style={styles.breakdownItem}>
+              <View style={styles.breakdownLeft}>
+                <Ionicons name="remove-circle-outline" size={20} color={Colors.error} />
+                <Text style={styles.breakdownLabel}>Platform Fee (20%)</Text>
+              </View>
+              <Text style={[styles.breakdownAmount, { color: Colors.error }]}>-CI${breakdown.platformFee.toFixed(2)}</Text>
+            </View>
+
+            {/* Driver's share of fares */}
             <View style={styles.breakdownItem}>
               <View style={styles.breakdownLeft}>
                 <Ionicons name="cash-outline" size={20} color={Colors.success} />
-                <Text style={styles.breakdownLabel}>Trip Earnings</Text>
+                <Text style={styles.breakdownLabel}>Trip Earnings (80%)</Text>
               </View>
-              <Text style={styles.breakdownAmount}>${(stats.amount * 0.85).toFixed(2)}</Text>
+              <Text style={styles.breakdownAmount}>CI${breakdown.driverShare.toFixed(2)}</Text>
             </View>
 
+            {/* Tips (100% to driver) */}
             <View style={styles.breakdownItem}>
               <View style={styles.breakdownLeft}>
-                <Ionicons name="gift-outline" size={20} color={Colors.info} />
-                <Text style={styles.breakdownLabel}>Tips</Text>
+                <Ionicons name="heart-outline" size={20} color={Colors.primary} />
+                <Text style={styles.breakdownLabel}>Tips (100% yours)</Text>
               </View>
-              <Text style={styles.breakdownAmount}>${(stats.amount * 0.10).toFixed(2)}</Text>
+              <Text style={[styles.breakdownAmount, { color: Colors.success }]}>+CI${breakdown.tips.toFixed(2)}</Text>
             </View>
 
-            <View style={styles.breakdownItem}>
-              <View style={styles.breakdownLeft}>
-                <Ionicons name="star-outline" size={20} color={Colors.warning} />
-                <Text style={styles.breakdownLabel}>Bonuses</Text>
-              </View>
-              <Text style={styles.breakdownAmount}>${(stats.amount * 0.05).toFixed(2)}</Text>
-            </View>
-
+            {/* Total driver earnings */}
             <View style={[styles.breakdownItem, styles.breakdownTotal]}>
-              <Text style={styles.breakdownTotalLabel}>Total Earnings</Text>
-              <Text style={styles.breakdownTotalAmount}>${stats.amount.toFixed(2)}</Text>
+              <Text style={styles.breakdownTotalLabel}>Your Total Earnings</Text>
+              <Text style={styles.breakdownTotalAmount}>CI${breakdown.totalDriverEarnings.toFixed(2)}</Text>
             </View>
           </View>
         </View>
@@ -451,21 +516,28 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing['3xl'],
   },
 
-  // Period Selector
-  periodSelector: {
+  // Period Selector - Scrollable
+  periodScrollView: {
+    marginHorizontal: Spacing.base,
+    marginVertical: Spacing.sm,
+  },
+
+  periodScrollContent: {
     flexDirection: 'row',
-    margin: Spacing.base,
-    padding: 4,
+    gap: Spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     ...Shadows.sm,
   },
 
   periodTab: {
-    flex: 1,
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     alignItems: 'center',
     borderRadius: BorderRadius.md,
+    minWidth: 70,
   },
 
   periodTabActive: {

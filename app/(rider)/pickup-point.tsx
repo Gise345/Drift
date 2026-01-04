@@ -16,7 +16,6 @@ import { useTripStore } from '@/src/stores/trip-store';
 import { useUserStore } from '@/src/stores/user-store';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ChatModal } from '@/components/messaging/ChatModal';
-import { CarMarker } from '@/components/map/CarMarker';
 
 export default function PickupPointScreen() {
   const router = useRouter();

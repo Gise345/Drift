@@ -103,8 +103,8 @@ export default function EarningsDashboard() {
             <Text style={styles.summaryValue}>CI${currentEarnings.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Platform Fee (20%: 4% transaction + 16% maintenance)</Text>
-            <Text style={styles.summaryFee}>-CI${(currentEarnings * 0.19).toFixed(2)}</Text>
+            <Text style={styles.summaryLabel}>Platform Fee (20%)</Text>
+            <Text style={styles.summaryFee}>-CI${(currentEarnings * 0.20).toFixed(2)}</Text>
           </View>
           <View style={[styles.summaryRow, styles.summaryTotal]}>
             <Text style={styles.totalLabel}>Your Earnings (80%)</Text>
@@ -149,17 +149,25 @@ export default function EarningsDashboard() {
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>
                 <Ionicons name="cash-outline" size={20} color={Colors.success} />
-                <Text style={styles.breakdownLabel}>Ride Earnings</Text>
+                <Text style={styles.breakdownLabel}>Trip Earnings (80%)</Text>
               </View>
-              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.90).toFixed(2)}</Text>
+              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.80).toFixed(2)}</Text>
+            </View>
+
+            <View style={styles.breakdownRow}>
+              <View style={styles.breakdownLeft}>
+                <Ionicons name="remove-circle-outline" size={20} color={Colors.error} />
+                <Text style={styles.breakdownLabel}>Platform Fee (20%)</Text>
+              </View>
+              <Text style={[styles.breakdownValue, { color: Colors.error }]}>-CI${(currentEarnings * 0.20).toFixed(2)}</Text>
             </View>
 
             <View style={styles.breakdownRow}>
               <View style={styles.breakdownLeft}>
                 <Ionicons name="heart-outline" size={20} color={Colors.primary} />
-                <Text style={styles.breakdownLabel}>Tips</Text>
+                <Text style={styles.breakdownLabel}>Tips (100% yours)</Text>
               </View>
-              <Text style={styles.breakdownValue}>CI${(currentEarnings * 0.10).toFixed(2)}</Text>
+              <Text style={[styles.breakdownValue, { color: Colors.success }]}>+CI$0.00</Text>
             </View>
           </View>
         </View>

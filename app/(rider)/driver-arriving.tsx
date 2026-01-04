@@ -21,7 +21,6 @@ import { ChatModal } from '@/components/messaging/ChatModal';
 import { BlockUserModal } from '@/components/modal/BlockUserModal';
 import { cancelTrip } from '@/src/services/ride-request.service';
 import { ProgressivePolyline } from '@/components/map/ProgressivePolyline';
-import { CarMarker } from '@/components/map/CarMarker';
 
 // Google Directions API Key
 const GOOGLE_DIRECTIONS_API_KEY =

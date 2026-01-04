@@ -33,11 +33,24 @@ function documentExists(docSnapshot: FirebaseFirestoreTypes.DocumentSnapshot): b
   return docSnapshot.exists as unknown as boolean;
 }
 
+export interface EarningsBreakdown {
+  grossFare: number;           // Total fare before split (what rider paid for trip, excluding tips)
+  driverShare: number;         // 80% of gross fare (driver's earnings from trips)
+  platformFee: number;         // 20% of gross fare (Drift's commission)
+  tips: number;                // 100% goes to driver
+  totalDriverEarnings: number; // driverShare + tips
+}
+
 export interface EarningsData {
-  amount: number;
+  amount: number;              // Total driver earnings (80% of fare + 100% of tips)
   trips: number;
   hours: number;
+  breakdown: EarningsBreakdown;
 }
+
+// Driver gets 80% of trip fare, platform takes 20%
+const DRIVER_SHARE_PERCENTAGE = 0.80;
+const PLATFORM_FEE_PERCENTAGE = 0.20;
 
 export const EarningsService = {
   /**
@@ -57,22 +70,36 @@ export const EarningsService = {
       );
       const snapshot = await getDocs(q);
 
-      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
-      const earnings = snapshot.docs.reduce((total, doc) => {
+      // Calculate earnings breakdown - driver gets 80% of fare + 100% of tips
+      let grossFare = 0;
+      let tips = 0;
+
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        // Use finalCost if available, otherwise estimatedCost, also add any tips
-        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tripFare = data.finalCost || data.estimatedCost || 0;
         const tip = data.tip || 0;
-        return total + tripEarnings + tip;
-      }, 0);
-      
+        grossFare += tripFare;
+        tips += tip;
+      });
+
+      const driverShare = grossFare * DRIVER_SHARE_PERCENTAGE;
+      const platformFee = grossFare * PLATFORM_FEE_PERCENTAGE;
+      const totalDriverEarnings = driverShare + tips;
+
       // Calculate hours (placeholder - implement actual logic)
       const hours = snapshot.size * 0.5; // Assume 30 min per trip average
-      
+
       return {
-        amount: earnings,
+        amount: totalDriverEarnings,
         trips: snapshot.size,
         hours: hours,
+        breakdown: {
+          grossFare,
+          driverShare,
+          platformFee,
+          tips,
+          totalDriverEarnings,
+        },
       };
     } catch (error) {
       console.error('Error getting today earnings:', error);
@@ -80,6 +107,13 @@ export const EarningsService = {
         amount: 0,
         trips: 0,
         hours: 0,
+        breakdown: {
+          grossFare: 0,
+          driverShare: 0,
+          platformFee: 0,
+          tips: 0,
+          totalDriverEarnings: 0,
+        },
       };
     }
   },
@@ -102,20 +136,35 @@ export const EarningsService = {
       );
       const snapshot = await getDocs(q);
 
-      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
-      const earnings = snapshot.docs.reduce((total, doc) => {
+      // Calculate earnings breakdown - driver gets 80% of fare + 100% of tips
+      let grossFare = 0;
+      let tips = 0;
+
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tripFare = data.finalCost || data.estimatedCost || 0;
         const tip = data.tip || 0;
-        return total + tripEarnings + tip;
-      }, 0);
-      
+        grossFare += tripFare;
+        tips += tip;
+      });
+
+      const driverShare = grossFare * DRIVER_SHARE_PERCENTAGE;
+      const platformFee = grossFare * PLATFORM_FEE_PERCENTAGE;
+      const totalDriverEarnings = driverShare + tips;
+
       const hours = snapshot.size * 0.5;
-      
+
       return {
-        amount: earnings,
+        amount: totalDriverEarnings,
         trips: snapshot.size,
         hours: hours,
+        breakdown: {
+          grossFare,
+          driverShare,
+          platformFee,
+          tips,
+          totalDriverEarnings,
+        },
       };
     } catch (error) {
       console.error('Error getting weekly earnings:', error);
@@ -123,6 +172,13 @@ export const EarningsService = {
         amount: 0,
         trips: 0,
         hours: 0,
+        breakdown: {
+          grossFare: 0,
+          driverShare: 0,
+          platformFee: 0,
+          tips: 0,
+          totalDriverEarnings: 0,
+        },
       };
     }
   },
@@ -145,20 +201,35 @@ export const EarningsService = {
       );
       const snapshot = await getDocs(q);
 
-      // Calculate earnings from finalCost or estimatedCost (driver gets the fare)
-      const earnings = snapshot.docs.reduce((total, doc) => {
+      // Calculate earnings breakdown - driver gets 80% of fare + 100% of tips
+      let grossFare = 0;
+      let tips = 0;
+
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        const tripEarnings = data.finalCost || data.estimatedCost || 0;
+        const tripFare = data.finalCost || data.estimatedCost || 0;
         const tip = data.tip || 0;
-        return total + tripEarnings + tip;
-      }, 0);
-      
+        grossFare += tripFare;
+        tips += tip;
+      });
+
+      const driverShare = grossFare * DRIVER_SHARE_PERCENTAGE;
+      const platformFee = grossFare * PLATFORM_FEE_PERCENTAGE;
+      const totalDriverEarnings = driverShare + tips;
+
       const hours = snapshot.size * 0.5;
-      
+
       return {
-        amount: earnings,
+        amount: totalDriverEarnings,
         trips: snapshot.size,
         hours: hours,
+        breakdown: {
+          grossFare,
+          driverShare,
+          platformFee,
+          tips,
+          totalDriverEarnings,
+        },
       };
     } catch (error) {
       console.error('Error getting monthly earnings:', error);
@@ -166,6 +237,116 @@ export const EarningsService = {
         amount: 0,
         trips: 0,
         hours: 0,
+        breakdown: {
+          grossFare: 0,
+          driverShare: 0,
+          platformFee: 0,
+          tips: 0,
+          totalDriverEarnings: 0,
+        },
+      };
+    }
+  },
+
+  /**
+   * Get last month's earnings for a driver
+   */
+  async getLastMonthEarnings(driverId: string): Promise<EarningsData> {
+    const now = new Date();
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    return this.getEarningsForDateRange(driverId, startOfLastMonth, endOfLastMonth);
+  },
+
+  /**
+   * Get last 3 months earnings for a driver
+   */
+  async getThreeMonthsEarnings(driverId: string): Promise<EarningsData> {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+
+    return this.getEarningsForDateRange(driverId, startDate, now);
+  },
+
+  /**
+   * Get last 6 months earnings for a driver
+   */
+  async getSixMonthsEarnings(driverId: string): Promise<EarningsData> {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+
+    return this.getEarningsForDateRange(driverId, startDate, now);
+  },
+
+  /**
+   * Get earnings for a specific year
+   */
+  async getYearEarnings(driverId: string, year: number): Promise<EarningsData> {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    return this.getEarningsForDateRange(driverId, startOfYear, endOfYear);
+  },
+
+  /**
+   * Helper: Get earnings for a custom date range
+   */
+  async getEarningsForDateRange(driverId: string, startDate: Date, endDate: Date): Promise<EarningsData> {
+    try {
+      const tripsRef = collection(db, 'trips');
+      const q = query(
+        tripsRef,
+        where('driverId', '==', driverId),
+        where('completedAt', '>=', startDate),
+        where('completedAt', '<=', endDate),
+        where('status', '==', 'COMPLETED')
+      );
+      const snapshot = await getDocs(q);
+
+      // Calculate earnings breakdown - driver gets 80% of fare + 100% of tips
+      let grossFare = 0;
+      let tips = 0;
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        const tripFare = data.finalCost || data.estimatedCost || 0;
+        const tip = data.tip || 0;
+        grossFare += tripFare;
+        tips += tip;
+      });
+
+      const driverShare = grossFare * DRIVER_SHARE_PERCENTAGE;
+      const platformFee = grossFare * PLATFORM_FEE_PERCENTAGE;
+      const totalDriverEarnings = driverShare + tips;
+
+      const hours = snapshot.size * 0.5;
+
+      return {
+        amount: totalDriverEarnings,
+        trips: snapshot.size,
+        hours: hours,
+        breakdown: {
+          grossFare,
+          driverShare,
+          platformFee,
+          tips,
+          totalDriverEarnings,
+        },
+      };
+    } catch (error) {
+      console.error('Error getting earnings for date range:', error);
+      return {
+        amount: 0,
+        trips: 0,
+        hours: 0,
+        breakdown: {
+          grossFare: 0,
+          driverShare: 0,
+          platformFee: 0,
+          tips: 0,
+          totalDriverEarnings: 0,
+        },
       };
     }
   },

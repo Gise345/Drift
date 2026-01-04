@@ -11,10 +11,10 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
+import auth from '@react-native-firebase/auth';
 import {
   getAuth,
   signInWithCredential,
-  OAuthProvider,
 } from '@react-native-firebase/auth';
 import {
   getFirestore,
@@ -78,6 +78,11 @@ export async function isAppleAuthAvailable(): Promise<boolean> {
   }
 
   try {
+    // Check if the native module is available (not available in Expo Go or before native rebuild)
+    if (!AppleAuthentication || typeof AppleAuthentication.isAvailableAsync !== 'function') {
+      console.warn('expo-apple-authentication native module not available. Requires a native build with the plugin.');
+      return false;
+    }
     return await AppleAuthentication.isAvailableAsync();
   } catch (error) {
     console.error('Error checking Apple auth availability:', error);
@@ -122,7 +127,16 @@ export async function signInWithApple(
     if (!isAvailable) {
       return {
         success: false,
-        error: 'Sign in with Apple is not available on this device',
+        error: 'Sign in with Apple is not available on this device. Please ensure you have the latest app version from the App Store.',
+      };
+    }
+
+    // Check if signInAsync is available (native module check)
+    if (typeof AppleAuthentication.signInAsync !== 'function') {
+      console.error('AppleAuthentication.signInAsync is not available');
+      return {
+        success: false,
+        error: 'Apple Sign-In requires a native app build. Please update to the latest version.',
       };
     }
 
@@ -148,15 +162,14 @@ export async function signInWithApple(
       };
     }
 
-    // Create Firebase OAuth credential
-    const provider = new OAuthProvider('apple.com');
-    const oauthCredential = provider.credential({
-      idToken: credential.identityToken,
-      rawNonce: nonce,
-    });
+    // Create Firebase Apple credential using namespace API (more reliable in RN Firebase)
+    const appleCredential = auth.AppleAuthProvider.credential(
+      credential.identityToken,
+      nonce
+    );
 
     // Sign in to Firebase
-    const userCredential = await signInWithCredential(authInstance, oauthCredential);
+    const userCredential = await signInWithCredential(authInstance, appleCredential);
     const firebaseUser = userCredential.user;
 
     console.log('Firebase user authenticated:', firebaseUser.uid);

@@ -43,6 +43,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.drift.global",
+      buildNumber: "13",
       googleServicesFile: "./GoogleService-Info.plist",
       infoPlist: {
         NSLocationWhenInUseUsageDescription: "Drift uses your location to show nearby drivers, calculate routes, provide turn-by-turn navigation, and share your trip with trusted contacts for safety.",
@@ -72,7 +73,7 @@ module.exports = {
     },
     android: {
       package: "com.drift.global",
-      versionCode: 12,
+      versionCode: 13,
       adaptiveIcon: {
         foregroundImage: "./assets/images/app-icon.png",
         backgroundColor: "#000000"
@@ -188,6 +189,7 @@ module.exports = {
       "@react-native-firebase/perf",
       // Note: @react-native-firebase/analytics doesn't have a plugin - it works via @react-native-firebase/app
       "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
       [
         "@stripe/stripe-react-native",
         {
@@ -215,9 +217,7 @@ module.exports = {
       isPreview: IS_PREVIEW,
       isProduction: IS_PRODUCTION,
     },
-    runtimeVersion: {
-      policy: "appVersion"
-    },
+    runtimeVersion: "1.0.0",
     updates: {
       enabled: true,
       checkAutomatically: "ON_LOAD",

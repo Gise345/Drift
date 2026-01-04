@@ -45,11 +45,13 @@ export default function CompleteRide() {
   const hasAutoStartedRef = useRef(false);
   const [currentFare, setCurrentFare] = useState<number>(activeRide?.estimatedEarnings || 0);
 
-  // Fetch the latest fare from Firebase (includes any added stops)
+  const [tripStartedAt, setTripStartedAt] = useState<Date | null>(null);
+
+  // Fetch the latest fare and startedAt from Firebase (includes any added stops)
   useEffect(() => {
     if (!activeRide?.id) return;
 
-    const fetchCurrentFare = async () => {
+    const fetchTripData = async () => {
       try {
         const tripRef = doc(firebaseDb, 'trips', activeRide.id);
         const tripDoc = await getDoc(tripRef);
@@ -58,20 +60,30 @@ export default function CompleteRide() {
           // Use estimatedCost from Firebase which includes any added stop costs
           const updatedFare = data?.estimatedCost || activeRide?.estimatedEarnings || 0;
           setCurrentFare(updatedFare);
+
+          // Get the trip start time for calculating actual duration
+          const startedAt = data?.startedAt?.toDate?.() || data?.startedAt;
+          if (startedAt) {
+            setTripStartedAt(new Date(startedAt));
+          }
         }
       } catch (error) {
-        console.error('Could not fetch updated fare:', error);
+        console.error('Could not fetch trip data:', error);
       }
     };
 
-    fetchCurrentFare();
+    fetchTripData();
   }, [activeRide?.id]);
 
   // Calculate values (use currentFare which is updated from Firebase)
   const baseFare = currentFare;
   const totalEarnings = baseFare + (tipReceived || 0);
   const actualDistance = activeRide?.distance || 0;
-  const actualDuration = activeRide?.estimatedDuration || 0;
+
+  // Calculate ACTUAL duration from trip start time, fallback to estimated
+  const actualDuration = tripStartedAt
+    ? Math.round((Date.now() - tripStartedAt.getTime()) / 1000) // Duration in seconds
+    : activeRide?.estimatedDuration || 0;
 
   // Redirect to tabs if no active ride
   useEffect(() => {
