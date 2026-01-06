@@ -20,6 +20,8 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -82,6 +84,7 @@ export default function NavigateToPickup() {
   const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
+  const [showPaymentWaitingModal, setShowPaymentWaitingModal] = useState(false);
   const lastRouteRecalculation = useRef<number>(0);
   const messagingInitializedRef = useRef(false);
   const hasHandledCancellationRef = useRef(false);
@@ -141,6 +144,23 @@ export default function NavigateToPickup() {
       );
     }
   }, [currentTrip?.status, currentTrip?.id, activeRide?.id]);
+
+  // Handle AWAITING_PAYMENT status - show waiting modal until rider pays
+  useEffect(() => {
+    if (!currentTrip) return;
+
+    if (currentTrip.status === 'AWAITING_PAYMENT') {
+      // Rider needs to complete payment - show waiting modal
+      setShowPaymentWaitingModal(true);
+      console.log('💳 Waiting for rider to complete payment...');
+    } else if (currentTrip.status === 'DRIVER_ARRIVING') {
+      // Payment completed - hide modal and proceed
+      if (showPaymentWaitingModal) {
+        setShowPaymentWaitingModal(false);
+        console.log('✅ Rider completed payment - proceeding to pickup');
+      }
+    }
+  }, [currentTrip?.status]);
 
   // Initialize messaging when driver accepts ride
   useEffect(() => {
@@ -749,6 +769,53 @@ export default function NavigateToPickup() {
           isEnabled={true}
         />
       )}
+
+      {/* Payment Waiting Modal - shown while waiting for rider to complete payment */}
+      <Modal
+        visible={showPaymentWaitingModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          Alert.alert(
+            'Cancel Ride?',
+            'The rider is completing payment. Are you sure you want to cancel?',
+            [
+              { text: 'Keep Waiting', style: 'cancel' },
+              { text: 'Cancel Ride', style: 'destructive', onPress: handleCancel }
+            ]
+          );
+        }}
+      >
+        <View style={styles.paymentModalOverlay}>
+          <View style={styles.paymentWaitingCard}>
+            <View style={styles.paymentWaitingIconContainer}>
+              <Ionicons name="card-outline" size={48} color={Colors.primary} />
+            </View>
+            <Text style={styles.paymentWaitingTitle}>Waiting for Payment</Text>
+            <Text style={styles.paymentWaitingDescription}>
+              {activeRide?.riderName || 'The rider'} is completing their payment.{'\n'}
+              Please wait...
+            </Text>
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
+
+            <TouchableOpacity
+              style={styles.paymentCancelButton}
+              onPress={() => {
+                Alert.alert(
+                  'Cancel Ride?',
+                  'The rider is completing payment. Are you sure you want to cancel?',
+                  [
+                    { text: 'Keep Waiting', style: 'cancel' },
+                    { text: 'Cancel Ride', style: 'destructive', onPress: handleCancel }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.paymentCancelText}>Cancel Ride</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1084,5 +1151,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.white,
+  },
+
+  // Payment Waiting Modal
+  paymentModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  paymentWaitingCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    ...Shadows.xl,
+  },
+  paymentWaitingIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  paymentWaitingTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.black,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  paymentWaitingDescription: {
+    fontSize: 15,
+    color: Colors.gray[600],
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  paymentCancelButton: {
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  paymentCancelText: {
+    color: Colors.error,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

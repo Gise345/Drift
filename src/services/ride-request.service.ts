@@ -145,13 +145,14 @@ export function listenForRideRequests(
           return;
         }
 
-        // Skip requests where payment is not authorized/verified/completed
-        // VERIFIED = new flow (card verified, charge when driver accepts)
+        // Skip requests where payment status is invalid
+        // PENDING = new flow (no payment yet, rider pays after driver accepts)
+        // VERIFIED = card verified flow (card verified, charge when driver accepts)
         // AUTHORIZED = legacy flow (payment hold, capture when driver accepts)
         // COMPLETED = legacy status (for backwards compatibility)
-        const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'COMPLETED', 'requires_capture'];
-        if (!validPaymentStatuses.includes(data.paymentStatus)) {
-          console.log('⏭️ Skipping unpaid request:', doc.id, 'paymentStatus:', data.paymentStatus);
+        const validPaymentStatuses = ['PENDING', 'VERIFIED', 'AUTHORIZED', 'COMPLETED', 'requires_capture'];
+        if (data.paymentStatus && !validPaymentStatuses.includes(data.paymentStatus)) {
+          console.log('⏭️ Skipping invalid payment status request:', doc.id, 'paymentStatus:', data.paymentStatus);
           return;
         }
 
@@ -306,34 +307,48 @@ export async function acceptRideRequest(
       formattedDriverInfo.photo = driverInfo.photo;
     }
 
-    // Accept the ride and set status to DRIVER_ARRIVING
-    // This immediately transitions the rider to the "driver arriving" screen
+    // Determine the new status based on payment status
+    // NEW FLOW: If paymentStatus is PENDING, rider needs to pay after driver accepts
+    // LEGACY FLOW: If payment already authorized/verified, proceed directly to DRIVER_ARRIVING
+    const isPendingPayment = tripData?.paymentStatus === 'PENDING' || !tripData?.paymentStatus;
+    const newStatus = isPendingPayment ? 'AWAITING_PAYMENT' : 'DRIVER_ARRIVING';
+
     console.log('🔄 Updating trip document with driver info...');
     console.log('  - Trip ID:', tripId);
     console.log('  - Driver ID:', driverId);
-    console.log('  - New Status: DRIVER_ARRIVING');
+    console.log('  - Payment Status:', tripData?.paymentStatus);
+    console.log('  - New Status:', newStatus);
     console.log('  - Driver Info:', formattedDriverInfo);
 
     await updateDoc(tripRef, {
       driverId,
       driverInfo: formattedDriverInfo,
-      status: 'DRIVER_ARRIVING',
+      status: newStatus,
       acceptedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
 
-    // 💰 CHARGE/CAPTURE PAYMENT - Now that driver has accepted, charge the customer
-    console.log('💰 Payment check - tripData.paymentFlow:', tripData?.paymentFlow);
-    console.log('💰 Payment check - tripData.paymentStatus:', tripData?.paymentStatus);
-    console.log('💰 Payment check - tripData.stripeCustomerId:', tripData?.stripeCustomerId);
-    console.log('💰 Payment check - tripData.paymentIntentId:', tripData?.paymentIntentId);
+    // For NEW FLOW (PENDING payment): No payment processing here
+    // Rider will complete payment on complete-payment screen, which will update status to DRIVER_ARRIVING
+    if (isPendingPayment) {
+      console.log('💳 NEW FLOW: Waiting for rider to complete payment...');
+      console.log('✅✅✅ Ride accepted - status: AWAITING_PAYMENT - rider will now pay:', tripId);
+      return;
+    }
 
-    // Determine which payment flow to use
+    // LEGACY FLOWS: Handle payment capture for trips that already have authorized payments
+    console.log('💰 LEGACY FLOW - Payment check:');
+    console.log('  - paymentFlow:', tripData?.paymentFlow);
+    console.log('  - paymentStatus:', tripData?.paymentStatus);
+    console.log('  - stripeCustomerId:', tripData?.stripeCustomerId);
+    console.log('  - paymentIntentId:', tripData?.paymentIntentId);
+
+    // Determine which legacy payment flow to use
     const useVerificationFlow = tripData?.paymentFlow === 'verification' && tripData?.stripeCustomerId;
     const useAuthorizationFlow = tripData?.paymentIntentId || (tripData?.paymentMethod && tripData.paymentMethod.startsWith('stripe:'));
 
     if (useVerificationFlow) {
-      // NEW VERIFICATION FLOW: Card was verified, now charge the actual amount
+      // LEGACY VERIFICATION FLOW: Card was verified, now charge the actual amount
       console.log('💰 Using VERIFICATION flow - charging customer:', tripData.stripeCustomerId);
 
       const chargeAmount = tripData?.lockedContribution || tripData?.pricing?.suggestedContribution || 0;
@@ -442,13 +457,10 @@ export async function acceptRideRequest(
         // Don't throw - ride is still accepted, payment can be manually retried
       }
     } else {
-      console.log('⚠️ No Stripe payment found for trip:', tripId);
-      console.log('  - paymentFlow:', tripData?.paymentFlow);
-      console.log('  - stripeCustomerId:', tripData?.stripeCustomerId);
-      console.log('  - paymentIntentId:', tripData?.paymentIntentId);
+      console.log('⚠️ No Stripe payment found for trip (legacy):', tripId);
     }
 
-    console.log('✅✅✅ Ride accepted successfully - Firebase should notify rider now:', tripId);
+    console.log('✅✅✅ Ride accepted successfully (legacy flow) - Firebase should notify rider now:', tripId);
   } catch (error) {
     console.error('❌ Failed to accept ride:', error);
     throw error;

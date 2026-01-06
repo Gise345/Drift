@@ -166,7 +166,7 @@ export interface Trip {
   riderPhoto?: string; // Rider's profile photo URL
   riderProfileRating?: number; // Rider's profile rating (from their account)
   driverId?: string;
-  status: 'REQUESTED' | 'ACCEPTED' | 'DRIVER_ARRIVING' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'AWAITING_TIP' | 'COMPLETED' | 'CANCELLED';
+  status: 'REQUESTED' | 'ACCEPTED' | 'AWAITING_PAYMENT' | 'DRIVER_ARRIVING' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'AWAITING_TIP' | 'COMPLETED' | 'CANCELLED';
 
   // Tip and final cost
   tip?: number;

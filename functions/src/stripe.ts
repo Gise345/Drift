@@ -189,11 +189,9 @@ export const createStripePaymentIntent = onCall(callableOptions, async (request)
       // Amount should be in cents for USD
       const amountInCents = Math.round(amount * 100);
 
-      // Use capture_method: 'manual' for AUTHORIZATION (hold) instead of immediate capture
-      // This allows us to:
-      // 1. Hold the funds when rider requests a ride
-      // 2. Capture the funds when driver accepts
-      // 3. Cancel/release the hold if no driver found
+      // Use capture_method: 'automatic' for IMMEDIATE capture when payment is confirmed
+      // NEW FLOW: Payment happens AFTER driver accepts, so we charge immediately
+      // No hold/capture flow - payment is charged right away
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountInCents,
         currency: currency.toLowerCase(),
@@ -205,8 +203,8 @@ export const createStripePaymentIntent = onCall(callableOptions, async (request)
         },
         // Explicitly enable card, Apple Pay, and Google Pay
         payment_method_types: ['card', 'link'],
-        // CRITICAL: Use manual capture to authorize (hold) funds without capturing
-        capture_method: 'manual',
+        // Use automatic capture for immediate charge (no uncaptured holds)
+        capture_method: 'automatic',
         // Note: Apple Pay and Google Pay are handled automatically through 'card'
         // when using the mobile Payment Sheet with applePay/googlePay config
       });

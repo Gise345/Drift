@@ -263,7 +263,8 @@ export default function FindingDriverScreen() {
 
   /**
    * Handle the case when no drivers are available after all retries
-   * This is NOT the same as rider cancelling - payment should be released, not refunded
+   * NEW FLOW: No payment to release (payment happens after driver accepts)
+   * LEGACY FLOW: May have payment authorization to release
    */
   const handleNoDriversAvailable = async () => {
     try {
@@ -275,32 +276,30 @@ export default function FindingDriverScreen() {
       if (tripId) {
         console.log('🚫 No drivers available - processing cancellation for trip:', tripId);
 
-        // Fetch trip data directly from Firestore to get paymentIntentId
+        // Fetch trip data directly from Firestore to check for legacy payment
         let paymentIntentId: string | undefined;
+        let paymentStatus: string | undefined;
         try {
           const tripRef = doc(firebaseDb, 'trips', tripId);
           const tripSnap = await getDoc(tripRef);
           if (tripSnap.exists()) {
             const tripData = tripSnap.data();
+            paymentStatus = tripData?.paymentStatus;
             // Get paymentIntentId directly (new format) or parse from paymentMethod (legacy format)
             paymentIntentId = tripData?.paymentIntentId;
             if (!paymentIntentId && tripData?.paymentMethod?.startsWith('stripe:')) {
               paymentIntentId = tripData.paymentMethod.replace('stripe:', '');
             }
-            console.log('📄 Trip data fetched, paymentIntentId:', paymentIntentId);
+            console.log('📄 Trip data fetched, paymentStatus:', paymentStatus, 'paymentIntentId:', paymentIntentId);
           }
         } catch (fetchError) {
           console.error('⚠️ Failed to fetch trip data:', fetchError);
-          // Try using currentTrip as fallback
-          paymentIntentId = (currentTrip as any)?.paymentIntentId;
-          if (!paymentIntentId && currentTrip?.paymentMethod?.startsWith('stripe:')) {
-            paymentIntentId = currentTrip.paymentMethod.replace('stripe:', '');
-          }
         }
 
-        // Release the payment authorization
-        if (paymentIntentId) {
-          console.log('💰 Releasing payment authorization - no drivers found');
+        // Only release payment for LEGACY flow (when payment was authorized upfront)
+        // NEW FLOW has paymentStatus: 'PENDING' and no paymentIntentId
+        if (paymentIntentId && paymentStatus !== 'PENDING') {
+          console.log('💰 LEGACY FLOW: Releasing payment authorization - no drivers found');
           console.log('   PaymentIntent ID:', paymentIntentId);
 
           try {
@@ -311,16 +310,16 @@ export default function FindingDriverScreen() {
             // Continue with cancellation even if payment release fails
           }
         } else {
-          console.log('⚠️ No payment intent ID found on trip');
+          console.log('💳 NEW FLOW: No payment to release (payment was pending)');
         }
 
-        // Cancel with correct reason - NO_DRIVERS_AVAILABLE, not rider cancelled
+        // Cancel with correct reason - NO_DRIVERS_AVAILABLE
         console.log('📝 Cancelling trip with NO_DRIVERS_AVAILABLE reason');
         await cancelTrip(
           tripId,
           'RIDER', // System-initiated on behalf of rider (no drivers available)
           'No drivers available after multiple attempts',
-          'NO_DRIVERS_AVAILABLE' // CORRECT reason type
+          'NO_DRIVERS_AVAILABLE'
         );
         console.log('✅ Trip cancelled successfully');
       }
@@ -366,8 +365,23 @@ export default function FindingDriverScreen() {
     const status = currentTrip.status;
     console.log('📍 Trip status:', status);
 
+    // NEW FLOW: Driver accepted but waiting for rider payment
+    if (status === 'AWAITING_PAYMENT') {
+      console.log('💳 Driver accepted! Navigating to payment...');
+      hasNavigatedRef.current = true;
+
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+
+      setSearchStatus('Driver found! Complete payment...');
+      router.replace('/(rider)/complete-payment');
+      return;
+    }
+
+    // LEGACY FLOW or after payment: Driver is on the way
     if (status === 'ACCEPTED' || status === 'DRIVER_ARRIVING') {
-      console.log('🚗 Driver found! Navigating...');
+      console.log('🚗 Driver on the way! Navigating...');
       hasNavigatedRef.current = true;
 
       if (timerRef.current) {
@@ -504,17 +518,19 @@ export default function FindingDriverScreen() {
             }
           }
 
-          // Skip payment release for verification flow (no payment held)
-          if (paymentFlow === 'verification') {
+          // NEW FLOW: Skip payment release for PENDING status (no payment yet)
+          if (paymentStatus === 'PENDING') {
+            console.log('💳 NEW FLOW: No payment to release (payment was pending)');
+          } else if (paymentFlow === 'verification') {
+            // Skip payment release for verification flow (no payment held)
             console.log('💰 Verification flow - no payment to release');
           } else if (paymentIntentId) {
-            // Only release if payment was authorized but not captured
+            // LEGACY FLOW: Only release if payment was authorized but not captured
             const shouldRelease = paymentStatus === 'AUTHORIZED' ||
-                                  paymentStatus === 'requires_capture' ||
-                                  !paymentStatus; // Also try if status unknown
+                                  paymentStatus === 'requires_capture';
 
             if (shouldRelease) {
-              console.log('💰 Releasing payment authorization - rider cancelled');
+              console.log('💰 LEGACY FLOW: Releasing payment authorization - rider cancelled');
               console.log('   PaymentIntent ID:', paymentIntentId);
               console.log('   Payment Status:', paymentStatus);
 
@@ -536,8 +552,7 @@ export default function FindingDriverScreen() {
               console.log('💰 Skipping payment release - status:', paymentStatus);
             }
           } else {
-            console.log('⚠️ No paymentIntentId found on trip - cannot release payment');
-            console.log('   This may indicate payment was not stored correctly');
+            console.log('💳 No paymentIntentId found - likely NEW FLOW with pending payment');
           }
 
           // Cancel the trip (this will also try to release payment as a backup)

@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCarpoolStore } from '@/src/stores/carpool-store';
 import { useAuthStore } from '@/src/stores/auth-store';
+import { useTripStore } from '@/src/stores/trip-store';
 import { calculateTripPricing } from '@/src/utils/pricing/drift-pricing-engine';
 import { detectZone } from '@/src/utils/pricing/drift-zone-utils';
 import type { PricingResult } from '@/src/stores/carpool-store';
@@ -98,6 +99,7 @@ export default function VehicleSelectionScreen() {
     setWomenOnlyRide,
   } = useCarpoolStore();
   const { user } = useAuthStore();
+  const { createTrip } = useTripStore();
 
   // Debug: Log user gender for women-only feature
   console.log('👤 Vehicle Selection - User gender:', user?.gender, 'Show women-only:', user?.gender === 'female');
@@ -210,6 +212,11 @@ export default function VehicleSelectionScreen() {
     const vehicle = VEHICLE_OPTIONS.find(v => v.id === selectedVehicle);
     if (!vehicle) return;
 
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to continue');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -228,9 +235,52 @@ export default function VehicleSelectionScreen() {
 
       console.log('🔒 Contribution locked:', finalPrice, 'KYD');
 
-      // Navigate to payment selection
-      router.push('/(rider)/select-payment');
+      // Create trip WITHOUT payment - payment happens after driver accepts
+      const tripData = {
+        riderId: user.id,
+        riderName: user.name || user.email?.split('@')[0] || 'Rider',
+        riderPhoto: user.profilePhoto || undefined,
+        riderProfileRating: user.rating || 5.0,
+        riderGender: user.gender,
+        status: 'REQUESTED' as const,
+        pickup: {
+          address: pickupLocation?.address || '',
+          coordinates: {
+            latitude: pickupLocation?.latitude || 0,
+            longitude: pickupLocation?.longitude || 0,
+          },
+          placeName: pickupLocation?.placeName || pickupLocation?.address || '',
+        },
+        destination: {
+          address: destination?.address || '',
+          coordinates: {
+            latitude: destination?.latitude || 0,
+            longitude: destination?.longitude || 0,
+          },
+          placeName: destination?.placeName || destination?.address || '',
+        },
+        vehicleType: vehicle.id,
+        distance: route?.distance || 0,
+        duration: route?.duration ? Math.ceil(route.duration / 60) : 0,
+        estimatedCost: finalPrice,
+        estimatedCostKYD: finalPrice,
+        estimatedCostGBP: finalPrice * KYD_TO_GBP_RATE,
+        lockedContribution: finalPrice,
+        womenOnlyRide: womenOnlyRide || false,
+        // NO payment fields - payment happens after driver accepts
+        paymentStatus: 'PENDING',
+        pricing: pricing,
+        requestedAt: new Date(),
+      };
+
+      console.log('📝 Creating trip without payment:', tripData);
+      const tripId = await createTrip(tripData);
+      console.log('✅ Trip created:', tripId);
+
+      // Navigate directly to finding-driver (skip payment)
+      router.push('/(rider)/finding-driver');
     } catch (error) {
+      console.error('❌ Failed to create trip:', error);
       Alert.alert('Error', 'Failed to process request. Please try again.');
     } finally {
       setLoading(false);
@@ -549,7 +599,7 @@ export default function VehicleSelectionScreen() {
               ) : (
                 <>
                   <Text style={styles.confirmButtonText}>
-                    Continue to Payment
+                    Confirm Trip
                   </Text>
                   <Ionicons name="arrow-forward" size={20} color={Colors.white} />
                 </>

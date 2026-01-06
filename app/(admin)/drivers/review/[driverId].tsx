@@ -81,6 +81,10 @@ export default function DriverReviewScreen() {
   } | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // Application rejection modal state
+  const [applicationRejectModalVisible, setApplicationRejectModalVisible] = useState(false);
+  const [applicationRejectionReason, setApplicationRejectionReason] = useState('');
+
   // Image preview modal
   const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -236,6 +240,51 @@ export default function DriverReviewScreen() {
     }
   };
 
+  // Undo document approval (revert to pending)
+  const handleUndoDocumentApproval = async (docType: DocumentType, title: string) => {
+    Alert.alert(
+      'Undo Approval',
+      `Are you sure you want to undo the approval for ${title}? This will set the document back to pending status.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Undo',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingDoc(docType);
+            try {
+              await updateDocumentStatus(driverId as string, docType, 'pending');
+
+              // Update local state
+              setLocalDocStatuses(prev => ({
+                ...prev,
+                [docType]: { status: 'pending' },
+              }));
+
+              // Add to verification history
+              await updateDoc(doc(db, 'drivers', driverId as string), {
+                verificationHistory: arrayUnion({
+                  documentType: docType,
+                  action: 'approval_undone',
+                  adminId: user?.id || 'admin',
+                  timestamp: new Date(),
+                }),
+                updatedAt: serverTimestamp(),
+              });
+
+              console.log(`↩️ ${title} approval undone`);
+            } catch (error) {
+              console.error(`❌ Error undoing approval for ${title}:`, error);
+              Alert.alert('Error', `Failed to undo approval for ${title}`);
+            } finally {
+              setProcessingDoc(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Open rejection modal
   const openRejectModal = (docType: DocumentType, title: string) => {
     setRejectingDocument({ type: docType, title });
@@ -384,44 +433,37 @@ export default function DriverReviewScreen() {
     );
   };
 
-  // Reject entire application
+  // Open application rejection modal
   const handleRejectApplication = () => {
-    Alert.prompt(
-      'Reject Application',
-      `Please provide a reason for rejecting ${driver?.firstName} ${driver?.lastName}'s application:`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async (reason) => {
-            if (!reason || reason.trim() === '') {
-              Alert.alert('Error', 'Please provide a rejection reason');
-              return;
-            }
+    setApplicationRejectionReason('');
+    setApplicationRejectModalVisible(true);
+  };
 
-            setProcessing(true);
-            try {
-              await updateDriverRegistrationStatus(
-                driverId as string,
-                'rejected',
-                user?.id || 'admin',
-                reason
-              );
-              Alert.alert('Application Rejected', 'The driver has been notified.', [
-                { text: 'OK', onPress: () => router.back() },
-              ]);
-            } catch (error) {
-              console.error('❌ Error rejecting driver:', error);
-              Alert.alert('Error', 'Failed to reject driver');
-            } finally {
-              setProcessing(false);
-            }
-          },
-        },
-      ],
-      'plain-text'
-    );
+  // Confirm application rejection (called from modal)
+  const confirmRejectApplication = async () => {
+    if (!applicationRejectionReason.trim()) {
+      Alert.alert('Error', 'Please provide a rejection reason');
+      return;
+    }
+
+    setApplicationRejectModalVisible(false);
+    setProcessing(true);
+    try {
+      await updateDriverRegistrationStatus(
+        driverId as string,
+        'rejected',
+        user?.id || 'admin',
+        applicationRejectionReason.trim()
+      );
+      Alert.alert('Application Rejected', 'The driver has been notified.', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      console.error('❌ Error rejecting driver:', error);
+      Alert.alert('Error', 'Failed to reject driver');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   // Open image preview
@@ -584,6 +626,7 @@ export default function DriverReviewScreen() {
               isProcessing={processingDoc === 'driversLicense'}
               onApprove={() => handleApproveDocument('driversLicense', "Driver's License")}
               onReject={() => openRejectModal('driversLicense', "Driver's License")}
+              onUndo={() => handleUndoDocumentApproval('driversLicense', "Driver's License")}
               onImagePress={openImagePreview}
             />
           )}
@@ -598,6 +641,7 @@ export default function DriverReviewScreen() {
               isProcessing={processingDoc === 'insurance'}
               onApprove={() => handleApproveDocument('insurance', 'Vehicle Insurance')}
               onReject={() => openRejectModal('insurance', 'Vehicle Insurance')}
+              onUndo={() => handleUndoDocumentApproval('insurance', 'Vehicle Insurance')}
               onImagePress={openImagePreview}
             />
           )}
@@ -612,6 +656,7 @@ export default function DriverReviewScreen() {
               isProcessing={processingDoc === 'registration'}
               onApprove={() => handleApproveDocument('registration', 'Vehicle Registration')}
               onReject={() => openRejectModal('registration', 'Vehicle Registration')}
+              onUndo={() => handleUndoDocumentApproval('registration', 'Vehicle Registration')}
               onImagePress={openImagePreview}
             />
           )}
@@ -626,6 +671,7 @@ export default function DriverReviewScreen() {
               isProcessing={processingDoc === 'inspection'}
               onApprove={() => handleApproveDocument('inspection', 'Safety Inspection')}
               onReject={() => openRejectModal('inspection', 'Safety Inspection')}
+              onUndo={() => handleUndoDocumentApproval('inspection', 'Safety Inspection')}
               onImagePress={openImagePreview}
             />
           )}
@@ -791,6 +837,55 @@ export default function DriverReviewScreen() {
         </View>
       </Modal>
 
+      {/* Application Rejection Modal */}
+      <Modal
+        visible={applicationRejectModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setApplicationRejectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reject Application</Text>
+              <TouchableOpacity onPress={() => setApplicationRejectModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Colors.gray[600]} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Please provide a reason for rejecting {driver?.firstName} {driver?.lastName}'s application. This will be shown to the driver.
+            </Text>
+
+            <TextInput
+              style={styles.reasonInput}
+              placeholder="e.g., Incomplete documentation, failed background check, vehicle does not meet requirements..."
+              placeholderTextColor={Colors.gray[400]}
+              value={applicationRejectionReason}
+              onChangeText={setApplicationRejectionReason}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setApplicationRejectModalVisible(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalRejectButton]}
+                onPress={confirmRejectApplication}
+              >
+                <Text style={styles.modalRejectButtonText}>Reject Application</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Image Preview Modal */}
       <Modal
         visible={imagePreviewVisible}
@@ -841,6 +936,7 @@ const DocumentVerificationCard = ({
   isProcessing,
   onApprove,
   onReject,
+  onUndo,
   onImagePress,
 }: {
   title: string;
@@ -852,6 +948,7 @@ const DocumentVerificationCard = ({
   isProcessing: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onUndo?: () => void;
   onImagePress: (url: string) => void;
 }) => {
   const getStatusColor = () => {
@@ -931,7 +1028,7 @@ const DocumentVerificationCard = ({
         )}
       </View>
 
-      {/* Action buttons - only show if pending or resubmitted */}
+      {/* Action buttons - show for pending, resubmitted, or approved (with undo) */}
       {(status.status === 'pending' || status.status === 'resubmitted') && (
         <View style={styles.documentActions}>
           {isProcessing ? (
@@ -953,6 +1050,23 @@ const DocumentVerificationCard = ({
                 <Text style={styles.docApproveButtonText}>Approve</Text>
               </TouchableOpacity>
             </>
+          )}
+        </View>
+      )}
+
+      {/* Undo button for approved documents */}
+      {status.status === 'approved' && onUndo && (
+        <View style={styles.documentActions}>
+          {isProcessing ? (
+            <ActivityIndicator color={Colors.primary} />
+          ) : (
+            <TouchableOpacity
+              style={[styles.docActionButton, styles.docUndoButton]}
+              onPress={onUndo}
+            >
+              <Ionicons name="arrow-undo" size={18} color={Colors.warning} />
+              <Text style={styles.docUndoButtonText}>Undo Approval</Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -1216,6 +1330,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     fontFamily: Typography.fontFamily.semibold,
     color: Colors.white,
+  },
+  docUndoButton: {
+    backgroundColor: Colors.warning + '15',
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+  docUndoButtonText: {
+    fontSize: Typography.fontSize.sm,
+    fontFamily: Typography.fontFamily.semibold,
+    color: Colors.warning,
   },
 
   // Action Buttons
