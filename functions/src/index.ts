@@ -65,6 +65,7 @@ export {
   onTripCompleted,
   onSafetyAlert,
   onRouteDeviation,
+  onRiderCancelledDuringPayment,
 } from './rideNotifications';
 
 // Export Document Verification functions

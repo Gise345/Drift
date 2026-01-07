@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   BackHandler,
   Image,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -33,8 +34,8 @@ import { doc, updateDoc, serverTimestamp } from '@react-native-firebase/firestor
 // KYD to GBP conversion rate
 const KYD_TO_GBP_RATE = 0.873;
 
-// Payment timeout in seconds (5 minutes)
-const PAYMENT_TIMEOUT_SECONDS = 300;
+// Payment timeout in seconds (2 minutes)
+const PAYMENT_TIMEOUT_SECONDS = 120;
 const WARNING_THRESHOLD_SECONDS = 60; // Show warning at 1 minute remaining
 
 export default function CompletePaymentScreen() {
@@ -126,7 +127,7 @@ export default function CompletePaymentScreen() {
         await cancelTrip(
           currentTrip.id,
           'RIDER',
-          'Payment timeout - rider did not complete payment within 5 minutes',
+          'Payment timeout - rider did not complete payment within 2 minutes',
           'PAYMENT_TIMEOUT'
         );
       }
@@ -274,7 +275,12 @@ export default function CompletePaymentScreen() {
             <View style={styles.headerSpacer} />
           </View>
 
-          <View style={styles.content}>
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
             {/* Driver Found Card */}
             <View style={styles.driverCard}>
               <View style={styles.successIcon}>
@@ -359,7 +365,7 @@ export default function CompletePaymentScreen() {
                 />
               </View>
             </View>
-          </View>
+          </ScrollView>
 
           {/* Bottom Actions */}
           <View style={[styles.bottomContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
@@ -464,7 +470,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
   },
   driverCard: {
     backgroundColor: Colors.white,

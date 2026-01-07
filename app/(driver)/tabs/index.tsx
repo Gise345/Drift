@@ -187,17 +187,39 @@ export default function DriverHomeScreen() {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       // When app comes back to foreground
       if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
-        console.log('📱 App came to foreground - re-checking active trip...');
-        // Always re-check for active trip when coming to foreground
-        checkForActiveTrip();
+        console.log('📱 App came to foreground');
 
-        // Also restart listening for requests if online and no active ride
-        if (isOnline && !activeRide) {
+        // Only re-check for active trip if we DON'T already have one
+        // If we have an activeRide, we trust the subscription to keep it updated
+        // This prevents race conditions that could clear activeRide unexpectedly
+        const currentActiveRide = useDriverStore.getState().activeRide;
+        if (!currentActiveRide) {
+          console.log('🔍 No active ride in state - checking Firebase for active trip...');
+          checkForActiveTrip();
+        } else {
+          console.log('✅ Already have active ride in state:', currentActiveRide.id, '- skipping Firebase check');
+        }
+
+        // ONLY restart listening for requests if online and NO active ride
+        // If we have an active ride, we should NOT be listening for new requests
+        if (isOnline && !currentActiveRide) {
           const state = useDriverStore.getState();
-          if (!state.rideRequestListener && state.currentLocation) {
-            state.startListeningForRequests();
+          if (state.currentLocation) {
+            console.log('🔄 Restarting ride request listener after foreground transition');
+            // Stop existing listener first to ensure clean restart
+            state.stopListeningForRequests();
+            // Small delay to ensure cleanup completes
+            setTimeout(() => {
+              if (useDriverStore.getState().isOnline && !useDriverStore.getState().activeRide) {
+                useDriverStore.getState().startListeningForRequests();
+              }
+            }, 100);
           }
         }
+      }
+      // When app goes to background
+      if (nextAppState.match(/inactive|background/) && appStateRef.current === 'active') {
+        console.log('📱 App going to background');
       }
       appStateRef.current = nextAppState;
     });
@@ -239,11 +261,27 @@ export default function DriverHomeScreen() {
   // Sync activeRide with trip store's currentTrip (for real-time updates)
   const { currentTrip } = useTripStore();
   useEffect(() => {
+    // Debug logging
+    console.log('🔄 [driver-home] Sync effect running:', {
+      hasCurrentTrip: !!currentTrip,
+      currentTripId: currentTrip?.id,
+      currentTripStatus: currentTrip?.status,
+      activeRideId: activeRide?.id,
+      idsMatch: currentTrip && activeRide?.id === currentTrip.id,
+    });
+
     if (currentTrip && activeRide?.id === currentTrip.id) {
       // Check if trip ended
       if (['CANCELLED', 'COMPLETED', 'EXPIRED'].includes(currentTrip.status)) {
-        console.log('🚫 Trip ended via subscription:', currentTrip.status);
+        console.log('🚫 [driver-home] Trip ended via subscription:', currentTrip.status);
         setActiveRide(null);
+        return;
+      }
+
+      // AWAITING_PAYMENT is a valid active state - don't clear activeRide
+      // This status means driver accepted but rider is completing payment
+      if (currentTrip.status === 'AWAITING_PAYMENT') {
+        console.log('💳 [driver-home] Trip is AWAITING_PAYMENT - keeping activeRide');
         return;
       }
 
@@ -256,7 +294,7 @@ export default function DriverHomeScreen() {
 
       // Only update if status changed
       if (updatedRide.status !== activeRide.status) {
-        console.log('🔄 Updating active ride status:', updatedRide.status);
+        console.log('🔄 [driver-home] Updating active ride status:', activeRide.status, '->', updatedRide.status);
         setActiveRide(updatedRide);
       }
     }
@@ -312,10 +350,16 @@ export default function DriverHomeScreen() {
 
         setActiveRide(restoredRide);
       } else {
-        console.log('ℹ️ No active trip found');
-        // Only clear if we're re-checking (not initial check)
-        if (hasCheckedActiveTrip) {
+        console.log('ℹ️ No active trip found from Firebase query');
+        // IMPORTANT: Only clear if we're re-checking AND we don't already have an activeRide
+        // This prevents clearing activeRide during transitions or when Firebase query fails
+        // The activeRide should only be cleared when we explicitly know the trip has ended
+        // (e.g., via subscription showing CANCELLED/COMPLETED status)
+        if (hasCheckedActiveTrip && !activeRide) {
+          console.log('🧹 Clearing activeRide (no existing ride and re-check found nothing)');
           setActiveRide(null);
+        } else if (activeRide) {
+          console.log('⚠️ Keeping existing activeRide - query returned nothing but we have local state');
         }
       }
 
@@ -331,6 +375,9 @@ export default function DriverHomeScreen() {
    */
   const mapTripStatusToRideStatus = (status: string): ActiveRide['status'] => {
     switch (status) {
+      case 'AWAITING_PAYMENT':
+        // New payment flow - driver accepted, waiting for rider to pay
+        return 'accepted';
       case 'ACCEPTED':
       case 'DRIVER_ARRIVING':
         return 'navigating_to_pickup';
@@ -382,14 +429,28 @@ export default function DriverHomeScreen() {
   // NOTE: The modal now shows automatically from the hook on first app open
   // No need to manually trigger it here
 
+  // Get currentLocation from store to use as dependency
+  const currentLocation = useDriverStore((state) => state.currentLocation);
+  const rideRequestListener = useDriverStore((state) => state.rideRequestListener);
+
   // Start listening for ride requests when online and location is available
   // This handles restoration of online status after app restart
+  // CRITICAL: Depend on currentLocation to trigger when location becomes available
   useEffect(() => {
-    const state = useDriverStore.getState();
-    if (isOnline && state.currentLocation && !state.rideRequestListener && !activeRide) {
-      startListeningForRequests();
+    // Don't start if already listening, not online, no location, or has active ride
+    if (rideRequestListener || !isOnline || !currentLocation || activeRide) {
+      return;
     }
-  }, [isOnline, region]);
+
+    console.log('🎯 Starting ride request listener - location available:', {
+      isOnline,
+      hasLocation: !!currentLocation,
+      lat: currentLocation?.lat,
+      lng: currentLocation?.lng,
+    });
+
+    startListeningForRequests();
+  }, [isOnline, currentLocation, rideRequestListener, activeRide, startListeningForRequests]);
 
   // Reset accept flags when screen mounts or driver goes back online
   // This ensures the driver can receive new requests after completing/cancelling a ride
@@ -476,23 +537,61 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    // Check if the currently shown request was cancelled by the rider
-    // (i.e., modal is open but request is no longer in the list)
+    // Check if the currently shown request was cancelled or taken
+    // IMPORTANT: Don't assume "not in list" = "cancelled" - actually check Firebase
     if (showRequestModal && currentRequest) {
       const requestStillExists = incomingRequests.some(r => r.id === currentRequest.id);
       if (!requestStillExists) {
-        // Request disappeared - rider cancelled or request was taken by another driver
-        console.log('🚫 Current request was cancelled/taken:', currentRequest.id);
-        setShowRequestModal(false);
-        setCurrentRequest(null);
-        markRequestProcessed(currentRequest.id);
+        // Request not in list - check actual status from Firebase before assuming cancelled
+        const checkTripStatus = async () => {
+          try {
+            const tripData = await useTripStore.getState().getTrip(currentRequest.id);
 
-        // Show appropriate message
-        Alert.alert(
-          'Ride Cancelled',
-          'The rider has cancelled this ride request.',
-          [{ text: 'OK' }]
-        );
+            if (!tripData) {
+              // Trip doesn't exist
+              console.log('🚫 Request no longer exists:', currentRequest.id);
+              setShowRequestModal(false);
+              setCurrentRequest(null);
+              markRequestProcessed(currentRequest.id);
+              Alert.alert('Request Unavailable', 'This ride request is no longer available.');
+              return;
+            }
+
+            const status = tripData.status;
+            console.log('📋 Checking request status:', currentRequest.id, 'Status:', status);
+
+            if (status === 'CANCELLED') {
+              // Actually cancelled
+              setShowRequestModal(false);
+              setCurrentRequest(null);
+              markRequestProcessed(currentRequest.id);
+              Alert.alert('Ride Cancelled', 'The rider has cancelled this ride request.');
+            } else if (status === 'AWAITING_PAYMENT' || status === 'DRIVER_ARRIVING' || status === 'ACCEPTED') {
+              // This driver accepted the ride - don't show "taken by another driver"
+              // The ride is in a valid accepted state (awaiting payment or driver en route)
+              // Just close the modal - navigation to pickup screen will handle the rest
+              console.log('✅ Ride accepted by this driver, status:', status);
+              setShowRequestModal(false);
+              setCurrentRequest(null);
+              // Don't mark as processed - let the active ride flow handle it
+            } else if (status !== 'REQUESTED') {
+              // Taken by another driver (status like DRIVER_ARRIVED, IN_PROGRESS, etc. with different driverId)
+              setShowRequestModal(false);
+              setCurrentRequest(null);
+              markRequestProcessed(currentRequest.id);
+              Alert.alert('Request Taken', 'This ride was accepted by another driver.');
+            } else {
+              // Still REQUESTED but not in our list - don't dismiss, let user decide
+              // This could happen if the listener filtered it out due to distance/timing
+              console.log('⚠️ Request still REQUESTED but not in list - keeping modal open');
+            }
+          } catch (error) {
+            console.error('Error checking trip status:', error);
+            // On error, don't dismiss - let user try again
+          }
+        };
+
+        checkTripStatus();
         return;
       }
     }
@@ -731,6 +830,7 @@ export default function DriverHomeScreen() {
     if (!currentRequest) return;
 
     try {
+      // Explicit decline - add to declinedBy so this driver won't see this request again
       await declineRequest(currentRequest.id, 'Driver declined');
     } catch (error) {
       console.error('Failed to decline request:', error);
@@ -738,6 +838,19 @@ export default function DriverHomeScreen() {
 
     // Close modal - the useEffect will handle showing the next request
     // if there are any unshown requests in the queue
+    setShowRequestModal(false);
+    setCurrentRequest(null);
+  };
+
+  // Handle timer expiry - driver didn't respond in time
+  // IMPORTANT: This is different from decline - we don't add to declinedBy
+  // so the driver can see the request again if it's resent
+  const handleExpireRequest = () => {
+    if (!currentRequest) return;
+
+    console.log('⏰ Request expired (no response):', currentRequest.id);
+    // Don't mark as processed - allow re-showing if request is resent
+    // Don't call declineRequest - don't add to declinedBy
     setShowRequestModal(false);
     setCurrentRequest(null);
   };
@@ -1029,6 +1142,7 @@ export default function DriverHomeScreen() {
         request={currentRequest}
         onAccept={handleAcceptRequest}
         onDecline={handleDeclineRequest}
+        onExpire={handleExpireRequest}
         autoExpireSeconds={30}
       />
     </View>

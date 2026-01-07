@@ -34,6 +34,7 @@ interface RideRequestModalProps {
   request: RideRequest | null;
   onAccept: () => void;
   onDecline: () => void;
+  onExpire?: () => void; // Called when timer expires (no response) - different from explicit decline
   autoExpireSeconds?: number;
 }
 
@@ -42,6 +43,7 @@ export default function RideRequestModal({
   request,
   onAccept,
   onDecline,
+  onExpire,
   autoExpireSeconds = 30,
 }: RideRequestModalProps) {
   const insets = useSafeAreaInsets();
@@ -89,9 +91,11 @@ export default function RideRequestModal({
           }
 
           if (prev <= 1) {
-            // Time's up - only auto-decline if user truly didn't respond
+            // Time's up - driver didn't respond
+            // IMPORTANT: This is NOT the same as declining - driver might just have missed it
+            // Use onExpire if provided, otherwise fall back to onDecline
             if (!hasRespondedRef.current) {
-              console.log('⏰ Timer expired - auto declining');
+              console.log('⏰ Timer expired - driver did not respond');
               hasRespondedRef.current = true; // Prevent duplicate calls
 
               // Clear interval before showing alert
@@ -102,8 +106,14 @@ export default function RideRequestModal({
 
               // Use setTimeout to defer the state update and avoid updating parent during render
               setTimeout(() => {
-                Alert.alert('Request Expired', 'You did not respond in time.');
-                onDecline();
+                Alert.alert('Request Expired', 'You did not respond in time. The request may appear again if still available.');
+                // Use onExpire if available (doesn't mark as declined, allows re-showing)
+                // Fall back to onDecline for backwards compatibility
+                if (onExpire) {
+                  onExpire();
+                } else {
+                  onDecline();
+                }
               }, 0);
             }
             return 0;

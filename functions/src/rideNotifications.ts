@@ -56,9 +56,12 @@ export const onRideRequested = onDocumentCreated(
     const tripData = snapshot.data();
     const { tripId } = event.params;
 
-    // Only process if status is REQUESTED and payment is ready
-    // Accept VERIFIED (new flow), AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
-    const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    // Only process if status is REQUESTED and payment is ready (or PENDING for new flow)
+    // PENDING = new flow (rider pays after driver accepts)
+    // VERIFIED = card verified flow (card verified, charge when driver accepts)
+    // AUTHORIZED = legacy flow (payment hold, capture when driver accepts)
+    // CAPTURED/COMPLETED = legacy statuses (for backwards compatibility)
+    const validPaymentStatuses = ['PENDING', 'VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
     const hasValidPayment = validPaymentStatuses.includes(tripData.paymentStatus);
 
     if (tripData.status !== 'REQUESTED' || !hasValidPayment) {
@@ -229,8 +232,9 @@ export const onRideResent = onDocumentUpdated(
     if (!before || !after) return null;
 
     // Check if this is a resend (declinedBy cleared and status still REQUESTED)
-    // Accept VERIFIED (new flow), AUTHORIZED (manual capture hold placed), CAPTURED, or COMPLETED
-    const validPaymentStatuses = ['VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
+    // PENDING = new flow (rider pays after driver accepts)
+    // VERIFIED = card verified flow, AUTHORIZED = legacy flow
+    const validPaymentStatuses = ['PENDING', 'VERIFIED', 'AUTHORIZED', 'CAPTURED', 'COMPLETED', 'requires_capture', 'succeeded'];
     const hasValidPayment = validPaymentStatuses.includes(after.paymentStatus);
 
     const wasResent =
@@ -698,6 +702,123 @@ export const onSafetyAlert = onDocumentCreated(
       return { success: true };
     } catch (error) {
       console.error('Error sending safety alert notification:', error);
+      return { success: false, error };
+    }
+  }
+);
+
+/**
+ * Send notification to driver when rider cancels during payment
+ * This ensures the driver knows they don't need to wait anymore
+ */
+export const onRiderCancelledDuringPayment = onDocumentUpdated(
+  { document: 'trips/{tripId}', region: 'us-east1', database: 'main' },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+
+    if (!before || !after) return null;
+
+    const { tripId } = event.params;
+
+    // Check if trip was cancelled while awaiting payment
+    const wasAwaitingPayment = before.status === 'AWAITING_PAYMENT';
+    const isNowCancelled = after.status === 'CANCELLED';
+    const cancelledByRider = after.cancelledBy === 'RIDER' || after.cancellationReason?.includes('rider');
+
+    if (!wasAwaitingPayment || !isNowCancelled) return null;
+
+    console.log(`❌ Trip ${tripId} cancelled during payment - notifying driver`);
+
+    try {
+      // Get driver's FCM token
+      const driverId = after.driverId;
+      if (!driverId) {
+        console.log('No driver assigned to trip');
+        return null;
+      }
+
+      const driverDoc = await db.collection('drivers').doc(driverId).get();
+      const driverData = driverDoc.data();
+      const fcmToken = driverData?.fcmToken || driverData?.pushToken;
+
+      if (!fcmToken) {
+        console.log(`No FCM token for driver ${driverId}`);
+        return null;
+      }
+
+      const pickupAddress = after.pickup?.address || 'Unknown';
+      const cancellationReason = after.cancellationReason || 'Rider cancelled during payment';
+
+      const title = '❌ Ride Cancelled';
+      const body = cancelledByRider
+        ? `The rider cancelled before completing payment. Pickup: ${pickupAddress.substring(0, 40)}...`
+        : `Trip cancelled: ${cancellationReason.substring(0, 50)}`;
+
+      const message: admin.messaging.Message = {
+        token: fcmToken,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: 'RIDE_CANCELLED',
+          tripId,
+          reason: cancellationReason,
+          cancelledBy: after.cancelledBy || 'RIDER',
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'trip_updates',
+            priority: 'max',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            icon: 'ic_notification',
+            color: '#EF4444',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: { title, body },
+              sound: 'default',
+              badge: 1,
+              'content-available': 1,
+            },
+          },
+          headers: {
+            'apns-priority': '10',
+          },
+        },
+      };
+
+      const response = await messaging.send(message);
+      console.log(`📱 Cancellation notification sent to driver: ${response}`);
+
+      // Also save the notification to the driver's inbox for persistence
+      try {
+        const inboxRef = db.collection('drivers').doc(driverId).collection('inbox');
+        await inboxRef.add({
+          type: 'RIDE_CANCELLED',
+          title,
+          body,
+          tripId,
+          pickupAddress,
+          cancellationReason,
+          cancelledBy: after.cancelledBy || 'RIDER',
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`📥 Cancellation saved to driver inbox`);
+      } catch (inboxError) {
+        console.error('Error saving to inbox:', inboxError);
+        // Don't fail the whole function if inbox save fails
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending cancellation notification:', error);
       return { success: false, error };
     }
   }

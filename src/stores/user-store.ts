@@ -5,6 +5,7 @@ import {
   getDoc,
   updateDoc,
   serverTimestamp,
+  deleteField,
   FirebaseFirestoreTypes
 } from '@react-native-firebase/firestore';
 
@@ -148,15 +149,35 @@ export const useUserStore = create<UserStore>((set, get) => ({
     try {
       const currentUser = get().user;
       if (!currentUser) throw new Error('No user logged in');
-      
+
       const userRef = doc(firebaseDb, 'users', currentUser.id);
+
+      // Convert undefined values to deleteField() for Firestore
+      // Firestore ignores undefined values, so we need deleteField() to actually remove fields
+      const firestoreUpdates: Record<string, any> = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) {
+          firestoreUpdates[key] = deleteField();
+        } else {
+          firestoreUpdates[key] = value;
+        }
+      }
+
       await updateDoc(userRef, {
-        ...updates,
+        ...firestoreUpdates,
         updatedAt: serverTimestamp(),
       });
-      
-      // Update local state
-      set({ user: { ...currentUser, ...updates } as User });
+
+      // Update local state - remove undefined fields from user object
+      const newUser = { ...currentUser };
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) {
+          delete (newUser as any)[key];
+        } else {
+          (newUser as any)[key] = value;
+        }
+      }
+      set({ user: newUser as User });
     } catch (error) {
       console.error('Failed to update user:', error);
       throw error;

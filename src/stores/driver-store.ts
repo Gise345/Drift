@@ -524,8 +524,10 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
       await registerPushToken(driverId);
 
       set({ isOnline: true });
-      get().startListeningForRequests();
-      console.log('🟢 Driver went online - listening for ride requests');
+      // NOTE: Don't call startListeningForRequests() here!
+      // The driver home screen's useEffect will start it when currentLocation becomes available.
+      // This prevents the race condition where listener starts before location is ready.
+      console.log('🟢 Driver went online - listener will start when location is available');
     } catch (error) {
       console.error('❌ Error going online:', error);
     }
@@ -721,19 +723,74 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
 
   acceptRequest: async (requestId) => {
     const state = get();
-    const request = state.incomingRequests.find((r) => r.id === requestId);
+    let request = state.incomingRequests.find((r) => r.id === requestId);
     const driver = state.driver;
     const vehicle = state.vehicle;
 
-    if (!request || !driver || !vehicle) {
-      console.error('❌ Cannot accept: missing request, driver, or vehicle data', {
-        hasRequest: !!request,
+    if (!driver || !vehicle) {
+      console.error('❌ Cannot accept: missing driver or vehicle data', {
         hasDriver: !!driver,
         hasVehicle: !!vehicle,
-        requestId,
-        incomingRequestsCount: state.incomingRequests.length,
       });
       return;
+    }
+
+    // If request not in local list (e.g., accepting from push notification before listener started),
+    // fetch it directly from Firebase
+    if (!request) {
+      console.log('📥 Request not in local list, fetching from Firebase:', requestId);
+      try {
+        const tripDoc = await getDoc(doc(firebaseDb, 'trips', requestId));
+        if (tripDoc.exists) {
+          const tripData = tripDoc.data();
+
+          // Fetch rider info
+          let riderName = 'Rider';
+          let riderRating = 4.5;
+          if (tripData?.riderId) {
+            try {
+              const userDoc = await getDoc(doc(firebaseDb, 'users', tripData.riderId));
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                riderName = userData?.name || userData?.firstName || 'Rider';
+                riderRating = userData?.rating || 4.5;
+              }
+            } catch (e) {
+              console.warn('Could not fetch rider info:', e);
+            }
+          }
+
+          // Convert to RideRequest format
+          request = {
+            id: requestId,
+            riderId: tripData?.riderId || '',
+            riderName,
+            riderRating,
+            pickup: {
+              lat: tripData?.pickup?.coordinates?.latitude || 0,
+              lng: tripData?.pickup?.coordinates?.longitude || 0,
+              address: tripData?.pickup?.address || 'Unknown',
+            },
+            destination: {
+              lat: tripData?.destination?.coordinates?.latitude || 0,
+              lng: tripData?.destination?.coordinates?.longitude || 0,
+              address: tripData?.destination?.address || 'Unknown',
+            },
+            distance: tripData?.distance || 0,
+            estimatedDuration: tripData?.duration || 0,
+            estimatedEarnings: tripData?.estimatedCost || tripData?.lockedContribution || 0,
+            requestedAt: tripData?.requestedAt?.toDate?.() || new Date(),
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          };
+          console.log('✅ Fetched trip from Firebase:', request);
+        } else {
+          console.error('❌ Trip not found in Firebase:', requestId);
+          return;
+        }
+      } catch (error) {
+        console.error('❌ Failed to fetch trip from Firebase:', error);
+        return;
+      }
     }
 
     // Mark as processed immediately to prevent re-showing
@@ -774,7 +831,7 @@ export const useDriverStore = create<DriverStore>((set, get) => ({
         // isOnline stays true - driver is still online, just busy with a ride
       });
 
-      console.log('✅ Accepted ride request:', requestId);
+      console.log('✅ Accepted ride request:', requestId, 'activeRide set:', !!activeRide);
     } catch (error) {
       console.error('❌ Failed to accept ride:', error);
       throw error;

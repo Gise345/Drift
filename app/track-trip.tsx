@@ -431,7 +431,7 @@ export default function TrackTripScreen() {
               flat
               rotation={trip.driverLocation.heading || 0}
             >
-              <CarMarker size="medium" />
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#4285F4', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 }} />
             </Marker>
           )}
 

@@ -124,7 +124,8 @@
       "Bash(git stash:*)",
       "Bash(where:*)",
       "Bash(\"C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\openssl.exe\" genrsa -out C:Driftcertsdistribution.key 2048)",
-      "WebFetch(domain:developers.google.com)"
+      "WebFetch(domain:developers.google.com)",
+      "Bash(del \"C:\\\\Drift\\\\components\\\\map\\\\CarMarker.tsx\")"
     ],
     "deny": [],
     "ask": []

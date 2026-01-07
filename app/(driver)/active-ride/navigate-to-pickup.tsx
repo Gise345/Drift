@@ -85,6 +85,10 @@ export default function NavigateToPickup() {
   const [showChatModal, setShowChatModal] = useState(false);
   const [isAutoFollowEnabled, setIsAutoFollowEnabled] = useState(true);
   const [showPaymentWaitingModal, setShowPaymentWaitingModal] = useState(false);
+  const [paymentTimeRemaining, setPaymentTimeRemaining] = useState<number | null>(null); // Calculated from acceptedAt
+  const paymentTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const paymentStartTimeRef = useRef<Date | null>(null); // Track when payment waiting started
+  const PAYMENT_TIMEOUT_SECONDS = 120; // 2 minutes to match rider's timeout
   const lastRouteRecalculation = useRef<number>(0);
   const messagingInitializedRef = useRef(false);
   const hasHandledCancellationRef = useRef(false);
@@ -95,13 +99,34 @@ export default function NavigateToPickup() {
   // Animation
   const sheetHeight = useRef(new Animated.Value(BOTTOM_SHEET_MAX_HEIGHT)).current;
 
+  // Debug: Track activeRide changes to identify white screen cause
+  useEffect(() => {
+    console.log('🔍 [navigate-to-pickup] activeRide changed:', activeRide ? {
+      id: activeRide.id,
+      status: activeRide.status,
+      riderName: activeRide.riderName,
+    } : 'NULL');
+
+    if (!activeRide) {
+      console.warn('⚠️ [navigate-to-pickup] activeRide is NULL - this will show error state!');
+      console.trace('Stack trace for NULL activeRide:');
+    }
+  }, [activeRide]);
+
   // Subscribe to trip updates to detect rider cancellation
   useEffect(() => {
-    if (!activeRide?.id) return;
+    if (!activeRide?.id) {
+      console.log('⏭️ [navigate-to-pickup] Skipping trip subscription - no activeRide.id');
+      return;
+    }
 
+    console.log('📡 [navigate-to-pickup] Subscribing to trip:', activeRide.id);
     const unsubscribe = subscribeToTrip(activeRide.id);
 
-    return () => unsubscribe();
+    return () => {
+      console.log('🔌 [navigate-to-pickup] Unsubscribing from trip:', activeRide.id);
+      unsubscribe();
+    };
   }, [activeRide?.id]);
 
   // Listen for trip status changes (e.g., rider cancellation)
@@ -153,14 +178,71 @@ export default function NavigateToPickup() {
       // Rider needs to complete payment - show waiting modal
       setShowPaymentWaitingModal(true);
       console.log('💳 Waiting for rider to complete payment...');
+
+      // Calculate remaining time based on acceptedAt timestamp
+      // This ensures timer persists even if driver closes and reopens the app
+      const acceptedAt = currentTrip.acceptedAt;
+      if (acceptedAt) {
+        const acceptedTime = acceptedAt instanceof Date ? acceptedAt : new Date(acceptedAt);
+        paymentStartTimeRef.current = acceptedTime;
+        const elapsed = Math.floor((Date.now() - acceptedTime.getTime()) / 1000);
+        const remaining = Math.max(0, PAYMENT_TIMEOUT_SECONDS - elapsed);
+        setPaymentTimeRemaining(remaining);
+        console.log('⏱️ Payment timer: elapsed', elapsed, 'seconds, remaining', remaining, 'seconds');
+      } else {
+        // Fallback if no acceptedAt - start fresh
+        paymentStartTimeRef.current = new Date();
+        setPaymentTimeRemaining(PAYMENT_TIMEOUT_SECONDS);
+      }
     } else if (currentTrip.status === 'DRIVER_ARRIVING') {
       // Payment completed - hide modal and proceed
       if (showPaymentWaitingModal) {
         setShowPaymentWaitingModal(false);
+        setPaymentTimeRemaining(null);
         console.log('✅ Rider completed payment - proceeding to pickup');
       }
     }
-  }, [currentTrip?.status]);
+  }, [currentTrip?.status, currentTrip?.acceptedAt]);
+
+  // Payment countdown timer - syncs with actual elapsed time
+  useEffect(() => {
+    if (showPaymentWaitingModal && paymentTimeRemaining !== null && paymentTimeRemaining > 0) {
+      // Start countdown when modal shows and we have a valid time
+      paymentTimerRef.current = setInterval(() => {
+        // Calculate remaining time from the original start time for accuracy
+        if (paymentStartTimeRef.current) {
+          const elapsed = Math.floor((Date.now() - paymentStartTimeRef.current.getTime()) / 1000);
+          const remaining = Math.max(0, PAYMENT_TIMEOUT_SECONDS - elapsed);
+          setPaymentTimeRemaining(remaining);
+
+          if (remaining <= 0) {
+            // Timer expired - rider should have cancelled by now
+            if (paymentTimerRef.current) {
+              clearInterval(paymentTimerRef.current);
+            }
+          }
+        }
+      }, 1000);
+
+      return () => {
+        if (paymentTimerRef.current) {
+          clearInterval(paymentTimerRef.current);
+        }
+      };
+    } else if (!showPaymentWaitingModal) {
+      // Clear timer when modal closes
+      if (paymentTimerRef.current) {
+        clearInterval(paymentTimerRef.current);
+      }
+    }
+  }, [showPaymentWaitingModal, paymentTimeRemaining !== null]);
+
+  // Format time for display
+  const formatPaymentTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Initialize messaging when driver accepts ride
   useEffect(() => {
@@ -313,8 +395,42 @@ export default function NavigateToPickup() {
           return;
         }
 
-        // Update driver status
-        await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVING');
+        // IMPORTANT: Only update to DRIVER_ARRIVING if not in AWAITING_PAYMENT status
+        // When using the new payment flow, the trip starts as AWAITING_PAYMENT
+        // and should only change to DRIVER_ARRIVING after rider completes payment
+        // The status will be updated by the complete-payment screen on the rider side
+        //
+        // Fetch current trip status from Firestore to ensure we have the latest
+        const tripData = await useTripStore.getState().getTrip(activeRide.id);
+        const currentStatus = tripData?.status;
+        console.log('📋 Current trip status:', currentStatus);
+
+        // Handle case where trip fetch failed (network error, etc.)
+        if (!tripData) {
+          console.warn('⚠️ Could not fetch trip data - showing payment modal as fallback');
+          // Default to showing payment modal - rider can cancel if wrong
+          setShowPaymentWaitingModal(true);
+        } else if (currentStatus === 'AWAITING_PAYMENT') {
+          console.log('💳 Trip is AWAITING_PAYMENT - waiting for rider to complete payment');
+          setShowPaymentWaitingModal(true);
+        } else if (currentStatus === 'CANCELLED') {
+          // Trip was already cancelled - don't proceed
+          console.log('🚫 Trip is CANCELLED - redirecting to home');
+          setActiveRide(null);
+          Alert.alert('Trip Cancelled', 'This trip has been cancelled.', [
+            { text: 'OK', onPress: () => router.replace('/(driver)/tabs') }
+          ]);
+          return;
+        } else if (currentStatus !== 'DRIVER_ARRIVING' && currentStatus !== 'DRIVER_ARRIVED') {
+          // Only update status if NOT waiting for payment and not already in a later status
+          console.log('🚗 Updating status to DRIVER_ARRIVING');
+          try {
+            await updateDriverArrivalStatus(activeRide.id, 'DRIVER_ARRIVING');
+          } catch (updateError) {
+            console.error('❌ Failed to update arrival status:', updateError);
+            // Continue anyway - the subscription will sync the status
+          }
+        }
 
         // Get initial location and fetch route
         const location = await Location.getCurrentPositionAsync({
@@ -341,7 +457,16 @@ export default function NavigateToPickup() {
             distanceInterval: 5, // Update every 5 meters for responsive navigation
           },
           async (loc) => {
-            const { latitude, longitude, heading, speed } = loc.coords;
+            try {
+              // CRITICAL: Check if activeRide is still valid at the start of callback
+              // This prevents crashes if activeRide becomes null during async operations
+              const currentRide = useDriverStore.getState().activeRide;
+              if (!currentRide) {
+                console.log('⚠️ Location callback: activeRide is null, skipping update');
+                return;
+              }
+
+              const { latitude, longitude, heading, speed } = loc.coords;
             const newLocation = { latitude, longitude };
             setCurrentLocation(newLocation);
 
@@ -375,9 +500,9 @@ export default function NavigateToPickup() {
 
             // Update Firebase with privacy-aware broadcasting
             // Pass pickup coordinates so the store can check if privacy delay should apply
-            if (activeRide.id) {
+            if (currentRide.id && currentRide.pickup) {
               updateDriverLocation(
-                activeRide.id,
+                currentRide.id,
                 {
                   latitude,
                   longitude,
@@ -387,18 +512,20 @@ export default function NavigateToPickup() {
                   heading: heading || 0,
                 },
                 {
-                  latitude: activeRide.pickup.lat,
-                  longitude: activeRide.pickup.lng,
+                  latitude: currentRide.pickup.lat,
+                  longitude: currentRide.pickup.lng,
                 }
               );
             }
 
             // Recalculate distance (straight line for display)
+            if (!currentRide.pickup) return;
+
             const distanceToPickup = calculateDistance(
               latitude,
               longitude,
-              activeRide.pickup.lat,
-              activeRide.pickup.lng
+              currentRide.pickup.lat,
+              currentRide.pickup.lng
             );
             setDistance(distanceToPickup);
 
@@ -408,7 +535,7 @@ export default function NavigateToPickup() {
             if (currentTime - lastRouteRecalculation.current >= 10000) {
               lastRouteRecalculation.current = currentTime;
               try {
-                const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${latitude},${longitude}&destination=${activeRide.pickup.lat},${activeRide.pickup.lng}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
+                const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${latitude},${longitude}&destination=${currentRide.pickup.lat},${currentRide.pickup.lng}&mode=driving&key=${GOOGLE_DIRECTIONS_API_KEY}`;
                 const response = await fetch(url);
                 const data = await response.json();
 
@@ -425,6 +552,10 @@ export default function NavigateToPickup() {
                 const newEta = (distanceToPickup / avgSpeed) * 60;
                 setEta(Math.ceil(newEta));
               }
+            }
+            } catch (error) {
+              // Catch any unexpected errors in the location callback to prevent crashes
+              console.error('❌ Error in location callback:', error);
             }
           }
         );
@@ -596,7 +727,7 @@ export default function NavigateToPickup() {
             flat
             rotation={currentHeading}
           >
-            <CarMarker size="medium" />
+            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#4285F4', borderWidth: 3, borderColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 }} />
           </Marker>
         )}
 
@@ -793,10 +924,29 @@ export default function NavigateToPickup() {
             </View>
             <Text style={styles.paymentWaitingTitle}>Waiting for Payment</Text>
             <Text style={styles.paymentWaitingDescription}>
-              {activeRide?.riderName || 'The rider'} is completing their payment.{'\n'}
-              Please wait...
+              {activeRide?.riderName || 'The rider'} is completing their payment.
             </Text>
-            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
+
+            {/* Timer Display */}
+            <View style={styles.paymentTimerContainer}>
+              <Ionicons
+                name="time-outline"
+                size={20}
+                color={paymentTimeRemaining !== null && paymentTimeRemaining <= 60 ? Colors.error : Colors.gray[500]}
+              />
+              <Text style={[
+                styles.paymentTimerText,
+                paymentTimeRemaining !== null && paymentTimeRemaining <= 60 && styles.paymentTimerWarning
+              ]}>
+                {paymentTimeRemaining === null
+                  ? 'Calculating time...'
+                  : paymentTimeRemaining > 0
+                    ? `Time remaining: ${formatPaymentTime(paymentTimeRemaining)}`
+                    : 'Payment timeout - ride will be cancelled'}
+              </Text>
+            </View>
+
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 16 }} />
 
             <TouchableOpacity
               style={styles.paymentCancelButton}
@@ -1191,6 +1341,25 @@ const styles = StyleSheet.create({
     color: Colors.gray[600],
     textAlign: 'center',
     lineHeight: 22,
+  },
+  paymentTimerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    gap: 8,
+  },
+  paymentTimerText: {
+    fontSize: 14,
+    color: Colors.gray[600],
+    fontWeight: '500',
+  },
+  paymentTimerWarning: {
+    color: Colors.error,
+    fontWeight: '600',
   },
   paymentCancelButton: {
     marginTop: 24,

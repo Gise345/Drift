@@ -818,6 +818,9 @@ export type CancellationReason =
   | 'RIDER_CANCELLED_WHILE_SEARCHING'
   | 'DRIVER_DECLINED'
   | 'NO_DRIVERS_AVAILABLE'
+  // Payment-related reasons (no fee - payment never completed)
+  | 'PAYMENT_TIMEOUT'
+  | 'RIDER_CANCELLED_DURING_PAYMENT'
   | 'OTHER';
 
 // Reasons that incur 50% cancellation fee for rider
@@ -1578,7 +1581,8 @@ export async function getActiveDriverTrip(driverId: string): Promise<RideRequest
       const status = data.status;
 
       // Check if trip is in an active state for driver
-      if (['ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
+      // AWAITING_PAYMENT = new payment flow where driver waits for rider to pay
+      if (['AWAITING_PAYMENT', 'ACCEPTED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(status)) {
         console.log('✅ Found active driver trip:', docSnap.id, 'Status:', status);
 
         // If riderName is missing, fetch from users collection
