@@ -177,16 +177,37 @@ export default function PersonalInfo() {
           <Text style={styles.helperText}>You must be 21 or older to drive</Text>
         </View>
 
-        {showDatePicker && (
+        {/* Android - keep original working behavior */}
+        {showDatePicker && Platform.OS === 'android' && (
           <DateTimePicker
             value={dateOfBirth}
             mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display="default"
             onChange={(event, date) => {
-              setShowDatePicker(Platform.OS === 'ios');
+              setShowDatePicker(false);
               if (date) setDateOfBirth(date);
             }}
             maximumDate={new Date()}
+          />
+        )}
+
+        {/* iOS - use default display mode (native modal picker) */}
+        {showDatePicker && Platform.OS === 'ios' && (
+          <DateTimePicker
+            value={dateOfBirth}
+            mode="date"
+            display="default"
+            onChange={(event, date) => {
+              if (event.type === 'set' && date) {
+                setDateOfBirth(date);
+                setShowDatePicker(false);
+              } else if (event.type === 'dismissed') {
+                setShowDatePicker(false);
+              }
+            }}
+            maximumDate={new Date()}
+            minimumDate={new Date(1940, 0, 1)}
+            themeVariant="light"
           />
         )}
 

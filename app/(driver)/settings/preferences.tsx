@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,10 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+
+const PREFERENCES_KEY = '@drift_driver_preferences';
 
 /**
  * DRIVING PREFERENCES SCREEN
@@ -28,17 +31,57 @@ export default function DrivingPreferencesScreen() {
   const [autoAccept, setAutoAccept] = useState(false);
   const [longTripsOnly, setLongTripsOnly] = useState(false);
   const [returnTripsOnly, setReturnTripsOnly] = useState(false);
-  const [avoidTolls, setAvoidTolls] = useState(false);
   const [maxPickupDistance, setMaxPickupDistance] = useState('10'); // km
-  const [minFare, setMinFare] = useState('10'); // CI$
-  
+  const [minFare, setMinFare] = useState('5'); // CI$
+  const [isLoading, setIsLoading] = useState(true);
+
   const distanceOptions = ['5', '10', '15', '20', '25+'];
   const fareOptions = ['5', '10', '15', '20', '25+'];
 
-  const savePreferences = () => {
-    // TODO: Save to Firebase/AsyncStorage
-    Alert.alert('Success', 'Driving preferences saved!');
-    router.back();
+  // Load saved preferences on mount
+  useEffect(() => {
+    loadPreferences();
+  }, []);
+
+  const loadPreferences = async () => {
+    try {
+      const savedPreferences = await AsyncStorage.getItem(PREFERENCES_KEY);
+      if (savedPreferences) {
+        const prefs = JSON.parse(savedPreferences);
+        setAutoAccept(prefs.autoAccept ?? false);
+        setLongTripsOnly(prefs.longTripsOnly ?? false);
+        setReturnTripsOnly(prefs.returnTripsOnly ?? false);
+        setMaxPickupDistance(prefs.maxPickupDistance ?? '10');
+        setMinFare(prefs.minFare ?? '5');
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const savePreferences = async () => {
+    try {
+      // Load existing preferences first to preserve other settings (sound, vibration, night mode)
+      const existingPrefs = await AsyncStorage.getItem(PREFERENCES_KEY);
+      const prefs = existingPrefs ? JSON.parse(existingPrefs) : {};
+
+      const updatedPreferences = {
+        ...prefs,
+        autoAccept,
+        longTripsOnly,
+        returnTripsOnly,
+        maxPickupDistance,
+        minFare,
+      };
+      await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(updatedPreferences));
+      Alert.alert('Success', 'Driving preferences saved!');
+      router.back();
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      Alert.alert('Error', 'Failed to save preferences. Please try again.');
+    }
   };
 
   return (
@@ -220,37 +263,6 @@ export default function DrivingPreferencesScreen() {
             <Text style={styles.helperText}>
               Only receive requests with estimated fare above this amount
             </Text>
-          </View>
-        </View>
-
-        {/* Route Preferences */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Route Preferences</Text>
-          <View style={styles.sectionContent}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingIcon}>
-                <Ionicons
-                  name="cash"
-                  size={20}
-                  color={avoidTolls ? Colors.primary[500] : Colors.gray[400]}
-                />
-              </View>
-              <View style={styles.settingContent}>
-                <Text style={styles.settingTitle}>Avoid Toll Roads</Text>
-                <Text style={styles.settingDescription}>
-                  Navigation will prefer routes without tolls
-                </Text>
-              </View>
-              <Switch
-                value={avoidTolls}
-                onValueChange={setAvoidTolls}
-                trackColor={{
-                  false: Colors.gray[300],
-                  true: Colors.primary[500],
-                }}
-                thumbColor={Colors.white}
-              />
-            </View>
           </View>
         </View>
 

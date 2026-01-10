@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,14 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing } from '@/src/constants/theme';
+
+const PREFERENCES_KEY = '@drift_driver_preferences';
 
 export default function Preferences() {
   const router = useRouter();
@@ -20,6 +24,55 @@ export default function Preferences() {
   const [nightMode, setNightMode] = useState(false);
   const [longTripsOnly, setLongTripsOnly] = useState(false);
   const [maxDistance, setMaxDistance] = useState(10);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load saved preferences on mount
+  useEffect(() => {
+    loadPreferences();
+  }, []);
+
+  const loadPreferences = async () => {
+    try {
+      const savedPreferences = await AsyncStorage.getItem(PREFERENCES_KEY);
+      if (savedPreferences) {
+        const prefs = JSON.parse(savedPreferences);
+        setAutoAcceptRequests(prefs.autoAccept ?? false);
+        setLongTripsOnly(prefs.longTripsOnly ?? false);
+        setSoundEnabled(prefs.soundEnabled ?? true);
+        setVibrationEnabled(prefs.vibrationEnabled ?? true);
+        setNightMode(prefs.nightMode ?? false);
+        setMaxDistance(parseInt(prefs.maxPickupDistance) || 10);
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const savePreferences = async () => {
+    try {
+      // Load existing preferences first to preserve other settings
+      const existingPrefs = await AsyncStorage.getItem(PREFERENCES_KEY);
+      const prefs = existingPrefs ? JSON.parse(existingPrefs) : {};
+
+      const updatedPreferences = {
+        ...prefs,
+        autoAccept: autoAcceptRequests,
+        longTripsOnly,
+        soundEnabled,
+        vibrationEnabled,
+        nightMode,
+        maxPickupDistance: maxDistance.toString(),
+      };
+      await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(updatedPreferences));
+      Alert.alert('Success', 'Preferences saved!');
+      router.back();
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      Alert.alert('Error', 'Failed to save preferences. Please try again.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -167,7 +220,7 @@ export default function Preferences() {
         </View>
 
         {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.saveButton} onPress={savePreferences}>
           <Text style={styles.saveButtonText}>Save Preferences</Text>
         </TouchableOpacity>
       </ScrollView>
